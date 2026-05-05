@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign Up - Kyoshi</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@18/build/css/intlTelInput.css">
+<style>
+.signup-container {
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* LEFT IMAGE */
+.signup-left{
+  flex:1;
+  background:url('../assets/img/student.jpg') no-repeat center/cover;
+  position:relative;
+  transition: 0.4s ease;
+}
+
+.signup-logo{
+  position:absolute;
+  top:20px;
+  left:20px;
+  width:120px;
+}
+
+.signup-right {
+  flex: 1;
+  background: #c3a6d7;
+  padding: 40px;
+
+  display: flex;
+  justify-content: center;
+
+  align-items: flex-start;  
+
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.signup-box{
+  width:100%;
+  max-width:420px;
+  background:white;
+  padding:30px;
+  border-radius:20px;
+  box-shadow:0 10px 25px rgba(0,0,0,0.1);
+}
+
+/* INPUT */
+.form-control{
+  border-radius:10px;
+  padding:12px;
+}
+
+/* BUTTON */
+.btn-main{
+  background:#38bdf8;
+  border:none;
+  width:100%;
+  padding:10px;
+  border-radius:10px;
+}
+
+/* PASSWORD ICON */
+.password-wrapper{
+  position:relative;
+}
+
+.password-wrapper input{
+  padding-right:45px;
+}
+
+.eye-icon{
+  position:absolute;
+  right:15px;
+  top:50%;
+  transform:translateY(-50%);
+  cursor:pointer;
+  color:gray;
+}
+
+/* ROLE BOX */
+.role-box{
+  border:2px solid #ddd;
+  padding:15px;
+  border-radius:10px;
+  cursor:pointer;
+  margin-bottom:10px;
+  text-align:center;
+}
+
+.role-box.active{
+  border-color:#38bdf8;
+  background:#f0f9ff;
+}
+
+/* STEP CONTROL */
+#formStep{
+  display:none;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="signup-container">
+
+  <!-- LEFT -->
+  <div class="signup-left" id="signupLeft">
+    <img src="../assets/img/logo.png" class="signup-logo">
+  </div>
+
+  <!-- RIGHT -->
+  <div class="signup-right">
+    <div class="signup-box">
+
+
+      <!-- STEP 1 -->
+      <div id="roleStep">
+        <h3 class="fw-bold mb-3">Create Account</h3>
+        <p>Select your role</p>
+
+        <div class="role-box" onclick="selectRole(this,'student')">
+          👩‍🎓 I am a Student
+        </div>
+
+        <div class="role-box" onclick="selectRole(this,'tutor')">
+          👨‍🏫 I am a Tutor
+        </div>
+
+        <button class="btn btn-main mt-3" onclick="goNext()">
+          Continue
+        </button>
+      </div>
+
+      <!-- STEP 2 -->
+      <div id="formStep">
+        <div id="studentForm" style="display:none;">
+        <h2 class="fw-bold mb-3">Student Sign Up</h2>
+
+        <!-- NAME -->
+        <div class="mb-2">
+          <input type="text" class="form-control" placeholder="Full Name">
+        </div>
+
+        <!-- EMAIL -->
+        <div class="mb-2">
+          <input type="email" class="form-control" placeholder="Email Address">
+        </div>
+
+        <!-- PASSWORD -->
+        <div class="mb-2">
+          <div class="password-wrapper">
+            <input type="password" id="password" class="form-control" placeholder="Password">
+            <i class="bi bi-eye eye-icon" onclick="togglePassword('password', this)"></i>
+          </div>
+        </div>
+
+        <!-- CONFIRM PASSWORD -->
+        <div class="mb-2">
+          <div class="password-wrapper">
+            <input type="password" id="confirmPassword" class="form-control" placeholder="Confirm Password">
+            <i class="bi bi-eye eye-icon" onclick="togglePassword('confirmPassword', this)"></i>
+          </div>
+        </div>
+
+        <!-- PHONE -->
+        <div class="mb-2">
+            <label class="form-label">Phone Number</label>
+            <input id="studentPhone" type="tel" class="form-control">
+        </div> 
+
+        <!-- BUTTON -->
+        <button class="btn btn-main mt-3">Create Account</button>
+
+       <p class="text-center mt-4">Already have an account?<br>
+        <a href="login.html" class="fw-bold">Back to Login</a></p>
+
+      </div>
+      <div id="tutorForm" style="display:none;">
+
+  <h2 class="fw-bold mb-3">Tutor Sign Up</h2>
+  <p class="text-muted mb-3">Complete your profile to start teaching</p>
+
+  <!-- BASIC INFO -->
+  <h6 class="fw-bold mt-3">Basic Information</h6>
+
+  <input type="text" class="form-control mb-2" placeholder="Full Name">
+
+  <input type="email" class="form-control mb-2" placeholder="Email Address">
+
+  <!-- PHONE -->
+  <label class="form-label">Phone Number</label>
+  <input id="tutorPhone" type="tel" class="form-control">
+
+  <!-- PASSWORD -->
+  <input type="password" class="form-control mb-2" placeholder="Password">
+  <input type="password" class="form-control mb-3" placeholder="Confirm Password">
+
+  <hr>
+
+  <!-- TUTOR DETAILS -->
+  <h6 class="fw-bold">Teaching Information</h6>
+
+          <label class="form-label">Languages You Can Teach</label>
+
+<div class="form-check">
+  <input class="form-check-input" type="checkbox" value="English">
+  <label class="form-check-label">English</label>
+</div>
+
+<div class="form-check">
+  <input class="form-check-input" type="checkbox" value="Mandarin">
+  <label class="form-check-label">Mandarin</label>
+</div>
+
+<div class="form-check">
+  <input class="form-check-input" type="checkbox" value="Japanese">
+  <label class="form-check-label">Japanese</label>
+</div>
+
+<div class="form-check">
+  <input class="form-check-input" type="checkbox" value="Korean">
+  <label class="form-check-label">Korean</label>
+</div>
+
+<div class="form-check">
+  <input class="form-check-input" type="checkbox" value="Japanese">
+  <label class="form-check-label">Malay</label>
+</div>
+
+
+  <!-- EXPERIENCE -->
+  <input type="number" class="form-control mb-2" placeholder="Years of Experience" min="0">
+
+  <!-- RATE -->
+  <input type="text" class="form-control mb-2" placeholder="Hourly Rate (RM)">
+
+  <!-- BIO -->
+  <textarea class="form-control mb-3" rows="3" placeholder="Short Bio / Introduction"></textarea>
+
+  <hr>
+
+  <!-- UPLOAD SECTION -->
+  <h6 class="fw-bold">Verification Documents</h6>
+
+  <!-- PROFILE PICTURE -->
+  <label class="form-label">Profile Picture</label>
+  <input type="file" class="form-control mb-2">
+
+  <!-- CERTIFICATE -->
+  <label class="form-label">Teaching Certificate / Qualification</label>
+  <input type="file" class="form-control mb-2">
+
+  <!-- OPTIONAL IC -->
+  <label class="form-label">IC / Identification (Optional)</label>
+  <input type="file" class="form-control mb-3">
+
+  <hr>
+
+  <!-- SUBMIT -->
+  <button class="btn btn-primary w-100">
+    Submit Tutor Application
+  </button>
+
+  <!-- BACK TO LOGIN -->
+  <p class="text-center mt-4">
+    Already have an account?<br>
+    <a href="login.html" class="fw-bold">Back to Login</a>
+  </p>
+
+</div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+let role = "";
+
+/* SELECT ROLE */
+function selectRole(element, r){
+  role = r;
+
+  document.querySelectorAll(".role-box").forEach(el=>{
+    el.classList.remove("active");
+  });
+
+  element.classList.add("active");
+
+  const left = document.getElementById("signupLeft");
+
+  if(r === "student"){
+    left.style.backgroundImage = "url('../assets/img/student.jpg')";
+  }
+
+  if(r === "tutor"){
+    left.style.backgroundImage = "url('../assets/img/tutor.jpg')";
+  }
+}
+
+function goNext(){
+  if(role === ""){
+    alert("Please select Student or Tutor");
+    return;
+  }
+
+  document.getElementById("roleStep").style.display = "none";
+  document.getElementById("formStep").style.display = "block";
+
+  // reset both
+  document.getElementById("studentForm").style.display = "none";
+  document.getElementById("tutorForm").style.display = "none";
+
+  if(role === "student"){
+    document.getElementById("studentForm").style.display = "block";
+  }
+
+  if(role === "tutor"){
+    document.getElementById("tutorForm").style.display = "block";
+  }
+}
+
+
+/* PASSWORD TOGGLE */
+function togglePassword(id, icon){
+  const input = document.getElementById(id);
+
+  if(input.type === "password"){
+    input.type = "text";
+    icon.classList.remove("bi-eye");
+    icon.classList.add("bi-eye-slash");
+  } else {
+    input.type = "password";
+    icon.classList.remove("bi-eye-slash");
+    icon.classList.add("bi-eye");
+  }
+}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@18/build/js/intlTelInput.min.js"></script>
+
+<script>
+window.addEventListener("DOMContentLoaded", function () {
+
+  const studentPhone = document.querySelector("#studentPhone");
+  const tutorPhone = document.querySelector("#tutorPhone");
+
+  if (studentPhone) {
+    window.intlTelInput(studentPhone, {
+      initialCountry: "my",
+      separateDialCode: true,
+      preferredCountries: ["my", "sg", "id", "cn"]
+    });
+  }
+
+  if (tutorPhone) {
+    window.intlTelInput(tutorPhone, {
+      initialCountry: "my",
+      separateDialCode: true,
+      preferredCountries: ["my", "sg", "id", "cn"]
+    });
+  }
+
+});
+</script>
+
+</body>
+</html>
