@@ -12,14 +12,17 @@ function moveSlide(direction) {
 
   index += direction;
 
-  // clamp
   if (index < 0) index = 0;
   if (index > maxIndex) index = maxIndex;
 
-  // card width (IMPORTANT FIX)
   const card = cards[0];
   const style = window.getComputedStyle(card);
   const cardWidth = card.offsetWidth + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
 
   track.style.transform = `translateX(-${index * cardWidth}px)`;
+}
+
+function requireLogin(){
+    alert("You must login or sign up first to book a tutor.");
+    window.location.href = "login.php";
 }

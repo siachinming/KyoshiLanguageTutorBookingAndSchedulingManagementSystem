@@ -1,12 +1,14 @@
-const password = document.getElementById("password");
-const icon = document.getElementById("togglePassword");
+function togglePassword() {
+  const input = document.getElementById("loginPassword");
+  const icon = document.getElementById("eyeIcon");
 
-icon.addEventListener("click", function () {
-
-  const isHidden = password.type === "password";
-
-  password.type = isHidden ? "text" : "password";
-
-  this.classList.toggle("bi-eye");
-  this.classList.toggle("bi-eye-slash");
-});
+  if (input.type === "password") {
+    input.type = "text";
+    icon.classList.remove("bi-eye");
+    icon.classList.add("bi-eye-slash");
+  } else {
+    input.type = "password";
+    icon.classList.remove("bi-eye-slash");
+    icon.classList.add("bi-eye");
+  }
+}

@@ -51,20 +51,16 @@
   border-radius: 10px;
 }
 
-/* PASSWORD ICON */
 .password-wrapper {
   position: relative;
 }
 
-.password-wrapper input {
-  padding-right: 45px;
-}
-
 .eye-icon {
   position: absolute;
-  right: 15px;
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   cursor: pointer;
+  z-index: 10;
   color: gray;
 }

@@ -47,12 +47,18 @@ body {
     Enter your email and we’ll send you a reset link.
   </p>
 
-  <input type="email" class="form-control mb-3" placeholder="Enter email">
+  <!-- FORM START -->
+  <form action="forgot_process.php" method="POST">
 
-  <button class="btn btn-main">Send Reset Link</button>
+    <input type="email" name="email" class="form-control mb-3" placeholder="Enter email" required>
+
+    <button type="submit" class="btn btn-main">Send Reset Link</button>
+
+  </form>
+  <!-- FORM END -->
 
   <p class="text-center mt-3">
-    <a href="login.html">Back to Login</a>
+    <a href="login.php">Back to Login</a>
   </p>
 
 </div>
