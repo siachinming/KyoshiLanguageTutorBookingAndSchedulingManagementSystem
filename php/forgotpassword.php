@@ -9,7 +9,7 @@
 
 <style>
 body {
-  background: #c3a6d7;
+  background: #a6bed7;
   height: 100vh;
   display: flex;
   align-items: center;

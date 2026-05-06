@@ -12,7 +12,14 @@
 </head>
 
 <body>
-
+<?php if (isset($_SESSION['error'])): ?>
+<div id="errBox" class="alert alert-danger">
+  <?php 
+    echo $_SESSION['error']; 
+    unset($_SESSION['error']);
+  ?>
+</div>
+<?php endif; ?>
 <div class="login-container">
 
   <div class="login-left">

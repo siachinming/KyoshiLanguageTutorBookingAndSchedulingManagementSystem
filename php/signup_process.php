@@ -2,14 +2,11 @@
 session_start();
 include "config.php";
 
-// Only accept POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header("Location: signup.php");
     exit();
 }
 
-// ── Collect inputs ───────────────────────────────────────────────
-$role       = trim($_POST['role']             ?? '');
 $fullname   = trim($_POST['fullname']         ?? '');
 $email      = trim($_POST['email']            ?? '');
 $password   = $_POST['password']              ?? '';
@@ -18,6 +15,7 @@ $phone      = trim($_POST['phone']            ?? '');
 $experience = intval($_POST['experience']     ?? 0);
 $rate       = trim($_POST['rate']             ?? '');
 $bio        = trim($_POST['bio']              ?? '');
+$status = ($role === 'tutor') ? 'pending' : 'approved';
 
 // ── Validate role ────────────────────────────────────────────────
 if (!in_array($role, ['student', 'tutor'])) {
@@ -102,14 +100,14 @@ if ($role === 'tutor' && !empty($_FILES['profile_pic']['name'])) {
 // ── Hash password ────────────────────────────────────────────────
 $hashed = password_hash($password, PASSWORD_DEFAULT);
 
-// ── Insert into users table (all roles, all columns) ─────────────
-// Students will have NULL for experience, rate, bio, profile_pic — that's fine
 $stmt = $conn->prepare("
-    INSERT INTO users (fullname, email, password, phone, role, experience, rate, bio, profile_pic)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users 
+    (fullname, email, password, phone, role, experience, rate, bio, profile_pic, languages, language_certificate, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");
+
 $stmt->bind_param(
-    "sssssisss",
+    "sssssdssssss",
     $fullname,
     $email,
     $hashed,
@@ -118,7 +116,10 @@ $stmt->bind_param(
     $experience,
     $rate,
     $bio,
-    $profile_pic
+    $profile_pic,
+    $languages,
+    $certificate,
+    $status
 );
 
 if (!$stmt->execute()) {

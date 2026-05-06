@@ -240,13 +240,43 @@
           </div>
           <div id="matchMsg"></div>
 
-          <!-- Phone -->
-          <input type="tel" name="phone" id="phoneInput" class="form-control mb-2" placeholder="Phone Number">
+          <input type="tel" name="phone" id="phoneInput" class="form-control mb-2" placeholder="Phone Number (Optional)">
 
-          <!-- Tutor-only fields -->
           <div id="tutorFields" style="display:none;">
             <hr class="my-3">
+            
             <p class="text-muted mb-2" style="font-size:13px;">Tutor details</p>
+            <hr class="my-3">
+              <p class="text-muted mb-2" style="font-size:13px;">Languages You Teach</p>
+
+              <div class="lang-group">
+
+                <label class="lang-box">
+                  <input type="checkbox" name="languages[]" value="English">
+                  <span>English</span>
+                </label><br>
+
+                <label class="lang-box">
+                  <input type="checkbox" name="languages[]" value="Japanese">
+                  <span>Japanese</span>
+                </label><br>
+
+                <label class="lang-box">
+                  <input type="checkbox" name="languages[]" value="Mandarin">
+                  <span>Mandarin</span>
+                </label><br>
+
+                <label class="lang-box">
+                  <input type="checkbox" name="languages[]" value="Malay">
+                  <span>Malay</span>
+                </label><br>
+
+                <label class="lang-box">
+                  <input type="checkbox" name="languages[]" value="Korean">
+                  <span>Korean</span>
+                </label><br>
+
+              </div><br>
             <input type="number" name="experience" class="form-control mb-2" placeholder="Years of Experience" min="0">
             <input type="text"   name="rate"       class="form-control mb-2" placeholder="Hourly Rate (RM)">
             <textarea name="bio" class="form-control mb-2" placeholder="Short bio about yourself" rows="3"></textarea>
@@ -349,26 +379,45 @@
     setRule('r-num', /[0-9]/.test(val));
     setRule('r-sp',  /[!@#$%^&*(),.?":{}|<>]/.test(val));
     checkMatch();
-  }
+}
 
-  function checkMatch() {
-    const p = document.getElementById('passInput').value;
-    const c = document.getElementById('confirmInput').value;
-    const m = document.getElementById('matchMsg');
-    if (!c) { m.textContent = ''; m.className = ''; return; }
+function checkMatch() {
+  const p = document.getElementById('passInput').value;
+  const c = document.getElementById('confirmInput').value;
+  const m = document.getElementById('matchMsg');
+  if (!c) { m.textContent = ''; m.className = ''; return; }
     if (p === c) { m.textContent = '✓ Passwords match';      m.className = 'ok'; }
     else         { m.textContent = '✗ Passwords do not match'; m.className = 'fail'; }
-  }
+}
 
-  document.getElementById('signupForm').addEventListener('submit', function (e) {
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+document.getElementById('signupForm').addEventListener('submit', function (e) {
+    e.preventDefault();
     hideErr();
-
+    
+    const fullname = document.querySelector('input[name="fullname"]').value.trim();
+    const email = document.querySelector('input[name="email"]').value.trim();
     const pass    = document.getElementById('passInput').value;
     const confirm = document.getElementById('confirmInput').value;
     const len = pass.length >= 8;
     const up  = /[A-Z]/.test(pass);
     const num = /[0-9]/.test(pass);
     const sp  = /[!@#$%^&*(),.?":{}|<>]/.test(pass);
+
+    if (!fullname || !email || !pass || !confirm) {
+      e.preventDefault();
+      showErr('Please fill all required fields.');
+      return;
+    }
+    
+    if (!isValidEmail(email)) {
+      e.preventDefault();
+      showErr('Please enter a valid email address.');
+      return;
+    }
 
     if (!len || !up || !num || !sp) {
       e.preventDefault();
@@ -383,11 +432,11 @@
       return;
     }
 
-    // Inject full international phone number
     if (itiInstance) {
       document.getElementById('phoneInput').value = itiInstance.getNumber();
     }
   });
+
 </script>
 </body>
 </html>
