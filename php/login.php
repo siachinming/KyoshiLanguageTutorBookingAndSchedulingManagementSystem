@@ -1,3 +1,4 @@
+<?php session_start()?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -57,13 +58,7 @@
           </div>
           <a href="forgotpassword.php">Forgot password?</a>
         </div>
-        <!-- Add this inside your form, above the Login button -->
-<?php if (!empty($_GET['error'])): ?>
-  <div class="alert alert-danger mb-3" role="alert">
-    <i class="bi bi-exclamation-circle me-2"></i>
-    <?php echo htmlspecialchars($_GET['error']); ?>
-  </div>
-<?php endif; ?>
+        
         <button type="submit" class="btn btn-main text-white">Login</button>
 
       </form>
@@ -79,6 +74,37 @@
 </div>
 
 <script src="../js/login.js"></script>
+<div id="toast" style="
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e1e1e;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 9999;
+  white-space: nowrap;
+"></div>
 
+<script>
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => toast.style.opacity = '0', 3000);
+}
+
+<?php if (isset($_SESSION['error'])): ?>
+  showToast("<?php echo addslashes($_SESSION['error']); unset($_SESSION['error']); ?>");
+<?php endif; ?>
+
+<?php if (isset($_SESSION['success'])): ?>
+  showToast("<?php echo addslashes($_SESSION['success']); unset($_SESSION['success']); ?>");
+<?php endif; ?>
+</script>
 </body>
 </html>

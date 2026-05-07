@@ -31,16 +31,16 @@ if (!password_verify($password, $user['password'])) {
     exit();
 }
 
-$_SESSION['user_id']  = $user['id'];
-$_SESSION['fullname'] = $user['fullname'];
-$_SESSION['email']    = $user['email'];
-$_SESSION['role']     = $user['role'];
-
 if ($user['role'] === 'tutor' && $user['status'] !== 'approved') {
     $_SESSION['error'] = "Your tutor account is still pending admin approval.";
     header("Location: login.php");
     exit();
 }
+
+$_SESSION['user_id']  = $user['id'];
+$_SESSION['fullname'] = $user['fullname'];
+$_SESSION['email']    = $user['email'];
+$_SESSION['role']     = $user['role'];
 
 if ($user['role'] === 'admin') {
     header("Location: admin_dashboard.php");
