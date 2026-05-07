@@ -64,3 +64,14 @@
   z-index: 10;
   color: gray;
 }
+
+.btn-back {
+  background: transparent;
+  border: 1px solid #000000;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #64748b;
+  margin-bottom: 16px;
+}

@@ -12,6 +12,7 @@ $email      = trim($_POST['email']            ?? '');
 $password   = $_POST['password']              ?? '';
 $confirm    = $_POST['confirm_password']      ?? '';
 $phone      = trim($_POST['phone']            ?? '');
+$role       = trim($_POST['role']             ?? '');
 $experience = intval($_POST['experience']     ?? 0);
 $rate       = trim($_POST['rate']             ?? '');
 $bio        = trim($_POST['bio']              ?? '');
@@ -96,6 +97,28 @@ if ($role === 'tutor' && !empty($_FILES['profile_pic']['name'])) {
         $profile_pic = $filename;
     }
 }
+// ── Handle languages (tutor only) ───────────────────────────────
+$languages = '';
+if ($role === 'tutor' && !empty($_POST['languages'])) {
+    $languages = implode(',', $_POST['languages']);
+}
+
+// ── Certificate upload (tutor only) ─────────────────────────────
+$certificate = '';
+if ($role === 'tutor' && !empty($_FILES['certificate']['name'])) {
+    $uploadDir = '../uploads/certificates/';
+
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+
+    $ext     = strtolower(pathinfo($_FILES['certificate']['name'], PATHINFO_EXTENSION));
+    $filename = 'cert_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+
+    if (move_uploaded_file($_FILES['certificate']['tmp_name'], $uploadDir . $filename)) {
+        $certificate = $filename;
+    }
+}
 
 // ── Hash password ────────────────────────────────────────────────
 $hashed = password_hash($password, PASSWORD_DEFAULT);
@@ -127,7 +150,18 @@ if (!$stmt->execute()) {
     header("Location: signup.php");
     exit();
 }
+$newUserId = $conn->insert_id;  
 $stmt->close();
+
+if ($role === 'student' && !empty($_POST['preferred_languages'])) {
+    $langStmt = $conn->prepare("INSERT INTO student_preferences (user_id, language) VALUES (?, ?)");
+    foreach ($_POST['preferred_languages'] as $lang) {
+        $lang = trim($lang);
+        $langStmt->bind_param("is", $newUserId, $lang);
+        $langStmt->execute();
+    }
+    $langStmt->close();
+}
 
 // ── Success ──────────────────────────────────────────────────────
 $_SESSION['success'] = "Account created successfully! Please log in.";

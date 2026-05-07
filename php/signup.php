@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign Up - Kyoshi</title>
+  <title>Sign Up </title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
@@ -74,7 +74,7 @@
 
     .btn-back {
       background: transparent;
-      border: 1px solid #cbd5e1;
+      border: 1px solid #000000;
       border-radius: 8px;
       padding: 5px 12px;
       font-size: 13px;
@@ -168,20 +168,6 @@
   <div class="signup-right">
     <div class="signup-box">
 
-      <?php if (isset($_SESSION['error'])): ?>
-        <div class="alert alert-danger">
-          <?php echo htmlspecialchars($_SESSION['error'], ENT_QUOTES, 'UTF-8'); unset($_SESSION['error']); ?>
-        </div>
-      <?php endif; ?>
-
-      <?php if (isset($_SESSION['success'])): ?>
-        <div class="alert alert-success">
-          <?php echo htmlspecialchars($_SESSION['success'], ENT_QUOTES, 'UTF-8'); unset($_SESSION['success']); ?>
-        </div>
-      <?php endif; ?>
-
-      <input type="hidden" name="role" id="roleInput">
-
       <!-- STEP 1: Role selection -->
       <div id="roleStep">
         <h3 class="fw-bold mb-1">Create Account</h3>
@@ -206,9 +192,6 @@
         <div id="errBox"></div>
 
         <form action="signup_process.php" method="POST" enctype="multipart/form-data" id="signupForm" novalidate>
-
-          <!-- Common fields -->
-          <!-- this hidden field is what actually gets submitted -->
           <input type="hidden" name="role" id="roleSubmit">
           <input type="text"  name="fullname" class="form-control mb-2" placeholder="Full Name" required>
           <input type="email" name="email"    class="form-control mb-2" placeholder="Email Address" required>
@@ -241,7 +224,37 @@
           <div id="matchMsg"></div>
 
           <input type="tel" name="phone" id="phoneInput" class="form-control mb-2" placeholder="Phone Number (Optional)">
+          <div id="studentFields" style="display:none;">
+  <hr class="my-3">
+  <p class="text-muted mb-2" style="font-size:13px;">Languages You Want to Learn</p>
 
+  <div class="lang-group">
+    <label class="lang-box">
+      <input type="checkbox" name="preferred_languages[]" value="English">
+      <span>🇬🇧 English</span>
+    </label><br>
+
+    <label class="lang-box">
+      <input type="checkbox" name="preferred_languages[]" value="Japanese">
+      <span>🇯🇵 Japanese</span>
+    </label><br>
+
+    <label class="lang-box">
+      <input type="checkbox" name="preferred_languages[]" value="Mandarin">
+      <span>🇨🇳 Mandarin</span>
+    </label><br>
+
+    <label class="lang-box">
+      <input type="checkbox" name="preferred_languages[]" value="Malay">
+      <span>🇲🇾 Malay</span>
+    </label><br>
+
+    <label class="lang-box">
+      <input type="checkbox" name="preferred_languages[]" value="Korean">
+      <span>🇰🇷 Korean</span>
+    </label><br>
+  </div>
+  </div>
           <div id="tutorFields" style="display:none;">
             <hr class="my-3">
             
@@ -302,7 +315,6 @@
 
   function selectRole(el, role) {
     currentRole = role;
-    document.getElementById('roleInput').value = role;
     document.querySelectorAll('.role-box').forEach(b => b.classList.remove('active'));
     el.classList.add('active');
     const left = document.getElementById('signupLeft');
@@ -316,6 +328,7 @@
     document.getElementById('roleStep').style.display = 'none';
     document.getElementById('formStep').style.display = 'block';
     document.getElementById('formTitle').textContent  = currentRole === 'tutor' ? 'Tutor Sign Up' : 'Student Sign Up';
+    document.getElementById('studentFields').style.display = currentRole === 'student' ? 'block' : 'none';
     document.getElementById('tutorFields').style.display = currentRole === 'tutor' ? 'block' : 'none';
     document.getElementById('submitBtn').textContent  = currentRole === 'tutor' ? 'Submit Tutor Application' : 'Create Account';
 
@@ -334,7 +347,7 @@
     document.getElementById('formStep').style.display = 'none';
     document.getElementById('roleStep').style.display = 'block';
     currentRole = '';
-    document.getElementById('roleInput').value = '';
+    document.getElementById('roleSubmit').value = '';
     document.querySelectorAll('.role-box').forEach(b => b.classList.remove('active'));
     hideErr();
     document.getElementById('rulesBox').style.display = 'none';
@@ -436,6 +449,38 @@ document.getElementById('signupForm').addEventListener('submit', function (e) {
     }
   });
 
+</script>
+<div id="toast" style="
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e1e1e;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 9999;
+  white-space: nowrap;
+"></div>
+<script>
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => toast.style.opacity = '0', 3000);
+}
+
+<?php if (isset($_SESSION['error'])): ?>
+  showToast("<?php echo addslashes($_SESSION['error']); unset($_SESSION['error']); ?>");
+<?php endif; ?>
+
+<?php if (isset($_SESSION['success'])): ?>
+  showToast("<?php echo addslashes($_SESSION['success']); unset($_SESSION['success']); ?>");
+  setTimeout(() => window.location.href = 'login.php', 3000);
+<?php endif; ?>
 </script>
 </body>
 </html>

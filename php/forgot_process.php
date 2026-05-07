@@ -29,10 +29,8 @@ $sql2 = "INSERT INTO password_resets (email, token, created_at) VALUES ('$email'
          ON DUPLICATE KEY UPDATE token = '$token', created_at = NOW()";
 $conn->query($sql2); // ✅ this line was missing!
 
-// RESET LINK
 $resetLink = "http://localhost/kyoshi/php/reset_password.php?token=$token";
 
-// SEND EMAIL
 $mail = new PHPMailer(true);
 
 try {

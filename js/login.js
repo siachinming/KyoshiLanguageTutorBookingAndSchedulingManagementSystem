@@ -12,3 +12,7 @@ function togglePassword() {
     icon.classList.add("bi-eye");
   }
 }
+
+function goBack() {
+  window.location.href = '../index.html';
+}

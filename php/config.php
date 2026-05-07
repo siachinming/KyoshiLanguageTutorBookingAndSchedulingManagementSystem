@@ -11,5 +11,5 @@ if (!$conn) {
 }
 
 define('SMTP_USER', 'sohisabella87@gmail.com');
-define('SMTP_PASS', 'your-new-app-password');
+define('SMTP_PASS', 'plvq ersb kkvv vlir');
 ?>

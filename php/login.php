@@ -12,14 +12,7 @@
 </head>
 
 <body>
-<?php if (isset($_SESSION['error'])): ?>
-<div id="errBox" class="alert alert-danger">
-  <?php 
-    echo $_SESSION['error']; 
-    unset($_SESSION['error']);
-  ?>
-</div>
-<?php endif; ?>
+
 <div class="login-container">
 
   <div class="login-left">
@@ -29,7 +22,8 @@
   <div class="login-right">
 
     <div class="login-box">
-      <button type="button" class="btn-back" onclick="goBack()">← Back</button>
+      <button type="button" class="btn-back" onclick="window.location.href='../index.html'">← Back</button>
+
       <h3 class="fw-bold mb-4">Member Sign In</h3>
 
       <!-- FORM START -->

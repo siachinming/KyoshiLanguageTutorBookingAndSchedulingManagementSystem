@@ -308,27 +308,26 @@ $totalStudents = $studentData['total'];
       cursor:pointer;
       transition:.18s ease;
     }
-    
     .btn-logout{
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    text-decoration:none;
-    width:100%;
-    border-radius:999px;
-    padding:12px 14px;
-    font-weight:800;
-    font-size:13px;
-    background:#ff3b3b;
-    color:white;
-    box-shadow:0 10px 24px rgba(255,59,59,.25);
-    transition:.2s ease;
-    }
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  text-decoration:none;
+  width:100%;
+  border-radius:999px;
+  padding:12px 14px;
+  font-weight:800;
+  font-size:13px;
+  background:#ff3b3b;
+  color:white;
+  box-shadow:0 10px 24px rgba(255,59,59,.25);
+  transition:.2s ease;
+}
 
-    .btn-logout:hover{
-    background:#e60000;
-    transform:translateY(-1px);
-    }
+.btn-logout:hover{
+  background:#e60000;
+  transform:translateY(-1px);
+}
 
     .btn-primary{
       background:var(--blue);
@@ -1031,7 +1030,7 @@ $totalStudents = $studentData['total'];
             <span class="icon-dot"></span>
           </button>
 
-          <button class="profile" onclick="openDrawer('Admin profile','Signed in as <?php echo htmlspecialchars($displayName); ?>.')">
+          <button class="profile" onclick="openDrawer('Admin profile','Signed in as <?php echo htmlspecialchars($displayName); ?>. Later, this can be connected to your PHP session and database.')">
             <img src="../assets/img/student.jpg" alt="Admin avatar">
             <span><?php echo htmlspecialchars($displayName); ?></span>
           </button>

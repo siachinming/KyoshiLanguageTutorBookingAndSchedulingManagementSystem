@@ -18,7 +18,7 @@ if ($password !== $confirm_password) {
 }
 
 if (strlen($password) < 8) {
-    header("Location: reset_password.php?token=$token&error=Password+must+be+at+least+6+characters.");
+    header("Location: reset_password.php?token=$token&error=Password+must+be+at+least+8+characters.");
     exit();
 }
 
@@ -42,7 +42,7 @@ $sql3 = "DELETE FROM password_resets WHERE token = '$token'";
 $conn->query($sql3);
 
 header("Location: login.php?success=Password+reset+successful!+You+can+now+log+in.");
+$conn->close();
 exit();
 
-$conn->close();
 ?>
