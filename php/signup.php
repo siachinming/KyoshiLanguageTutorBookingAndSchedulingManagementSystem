@@ -395,7 +395,6 @@ function isValidEmail(email) {
 }
 
 document.getElementById('signupForm').addEventListener('submit', function (e) {
-    e.preventDefault();
     hideErr();
     
     const fullname = document.querySelector('input[name="fullname"]').value.trim();
