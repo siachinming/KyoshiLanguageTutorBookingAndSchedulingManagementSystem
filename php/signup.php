@@ -225,36 +225,50 @@
 
           <input type="tel" name="phone" id="phoneInput" class="form-control mb-2" placeholder="Phone Number (Optional)">
           <div id="studentFields" style="display:none;">
-  <hr class="my-3">
-  <p class="text-muted mb-2" style="font-size:13px;">Languages You Want to Learn</p>
+          <hr class="my-3">
+          <p class="text-muted mb-2" style="font-size:13px;">Languages You Want to Learn</p>
 
-  <div class="lang-group">
-    <label class="lang-box">
-      <input type="checkbox" name="preferred_languages[]" value="English">
-      <span>🇬🇧 English</span>
-    </label><br>
+          <div class="lang-group">
+            <label class="lang-box">
+              <input type="checkbox" name="preferred_languages[]" value="English">
+              <span>🇬🇧 English</span>
+            </label><br>
 
-    <label class="lang-box">
-      <input type="checkbox" name="preferred_languages[]" value="Japanese">
-      <span>🇯🇵 Japanese</span>
-    </label><br>
+            <label class="lang-box">
+              <input type="checkbox" name="preferred_languages[]" value="Japanese">
+              <span>🇯🇵 Japanese</span>
+            </label><br>
 
-    <label class="lang-box">
-      <input type="checkbox" name="preferred_languages[]" value="Mandarin">
-      <span>🇨🇳 Mandarin</span>
-    </label><br>
+            <label class="lang-box">
+              <input type="checkbox" name="preferred_languages[]" value="Mandarin">
+              <span>🇨🇳 Mandarin</span>
+            </label><br>
 
-    <label class="lang-box">
-      <input type="checkbox" name="preferred_languages[]" value="Malay">
-      <span>🇲🇾 Malay</span>
-    </label><br>
+            <label class="lang-box">
+              <input type="checkbox" name="preferred_languages[]" value="Malay">
+              <span>🇲🇾 Malay</span>
+            </label><br>
 
-    <label class="lang-box">
-      <input type="checkbox" name="preferred_languages[]" value="Korean">
-      <span>🇰🇷 Korean</span>
-    </label><br>
-  </div>
-  </div>
+            <label class="lang-box">
+              <input type="checkbox" name="preferred_languages[]" value="Korean">
+              <span>🇰🇷 Korean</span>
+            </label><br>
+          </div>
+
+          <hr class="my-3">
+          <p class="text-muted mb-2" style="font-size:13px;">Preferred Learning Mode</p>
+          <div class="d-flex gap-3 mb-2">
+            <label style="display:flex;align-items:center;gap:8px;border:2px solid #ddd;border-radius:10px;padding:10px 16px;cursor:pointer;font-size:14px;flex:1;justify-content:center;">
+              <input type="checkbox" name="learning_mode[]" value="online">
+              <i class="bi bi-laptop"></i> Online
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;border:2px solid #ddd;border-radius:10px;padding:10px 16px;cursor:pointer;font-size:14px;flex:1;justify-content:center;">
+              <input type="checkbox" name="learning_mode[]" value="face_to_face">
+              <i class="bi bi-people"></i> Face to Face
+            </label>
+          </div>
+
+        </div> 
           <div id="tutorFields" style="display:none;">
             <hr class="my-3">
             
@@ -290,12 +304,32 @@
                 </label><br>
 
               </div><br>
-            <input type="number" name="experience" class="form-control mb-2" placeholder="Years of Experience" min="0">
-            <input type="text"   name="rate"       class="form-control mb-2" placeholder="Hourly Rate (RM)">
-            <textarea name="bio" class="form-control mb-2" placeholder="Short bio about yourself" rows="3"></textarea>
-            <label class="form-label text-muted" style="font-size:13px;">Profile Picture</label>
+
+            <hr class="my-3">
+            <p class="text-muted mb-2" style="font-size:13px;">Teaching Mode</p>
+            <div class="d-flex gap-3 mb-3">
+              <label style="display:flex;align-items:center;gap:8px;border:2px solid #ddd;border-radius:10px;padding:10px 16px;cursor:pointer;font-size:14px;flex:1;justify-content:center;">
+                <input type="checkbox" name="teaching_mode[]" value="online">
+                <i class="bi bi-laptop"></i> Online
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;border:2px solid #ddd;border-radius:10px;padding:10px 16px;cursor:pointer;font-size:14px;flex:1;justify-content:center;">
+                <input type="checkbox" name="teaching_mode[]" value="face_to_face">
+                <i class="bi bi-people"></i> Face to Face
+              </label>
+            </div>
+
+            <input type="number" name="experience" class="form-control mb-2" placeholder="Years of Experience" min="0" required>
+            <input type="text" name="rate" class="form-control mb-2" placeholder="Hourly Rate (RM)" required>
+            <textarea name="bio" class="form-control mb-2" placeholder="Short bio about yourself" rows="3" required></textarea>
+
+            <label class="form-label text-muted" style="font-size:13px;">
+              Profile Picture <span class="text-muted">(Optional)</span>
+            </label>
             <input type="file" name="profile_pic" class="form-control mb-2" accept="image/*">
-            <label class="form-label text-muted" style="font-size:13px;">Certificate</label>
+
+            <label class="form-label text-muted" style="font-size:13px;">
+              Certificate <span class="text-danger">*</span>
+            </label>
             <input type="file" name="certificate" class="form-control mb-2">
           </div>
 
@@ -442,6 +476,57 @@ document.getElementById('signupForm').addEventListener('submit', function (e) {
       e.preventDefault();
       showErr('Passwords do not match. Please re-enter your password.');
       return;
+    }
+
+    // ── Tutor validation ─────────────────────────────────────────
+    if (currentRole === 'tutor') {
+      const langs      = document.querySelectorAll('input[name="languages[]"]:checked');
+      const modes      = document.querySelectorAll('input[name="teaching_mode[]"]:checked');
+      const experience = document.querySelector('input[name="experience"]').value.trim();
+      const rate       = document.querySelector('input[name="rate"]').value.trim();
+      const bio        = document.querySelector('textarea[name="bio"]').value.trim();
+      const cert       = document.querySelector('input[name="certificate"]');
+
+      if (langs.length === 0) {
+        e.preventDefault();
+        showErr('Please select at least one language you teach.');
+        return;
+      }
+      if (modes.length === 0) {
+        e.preventDefault();
+        showErr('Please select at least one teaching mode.');
+        return;
+      }
+      if (!experience) {
+        e.preventDefault();
+        showErr('Please enter your years of experience.');
+        return;
+      }
+      if (!rate) {
+        e.preventDefault();
+        showErr('Please enter your hourly rate.');
+        return;
+      }
+      if (!bio) {
+        e.preventDefault();
+        showErr('Please write a short bio about yourself.');
+        return;
+      }
+      if (!cert.files || cert.files.length === 0) {
+        e.preventDefault();
+        showErr('Please upload your certificate for verification.');
+        return;
+      }
+    }
+
+    // ── Student validation ────────────────────────────────────────
+    if (currentRole === 'student') {
+      const langs = document.querySelectorAll('input[name="preferred_languages[]"]:checked');
+      if (langs.length === 0) {
+        e.preventDefault();
+        showErr('Please select at least one language you want to learn.');
+        return;
+      }
     }
 
     if (itiInstance) {

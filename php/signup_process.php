@@ -92,12 +92,16 @@ if (!empty($_FILES['profile_pic']['name'])) {
 // ── Hash password ────────────────────────────────────────────────
 $hashed = password_hash($password, PASSWORD_DEFAULT);
 
-// ── Insert into users (clean - no tutor specific fields) ─────────
+$learning_mode = '';
+if ($role === 'student' && !empty($_POST['learning_mode'])) {
+    $learning_mode = implode(',', $_POST['learning_mode']);
+}
+
 $stmt = $conn->prepare("
-    INSERT INTO users (fullname, email, password, phone, role, profile_pic, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (fullname, email, password, phone, role, profile_pic, status, learning_mode)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ");
-$stmt->bind_param("sssssss", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status);
+$stmt->bind_param("ssssssss", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status, $learning_mode);
 
 if (!$stmt->execute()) {
     $_SESSION['error'] = "Something went wrong creating your account. Please try again.";
@@ -138,10 +142,15 @@ if ($role === 'tutor') {
         }
     }
 
+    $teaching_mode = '';
+    if (!empty($_POST['teaching_mode'])) {
+        $teaching_mode = implode(',', $_POST['teaching_mode']);
+    }
+
     $stmt2 = $conn->prepare("
-    INSERT INTO tutor_profiles (user_id, experience, rate, bio, language_certificate)
-    VALUES (?, ?, ?, ?, ?)");
-    $stmt2->bind_param("idsss", $newUserId, $experience, $rate, $bio, $certificate);
+        INSERT INTO tutor_profiles (user_id, experience, rate, bio, language_certificate, teaching_mode)
+        VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt2->bind_param("idssss", $newUserId, $experience, $rate, $bio, $certificate, $teaching_mode);
     $stmt2->execute();
     $stmt2->close();
 }
