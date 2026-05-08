@@ -30,6 +30,9 @@
       <!-- FORM START -->
       <form action="login_process.php" method="POST">
 
+      <input type="hidden" name="redirect" value="<?= $_GET['redirect'] ?? '' ?>">
+      <input type="hidden" name="lang" value="<?= $_GET['lang'] ?? '' ?>">
+
         <div class="mb-3">
           <label>Email Address</label>
           <input type="email" name="email" class="form-control" placeholder="Enter email" required>

@@ -92,16 +92,11 @@ if (!empty($_FILES['profile_pic']['name'])) {
 // ── Hash password ────────────────────────────────────────────────
 $hashed = password_hash($password, PASSWORD_DEFAULT);
 
-$learning_mode = '';
-if ($role === 'student' && !empty($_POST['learning_mode'])) {
-    $learning_mode = implode(',', $_POST['learning_mode']);
-}
-
 $stmt = $conn->prepare("
-    INSERT INTO users (fullname, email, password, phone, role, profile_pic, status, learning_mode)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (fullname, email, password, phone, role, profile_pic, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
 ");
-$stmt->bind_param("ssssssss", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status, $learning_mode);
+$stmt->bind_param("sssssss", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status);
 
 if (!$stmt->execute()) {
     $_SESSION['error'] = "Something went wrong creating your account. Please try again.";
@@ -141,16 +136,30 @@ if ($role === 'tutor') {
             $certificate = $filename;
         }
     }
-
-    $teaching_mode = '';
+    
     if (!empty($_POST['teaching_mode'])) {
-        $teaching_mode = implode(',', $_POST['teaching_mode']);
+        $modeStmt = $conn->prepare("INSERT INTO tutor_teaching_modes (user_id, mode) VALUES (?, ?)");
+        foreach ($_POST['teaching_mode'] as $mode) {
+            $mode = trim($mode);
+            $modeStmt->bind_param("is", $newUserId, $mode);
+            $modeStmt->execute();
+        }
+        $modeStmt->close();
+    }
+
+    // Insert tutor location if face to face selected
+    if ($role === 'tutor' && !empty($_POST['tutor_location'])) {
+        $loc = trim($_POST['tutor_location']);
+        $locStmt = $conn->prepare("INSERT INTO user_locations (user_id, location) VALUES (?, ?)");
+        $locStmt->bind_param("is", $newUserId, $loc);
+        $locStmt->execute();
+        $locStmt->close();
     }
 
     $stmt2 = $conn->prepare("
-        INSERT INTO tutor_profiles (user_id, experience, rate, bio, language_certificate, teaching_mode)
-        VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt2->bind_param("idssss", $newUserId, $experience, $rate, $bio, $certificate, $teaching_mode);
+        INSERT INTO tutor_profiles (user_id, experience, rate, bio, language_certificate)
+        VALUES (?, ?, ?, ?, ?)");
+    $stmt2->bind_param("idsss", $newUserId, $experience, $rate, $bio, $certificate);
     $stmt2->execute();
     $stmt2->close();
 }
@@ -164,6 +173,26 @@ if ($role === 'student' && !empty($_POST['preferred_languages'])) {
         $langStmt->execute();
     }
     $langStmt->close();
+}
+
+// ── If student, insert learning modes ────────────────────────────
+if ($role === 'student' && !empty($_POST['learning_mode'])) {
+    $modeStmt = $conn->prepare("INSERT INTO student_learning_modes (user_id, mode) VALUES (?, ?)");
+    foreach ($_POST['learning_mode'] as $mode) {
+        $mode = trim($mode);
+        $modeStmt->bind_param("is", $newUserId, $mode);
+        $modeStmt->execute();
+    }
+    $modeStmt->close();
+}
+
+// Insert student location if face to face selected
+if ($role === 'student' && !empty($_POST['student_location'])) {
+    $loc = trim($_POST['student_location']);
+    $locStmt = $conn->prepare("INSERT INTO user_locations (user_id, location) VALUES (?, ?)");
+    $locStmt->bind_param("is", $newUserId, $loc);
+    $locStmt->execute();
+    $locStmt->close();
 }
 
 // ── Success ──────────────────────────────────────────────────────

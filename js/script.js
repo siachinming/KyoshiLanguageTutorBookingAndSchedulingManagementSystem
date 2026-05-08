@@ -24,5 +24,5 @@ function moveSlide(direction) {
 
 function requireLogin(){
     alert("You must login or sign up first to book a tutor.");
-    window.location.href = "login.php";
+    window.location.href = "php/login.php";
 }

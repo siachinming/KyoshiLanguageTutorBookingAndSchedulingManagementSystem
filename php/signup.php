@@ -263,12 +263,25 @@
               <i class="bi bi-laptop"></i> Online
             </label>
             <label style="display:flex;align-items:center;gap:8px;border:2px solid #ddd;border-radius:10px;padding:10px 16px;cursor:pointer;font-size:14px;flex:1;justify-content:center;">
-              <input type="checkbox" name="learning_mode[]" value="face_to_face">
-              <i class="bi bi-people"></i> Face to Face
-            </label>
+            <input type="checkbox" name="learning_mode[]" value="face_to_face" id="studentFaceToFace">
+            <i class="bi bi-people"></i> Face to Face
+          </label>
           </div>
 
-        </div> 
+          <div id="studentLocationBox" style="display:none; margin-top:10px;">
+            <p class="text-muted mb-2" style="font-size:13px;">
+            <img src="../assets/img/location.png" alt="Location" width="16" height="16">
+            Preferred Location</p>
+            <select name="student_location" class="form-control mb-2">
+              <option value="">-- Select City --</option>
+              <option value="Kuala Lumpur">Kuala Lumpur</option>
+              <option value="Penang">Penang</option>
+              <option value="Johor Bahru">Johor Bahru</option>
+              <option value="Kota Kinabalu">Kota Kinabalu</option>
+            </select>
+          </div>
+
+          </div>
           <div id="tutorFields" style="display:none;">
             <hr class="my-3">
             
@@ -313,11 +326,22 @@
                 <i class="bi bi-laptop"></i> Online
               </label>
               <label style="display:flex;align-items:center;gap:8px;border:2px solid #ddd;border-radius:10px;padding:10px 16px;cursor:pointer;font-size:14px;flex:1;justify-content:center;">
-                <input type="checkbox" name="teaching_mode[]" value="face_to_face">
-                <i class="bi bi-people"></i> Face to Face
-              </label>
+              <input type="checkbox" name="teaching_mode[]" value="face_to_face" id="tutorFaceToFace">
+              <i class="bi bi-people"></i> Face to Face
+            </label>
             </div>
 
+            <div id="tutorLocationBox" style="display:none; margin-top:10px; margin-bottom:10px;">
+              <p class="text-muted mb-2 d-flex align-items-center gap-1" style="font-size:13px;"><img src="../assets/img/location.png" alt="Location" width="16" height="16">
+              Your Teaching Location</p>
+              <select name="tutor_location" class="form-control mb-2">
+                <option value="">-- Select City --</option>
+                <option value="Kuala Lumpur">Kuala Lumpur</option>
+                <option value="Penang">Penang</option>
+                <option value="Johor Bahru">Johor Bahru</option>
+                <option value="Kota Kinabalu">Kota Kinabalu</option>
+              </select>
+            </div>
             <input type="number" name="experience" class="form-control mb-2" placeholder="Years of Experience" min="0" required>
             <input type="text" name="rate" class="form-control mb-2" placeholder="Hourly Rate (RM)" required>
             <textarea name="bio" class="form-control mb-2" placeholder="Short bio about yourself" rows="3" required></textarea>
@@ -512,6 +536,15 @@ document.getElementById('signupForm').addEventListener('submit', function (e) {
         showErr('Please write a short bio about yourself.');
         return;
       }
+      const tutorFTF = document.getElementById('tutorFaceToFace');
+      if (tutorFTF && tutorFTF.checked) {
+        const loc = document.querySelector('select[name="tutor_location"]').value;
+        if (!loc) {
+          e.preventDefault();
+          showErr('Please select your teaching city for Face to Face sessions.');
+          return;
+        }
+}
       if (!cert.files || cert.files.length === 0) {
         e.preventDefault();
         showErr('Please upload your certificate for verification.');
@@ -521,19 +554,28 @@ document.getElementById('signupForm').addEventListener('submit', function (e) {
 
     // ── Student validation ────────────────────────────────────────
     if (currentRole === 'student') {
-      const langs = document.querySelectorAll('input[name="preferred_languages[]"]:checked');
-      if (langs.length === 0) {
+    const langs = document.querySelectorAll('input[name="preferred_languages[]"]:checked');
+    if (langs.length === 0) {
+      e.preventDefault();
+      showErr('Please select at least one language you want to learn.');
+      return;
+    }
+    const studentFTF = document.getElementById('studentFaceToFace');
+    if (studentFTF && studentFTF.checked) {
+      const loc = document.querySelector('select[name="student_location"]').value;
+      if (!loc) {
         e.preventDefault();
-        showErr('Please select at least one language you want to learn.');
+        showErr('Please select your preferred city for Face to Face lessons.');
         return;
       }
     }
+  }
 
     if (itiInstance) {
       document.getElementById('phoneInput').value = itiInstance.getNumber();
     }
   });
-
+</script>
 </script>
 <div id="toast" style="
   position: fixed;
@@ -566,6 +608,34 @@ function showToast(msg) {
   showToast("<?php echo addslashes($_SESSION['success']); unset($_SESSION['success']); ?>");
   setTimeout(() => window.location.href = 'login.php', 3000);
 <?php endif; ?>
+</script>
+
+<script>
+// Show/hide location box based on Face to Face checkbox
+document.addEventListener('change', function(e) {
+  if (e.target.name === 'learning_mode[]' || e.target.name === 'teaching_mode[]') {
+    
+    // Student
+    const studentFTF = document.getElementById('studentFaceToFace');
+    if (studentFTF) {
+      document.getElementById('studentLocationBox').style.display 
+        = studentFTF.checked ? 'block' : 'none';
+      if (!studentFTF.checked) {
+        document.querySelector('select[name="student_location"]').value = '';
+      }
+    }
+
+    // Tutor
+    const tutorFTF = document.getElementById('tutorFaceToFace');
+    if (tutorFTF) {
+      document.getElementById('tutorLocationBox').style.display 
+        = tutorFTF.checked ? 'block' : 'none';
+      if (!tutorFTF.checked) {
+        document.querySelector('select[name="tutor_location"]').value = '';
+      }
+    }
+  }
+});
 </script>
 </body>
 </html>

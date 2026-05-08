@@ -4,7 +4,8 @@ include "config.php";
 
 $email = trim($_POST['email'] ?? '');
 $password = $_POST['password'] ?? '';
-
+$redirect = $_POST['redirect'] ?? 'student_dashboard.php';
+$lang = $_POST['lang'] ?? '';
 // empty check
 if (empty($email) || empty($password)) {
     $_SESSION['error'] = "Please enter email and password.";
@@ -42,6 +43,18 @@ $_SESSION['fullname'] = $user['fullname'];
 $_SESSION['email']    = $user['email'];
 $_SESSION['role']     = $user['role'];
 
+
+if ($redirect === 'search_tutors.php') {
+
+    if ($lang !== '') {
+        header("Location: search_tutors.php?lang=" . urlencode($lang));
+    } else {
+        header("Location: search_tutors.php");
+    }
+    exit();
+}
+
+// normal role routing fallback
 if ($user['role'] === 'admin') {
     header("Location: admin_dashboard.php");
 } elseif ($user['role'] === 'student') {
