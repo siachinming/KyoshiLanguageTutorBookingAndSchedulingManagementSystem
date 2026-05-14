@@ -91,13 +91,13 @@ if (!empty($_FILES['profile_pic']['name'])) {
 
 // ── Hash password ────────────────────────────────────────────────
 $hashed = password_hash($password, PASSWORD_DEFAULT);
-
+$verify_token = bin2hex(random_bytes(32));
+$is_verified = 0;
 $stmt = $conn->prepare("
-    INSERT INTO users (fullname, email, password, phone, role, profile_pic, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (fullname, email, password, phone, role, profile_pic, status, verification_token, is_verified)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");
-$stmt->bind_param("sssssss", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status);
-
+$stmt->bind_param("ssssssssi", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status, $verify_token, $is_verified);
 if (!$stmt->execute()) {
     $_SESSION['error'] = "Something went wrong creating your account. Please try again.";
     header("Location: signup.php");

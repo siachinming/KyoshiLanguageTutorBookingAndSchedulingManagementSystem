@@ -74,6 +74,17 @@ while ($row = $result->fetch_assoc()) {
     $allTutors[] = $row;
 }
 
+$favTutors = [];
+
+$stmt = $conn->prepare("SELECT tutor_id FROM student_favourites WHERE student_id = ?");
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$res = $stmt->get_result();
+
+while ($row = $res->fetch_assoc()) {
+    $favTutors[] = $row['tutor_id'];
+}
+
 $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
 ?>
 <!DOCTYPE html>
@@ -371,6 +382,27 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
 .lang-scroll-wrapper{
     width:100%;
 }
+
+.fav-btn{
+  width:36px;
+  height:36px;
+  border-radius:12px;
+  border:1.5px solid rgba(46,42,59,.14);
+  background:white;
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  font-size:16px;
+  color:#aaa;
+  transition:.2s;
+}
+
+.fav-btn.active{
+  background:linear-gradient(135deg,#ff6b9d,#ff8fb1);
+  color:white;
+  border-color:#ff6b9d;
+  box-shadow:0 6px 14px rgba(231,90,155,.3);
+}
   </style>
 </head>
 <body>
@@ -386,7 +418,7 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
         <a href="student_dashboard.php">Overview</a>
         <a href="student_dashboard.php#preferences">Learning Goals</a>
         <a class="active" href="find_language.php">Find Language</a>
-        <a href="student_dashboard.php#bookings">Bookings</a>
+        <a href="booking_status.php">Bookings</a>
         <a href="student_dashboard.php#progress">Progress</a>
         <a href="student_dashboard.php#payments">Payments</a>
       </div>
@@ -501,6 +533,19 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
           <button class="fchip" data-type="mode" data-value="face_to_face" onclick="toggleFChip(this);filterCards();">🤝 Face to Face</button>
         </div>
       </div>
+      <div class="filter-group" id="locationGroup" style="display:none;">
+    <label>
+        <i class="bi bi-geo-alt-fill" style="color:#E75A9B;margin-right:4px;"></i>
+        Location
+    </label>
+
+    <div class="filter-chips">
+        <button class="fchip" data-type="location" data-value="Kuala Lumpur" onclick="toggleLocation(this)">Kuala Lumpur</button>
+        <button class="fchip" data-type="location" data-value="Penang" onclick="toggleLocation(this)">Penang</button>
+        <button class="fchip" data-type="location" data-value="Johor Bahru" onclick="toggleLocation(this)">Johor Bahru</button>
+        <button class="fchip" data-type="location" data-value="Kota Kinabalu" onclick="toggleLocation(this)">Kota Kinabalu</button>
+    </div>
+    </div>
       <div class="filter-group">
         <label><i class="bi bi-star-fill" style="color:#E75A9B;margin-right:4px;"></i> Minimum Rating</label>
         <div class="filter-chips">
@@ -545,22 +590,28 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
           data-rate="<?= e($tutor['rate'] ?? 0) ?>"
           data-rating="<?= e($tutor['rating'] ?? 0) ?>"
           data-pic="<?= e($pic) ?>"
-          data-fullname="<?= e($tutor['fullname']) ?>">
-
+          data-fullname="<?= e($tutor['fullname']) ?>"
+          data-location="<?= e(strtolower($tutor['location'] ?? '')) ?>">
           <div class="tutor-card-top">
             <img src="<?= e($pic) ?>" alt="<?= e($tutor['fullname']) ?>">
             <div style="flex:1;min-width:0;">
               <p class="tutor-name"><?= e($tutor['fullname']) ?></p>
               <div class="tutor-meta">
-                <?php if ($tutor['experience']): ?><?= e($tutor['experience']) ?> years exp · <?php endif; ?>
-                <?= $tutor['review_count'] ? e($tutor['review_count']).' reviews' : 'No reviews yet' ?>
+                <?php if ($tutor['experience']): ?><?= e($tutor['experience']) ?> years experience <?php endif; ?>
+        
               </div>
-              <?php if ($tutor['rating']): ?>
-                <div class="tutor-rating">
-                  <?php for($i=1;$i<=5;$i++): ?><i class="bi bi-star<?= $i<=$stars?'-fill':'' ?>" style="color:<?= $i<=$stars?'#FFB800':'#ddd' ?>;font-size:13px;"></i><?php endfor; ?>
-                  <span style="margin-left:4px;"><?= e($tutor['rating']) ?></span>
-                </div>
-              <?php endif; ?>
+              <div class="tutor-rating">
+                <?php for($i=1;$i<=5;$i++): ?>
+                    <i class="bi bi-star<?= $i<=$stars?'-fill':'' ?>" style="color:<?= $i<=$stars?'#FFB800':'#ddd' ?>;font-size:13px;"></i>
+                <?php endfor; ?>
+                <span style="margin-left:4px;">
+                    <?php if($tutor['rating']): ?>
+                        <?= e($tutor['rating']) ?> (<?= e($tutor['review_count']) ?> reviews)
+                    <?php else: ?>
+                        No reviews yet
+                    <?php endif; ?>
+                </span>
+            </div>
             </div>
           </div>
 
@@ -579,6 +630,15 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
           <div class="tutor-card-bottom">
             <span class="tutor-price">RM <?= e($tutor['rate']) ?>/hr</span>
             <div class="tutor-actions">
+            <?php $isFav = in_array((int)$tutor['id'], array_map('intval', $favTutors)); ?>
+
+            <button 
+            class="fav-btn <?= $isFav ? 'active' : '' ?>" 
+            onclick="toggleFavourite(this)" 
+            data-id="<?= $tutor['id'] ?>">
+
+            <i class="bi <?= $isFav ? 'bi-heart-fill' : 'bi-heart' ?>"></i>
+            </button>
               <button class="compare-checkbox" onclick="toggleCompare(this)" title="Add to compare" data-id="<?= $tutor['id'] ?>">
                 <i class="bi bi-plus"></i>
               </button>
@@ -605,6 +665,7 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
 <script>
   let activeMode = [];
   let activeRating = 0;
+  let activeLocation = [];
   let activeRatingBtn = null;
 
   function toggleFilter(){
@@ -614,13 +675,26 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
   function toggleFChip(el){
     el.classList.toggle('active');
     const val = el.dataset.value;
-    if (el.classList.contains('active')) {
-      if (!activeMode.includes(val)) activeMode.push(val);
-    } else {
-      activeMode = activeMode.filter(v => v !== val);
+
+    if (el.dataset.type === "mode") {
+        if (el.classList.contains('active')) {
+        if (!activeMode.includes(val)) activeMode.push(val);
+        } else {
+        activeMode = activeMode.filter(v => v !== val);
+        }
     }
+
+    const locationGroup = document.getElementById('locationGroup');
+    if (activeMode.includes('face_to_face')) {
+        locationGroup.style.display = 'block';
+    } else {
+        locationGroup.style.display = 'none';
+        activeLocation = [];
+        document.querySelectorAll('[data-type="location"]').forEach(b => b.classList.remove('active'));
+    }
+
     updateFilterDot();
-  }
+    }
 
   function toggleRating(el){
     if (activeRatingBtn === el) {
@@ -635,6 +709,18 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
     }
     updateFilterDot();
   }
+function toggleLocation(el){
+  el.classList.toggle('active');
+  const val = el.dataset.value;
+
+  if (el.classList.contains('active')) {
+    if (!activeLocation.includes(val)) activeLocation.push(val);
+  } else {
+    activeLocation = activeLocation.filter(v => v !== val);
+  }
+
+  filterCards();
+}
 
   function updateFilterDot(){
     const from = parseFloat(document.getElementById('priceFrom').value)||0;
@@ -665,13 +751,16 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
       const modes  = (card.dataset.mode||'').split(',').map(m=>m.trim()).filter(Boolean);
       const rate   = parseFloat(card.dataset.rate||0);
       const rating = parseFloat(card.dataset.rating||0);
-
+      const location = (card.dataset.location || '').toLowerCase();
       const searchOk = q==='' || name.includes(q) || lang.includes(q);
       const priceOk  = rate>=from && rate<=to;
       const modeOk   = activeMode.length===0 || activeMode.some(m=>modes.includes(m));
       const ratingOk = activeRating===0 || rating>=activeRating;
-
-      const show = searchOk && priceOk && modeOk && ratingOk;
+      const locationOk =
+                        !activeMode.includes('face_to_face') ||
+                        activeLocation.length === 0 ||
+                        activeLocation.some(loc => location.includes(loc.toLowerCase()));
+      const show = searchOk && priceOk && modeOk && ratingOk && locationOk;
       card.style.display = show ? 'flex' : 'none';
       if (show) count++;
     });
@@ -762,7 +851,32 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
     if (fp && ft && fp.classList.contains('open') && !fp.contains(e.target) && !ft.contains(e.target)){
       fp.classList.remove('open');
     }
+
   });
+
+function toggleFavourite(btn){
+  const id = btn.dataset.id;
+
+  fetch('toggle_favourite.php', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'tutor_id=' + id
+  })
+  .then(res => res.text())
+  .then(data => {
+
+    if (data === 'added'){
+      btn.classList.add('active');
+      btn.innerHTML = '<i class="bi bi-heart-fill"></i>';
+    } 
+    else if (data === 'removed'){
+      btn.classList.remove('active');
+      btn.innerHTML = '<i class="bi bi-heart"></i>';
+    }
+    });
+          }
 </script>
 </body>
 </html>

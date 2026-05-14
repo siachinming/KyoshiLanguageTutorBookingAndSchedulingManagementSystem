@@ -70,7 +70,7 @@ if (!empty($preferredLanguages)) {
             AND ttm.mode IN ($modePlaceholders)
             GROUP BY u.id
             ORDER BY tp.rate ASC
-            LIMIT 6
+            LIMIT 4
         ");
         $stmt->bind_param($types . $modeTypes, ...[...$preferredLanguages, ...$preferredModes]);
     } else {
@@ -107,8 +107,7 @@ $favResult = $stmt->get_result();
 while ($row = $favResult->fetch_assoc()) {
     $favouriteIds[] = $row['tutor_id'];
 }
-
-// Get all tutors for search modal
+// Get all tutors for search modal - UPDATED with availability
 $allTutors = [];
 $stmt = $conn->prepare("
     SELECT u.id, u.fullname, u.profile_pic, tp.rate, tp.bio, tp.experience,
@@ -116,13 +115,22 @@ $stmt = $conn->prepare("
            GROUP_CONCAT(DISTINCT ttm.mode) as teaching_modes,
            ul.location as location,
            ROUND(AVG(r.rating), 1) as rating,
-           COUNT(r.id) as review_count
+           COUNT(r.id) as review_count,
+           GROUP_CONCAT(DISTINCT CONCAT(ta.day_of_week, '|', TIME_FORMAT(ta.start_time, '%H:%i'), '|', TIME_FORMAT(ta.end_time, '%H:%i'))) as availability,
+           GROUP_CONCAT(DISTINCT 
+               CASE 
+                   WHEN TIME(ta.start_time) < '12:00:00' THEN 'morning'
+                   WHEN TIME(ta.start_time) < '18:00:00' THEN 'afternoon'
+                   ELSE 'evening'
+               END
+           ) as time_slots
     FROM users u
     JOIN tutor_profiles tp ON u.id = tp.user_id
     LEFT JOIN tutor_languages tl ON u.id = tl.user_id
     LEFT JOIN tutor_teaching_modes ttm ON u.id = ttm.user_id
     LEFT JOIN user_locations ul ON u.id = ul.user_id
     LEFT JOIN ratings r ON u.id = r.tutor_id
+    LEFT JOIN tutor_availability ta ON u.id = ta.tutor_id
     WHERE u.role = 'tutor' AND u.status = 'approved'
     GROUP BY u.id
     ORDER BY u.fullname ASC
@@ -153,7 +161,7 @@ while ($row = $bookingResult->fetch_assoc()) {
 // Get payments for this student's bookings
 $payments = [];
 $stmt = $conn->prepare("
-    SELECT p.id, p.amount, p.payment_method, p.payment_status, p.created_at,
+    SELECT p.id, p.amount, p.payment_method, p.status, p.created_at,
            b.language, b.booking_date
     FROM payments p
     JOIN bookings b ON p.booking_id = b.id
@@ -181,12 +189,65 @@ foreach ($bookings as $b) {
     }
 }
 
-$summaryCards = [
-    ['label' => 'Upcoming Classes',  'value' => $upcomingCount,   'note' => $upcomingCount  ? 'Classes scheduled' : 'No upcoming classes', 'icon' => 'bi-calendar-event',   'tone' => 'lavender'],
-    ['label' => 'Learning Streak',   'value' => '0 days',         'note' => 'Start learning!',                                              'icon' => 'bi-lightning-charge', 'tone' => 'peach'],
-    ['label' => 'Completed Lessons', 'value' => $completedCount,  'note' => 'This semester',                                                'icon' => 'bi-check2-circle',    'tone' => 'mint'],
-    ['label' => 'Saved Tutors',      'value' => count($recommendedTutors), 'note' => 'Ready to rebook',                                     'icon' => 'bi-heart',            'tone' => 'sky'],
-];
+$firstName = explode(' ', trim($displayName))[0];
+// Get top tutor ID for the view button
+$stmtTopTutorId = $conn->prepare("
+    SELECT u.id
+    FROM users u
+    JOIN bookings b ON b.tutor_id = u.id
+    WHERE u.role = 'tutor' AND b.status = 'completed'
+    GROUP BY u.id
+    ORDER BY COUNT(b.id) DESC
+    LIMIT 1
+");
+$stmtTopTutorId->execute();
+$topTutorIdResult = $stmtTopTutorId->get_result()->fetch_assoc();
+$topTutorId = $topTutorIdResult['id'] ?? 0;
+// Get booked count for this month
+$monthStart = date('Y-m-01');
+$monthEnd = date('Y-m-t');
+
+$stmtBooked = $conn->prepare("SELECT COUNT(*) AS cnt FROM bookings WHERE student_id = ? AND created_at BETWEEN ? AND ?");
+$stmtBooked->bind_param("iss", $userID, $monthStart, $monthEnd);
+$stmtBooked->execute();
+$bookedCount = $stmtBooked->get_result()->fetch_assoc()['cnt'];
+
+// Get distinct languages count from ALL completed bookings
+$stmtLang = $conn->prepare("SELECT COUNT(DISTINCT language) AS cnt FROM bookings WHERE student_id = ? AND status = 'completed'");
+$stmtLang->bind_param("i", $userID);
+$stmtLang->execute();
+$langCount = $stmtLang->get_result()->fetch_assoc()['cnt'];
+// ── SCHEDULE: upcoming bookings for calendar dots + list ──
+$stmtSched = $conn->prepare("
+    SELECT b.id, b.language, b.booking_date, b.booking_time, b.status, b.learning_mode,
+           u.fullname AS tutor_name
+    FROM bookings b
+    JOIN users u ON b.tutor_id = u.id
+    WHERE b.student_id = ?
+      AND b.booking_date >= CURDATE()
+      AND b.status NOT IN ('cancelled','completed')
+    ORDER BY b.booking_date ASC, b.booking_time ASC
+    LIMIT 5
+");
+$stmtSched->bind_param("i", $userID);
+$stmtSched->execute();
+$schedBookings = $stmtSched->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Build JSON for JS: { "2026-05-15": [{...}, {...}], ... }
+$schedByDate = [];
+foreach ($schedBookings as $sb) {
+    $schedByDate[$sb['booking_date']][] = [
+        'id'       => $sb['id'],
+        'language' => $sb['language'],
+        'time'     => date('g:i A', strtotime($sb['booking_time'])),
+        'tutor'    => $sb['tutor_name'],
+        'status'   => $sb['status'],
+        'mode'     => $sb['learning_mode'],
+    ];
+}
+$schedJSON = json_encode($schedByDate);
+$calMonthJS = (int)date('n') - 1; // 0-indexed for JS
+$calYearJS  = (int)date('Y');
 
 $languageCards = [
     ['img' => 'japanese.webp', 'language' => 'Japanese', 'level' => 'Beginner', 'desc' => 'Daily conversation, basic phrases, and speaking confidence.',      'price' => 'RM 45', 'tag' => 'Most booked'],
@@ -252,6 +313,28 @@ function e($value) {
     }
 
     *{box-sizing:border-box}
+    * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection only on input fields and textareas */
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Optional: Allow selection on specific elements if needed */
+.selection-allowed {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
     html{scroll-behavior:smooth}
     body{
       margin:0;
@@ -531,7 +614,128 @@ function e($value) {
 
     .toast{position:fixed; left:50%; bottom:28px; transform:translate(-50%, 18px); opacity:0; pointer-events:none; z-index:99; background:#8E3F70; color:#fff; border-radius:999px; padding:12px 18px; font-size:13px; font-weight:900; transition:.2s ease}
     .toast.show{opacity:1; transform:translate(-50%,0)}
+.hero-grid-new {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 20px;
+  margin-bottom: 20px;
+}
 
+.hero-card-small {
+  background: var(--paper);
+  border: 1px solid rgba(255,255,255,.55);
+  border-radius: var(--radius-xl);
+  padding: 28px 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-card-small::after {
+  content: "";
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  right: -40px;
+  bottom: -40px;
+  background: linear-gradient(135deg, rgba(231,90,155,.32), rgba(255,195,216,.50));
+}
+
+.hero-card-small h2 {
+  margin: 12px 0 0;
+  font-size: 55px;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+
+.hero-card-small p {
+  margin: 12px 0 0;
+  color: #7A5570;
+  line-height: 1.5;
+  font-size: 20px;
+}
+
+.stats-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stat-card-small {
+  background: var(--paper);
+  border: 1px solid rgba(255,255,255,.55);
+  border-radius: var(--radius-lg);
+  padding: 16px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: transform 0.2s ease;
+}
+
+.stat-card-small:hover {
+  transform: translateY(-2px);
+}
+
+.stat-icon-small {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(231,90,155,.12);
+  color: var(--hot-pink);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.stat-content {
+  flex: 1;
+}
+
+.stat-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.stat-number {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.2;
+  margin: 4px 0 2px;
+}
+
+.stat-period {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .hero-grid-new {
+    grid-template-columns: 1fr;
+  }
+  
+  .stats-row {
+    flex-direction: row;
+  }
+  
+  .stat-card-small {
+    flex: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .stats-row {
+    flex-direction: column;
+  }
+}
     @media (max-width:1280px){
       .nav{grid-template-columns:170px minmax(0,1fr) 320px}
       .hero-grid,.main-grid,.split-grid{grid-template-columns:1fr}
@@ -559,6 +763,818 @@ function e($value) {
     .star-rating i.filled{color:#FFB800}
     .star-rating:hover i{color:#FFB800}
     .star-rating i:hover ~ i{color:#ddd}
+    /* ── SCHEDULE WIDGET ── */
+.schedule-widget {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.schedule-cal-panel, .schedule-upcoming-panel {
+    background: var(--paper);
+    border: 1px solid rgba(255,255,255,.55);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow);
+    padding: 22px;
+}
+
+.sch-cal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.sch-cal-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.sch-month-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.sch-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255,255,255,.7);
+  padding: 5px 12px;
+  border-radius: 40px;
+}
+
+.sch-cal-nav button {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--pink-dark);
+  font-weight: bold;
+  padding: 0 8px;
+}
+
+.sch-cal-nav button:hover {
+  color: var(--hot-pink);
+}
+
+#schMonthLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  min-width: 100px;
+  text-align: center;
+}
+.sch-cal-nav button:hover { background: var(--hot-pink); color: white; border-color: var(--hot-pink); }
+.sch-cal-nav span { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 80px; text-align: center; }
+.sch-cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 3px; }
+.sch-day-name { font-size: 9px; text-align: center; color: var(--muted); font-weight: 700; text-transform: uppercase; padding: 4px 0; letter-spacing: .4px; }
+.sch-day {
+    font-size: 12px; text-align: center; padding: 7px 3px;
+    border-radius: 8px; cursor: pointer; color: var(--muted);
+    position: relative; transition: .13s ease; font-weight: 500;
+}
+.sch-day:hover { background: rgba(242,138,178,.15); color: var(--ink); }
+.sch-day.today {
+    background: linear-gradient(135deg, var(--hot-pink), var(--pink));
+    color: white; font-weight: 900;
+    box-shadow: 0 4px 12px rgba(231,90,155,.3);
+}
+.sch-day.has-booking::after {
+    content: '';
+    position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--pink-dark);
+}
+.sch-day.today.has-booking::after { background: rgba(255,255,255,.7); }
+.sch-day.other-month { opacity: .28; }
+.sch-day.selected {
+    background: rgba(242,138,178,.2);
+    color: var(--pink-dark); font-weight: 700;
+    border: 1.5px solid rgba(231,90,155,.35);
+}
+.sch-day.selected.today {
+    background: linear-gradient(135deg, var(--hot-pink), var(--pink));
+    color: white; border-color: transparent;
+}
+
+/* Today badge */
+.today-badge {
+    display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(135deg, rgba(231,90,155,.08), rgba(242,138,178,.06));
+    border: 1px solid rgba(242,138,178,.2);
+    border-radius: 14px; padding: 10px 14px;
+    margin-bottom: 14px;
+}
+.today-badge-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--hot-pink); flex-shrink: 0;
+    box-shadow: 0 0 0 4px rgba(231,90,155,.15);
+}
+.today-badge-text { font-size: 12px; font-weight: 700; color: var(--ink); }
+.today-badge-date { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+/* Booking popup */
+.sch-day-detail {
+    margin-top: 14px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(242,138,178,.18);
+    transition: .2s ease;
+}
+.sch-day-detail-header {
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(231,90,155,.1), rgba(242,138,178,.06));
+    font-size: 12px; font-weight: 900; color: var(--pink-dark);
+    border-bottom: 1px solid rgba(242,138,178,.15);
+}
+.sch-booking-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(242,138,178,.08);
+    background: rgba(255,255,255,.7);
+    cursor: pointer; transition: .12s ease;
+}
+.sch-booking-item:last-child { border-bottom: none; }
+.sch-booking-item:hover { background: rgba(255,241,246,.8); }
+.sch-booking-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sch-booking-dot.confirmed { background: #3B8BE0; }
+.sch-booking-dot.pending { background: #EF9F27; }
+.sch-booking-dot.accepted { background: #9B59B6; }
+.sch-booking-dot.completed { background: #52A43C; }
+.sch-booking-time { font-size: 10px; font-weight: 700; color: var(--muted); min-width: 52px; }
+.sch-booking-info strong { font-size: 12px; font-weight: 700; color: var(--ink); display: block; }
+.sch-booking-info span { font-size: 10px; color: var(--muted); }
+.sch-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* Upcoming panel */
+.sch-upcoming-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+}
+.sch-upcoming-title { font-size: 15px; font-weight: 900; color: var(--ink); }
+.sch-upcoming-link { font-size: 12px; color: var(--pink-dark); font-weight: 700; }
+.sch-session-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid rgba(242,138,178,.1);
+}
+.sch-session-item:last-child { border-bottom: none; padding-bottom: 0; }
+.sch-session-date {
+  min-width: 55px;
+  text-align: center;
+  background: rgba(255,241,246,.9);
+  border: 1px solid rgba(242,138,178,.18);
+  border-radius: 10px;
+  padding: 6px 4px;
+  flex-shrink: 0;
+}
+
+.session-month {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--hot-pink);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.sch-session-date .day-num {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--hot-pink);
+  line-height: 1;
+}
+
+.sch-session-date .day-name {
+  font-size: 8px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.sch-session-body strong { font-size: 13px; font-weight: 700; color: var(--ink); display: block; }
+.sch-session-body span { font-size: 11px; color: var(--muted); display: block; margin-top: 2px; }
+.sch-session-badge {
+    font-size: 10px; padding: 3px 9px; border-radius: 6px; font-weight: 700; white-space: nowrap; flex-shrink: 0;margin-left: auto;
+}
+.sch-session-badge.confirmed { background: #E0EFFF; color: #2060A0; }
+.sch-session-badge.pending   { background: #FFF5DF; color: #996600; }
+.sch-session-badge.accepted  { background: #F0E8FF; color: #7030B8; }
+
+@media (max-width: 900px) {
+    .schedule-widget { grid-template-columns: 1fr; }
+}
+
+/* Current Time & Date */
+.current-datetime {
+  text-align: left;
+  padding: 12px;
+  margin-bottom: 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(242,138,178,.15);
+}
+
+.current-time {
+  font-size: 32px;
+  font-weight: 800;
+  color: black;
+  letter-spacing: 1px;
+}
+
+.current-date {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 5px;
+  font-weight: 500;
+}
+
+/* Self-Paced Learning Styles */
+.hub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.hub-header h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.hub-header p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.learning-stats {
+  display: flex;
+  gap: 15px;
+  background: rgba(231,90,155,.1);
+  padding: 6px 15px;
+  border-radius: 30px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.learning-stats i {
+  margin-right: 4px;
+  color: var(--hot-pink);
+}
+
+.learning-card {
+  display: flex;
+  gap: 16px;
+  background: rgba(255,241,246,.7);
+  border-radius: 24px;
+  padding: 18px;
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
+  border-left: 4px solid;
+}
+
+.learning-card.business {
+  border-left-color: #2E7D64;
+}
+
+.learning-card.casual {
+  border-left-color: #E87A5D;
+}
+
+.learning-card:hover {
+  transform: translateX(5px);
+  background: rgba(255,241,246,.95);
+}
+
+.learning-icon {
+  font-size: 48px;
+  flex-shrink: 0;
+}
+
+.learning-content {
+  flex: 1;
+}
+
+.learning-content h4 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.learning-content p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.learning-progress {
+  margin-bottom: 10px;
+}
+
+.progress-bar {
+  height: 6px;
+  background: rgba(46,42,59,.1);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--pink), var(--hot-pink));
+  border-radius: 10px;
+}
+
+.progress-text {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.learning-modules-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.module-tag {
+  font-size: 10px;
+  padding: 3px 10px;
+  background: rgba(231,90,155,.1);
+  border-radius: 20px;
+  color: var(--hot-pink);
+}
+
+.module-tag.locked {
+  background: rgba(123,97,120,.1);
+  color: var(--muted);
+}
+
+.learn-btn {
+  background: linear-gradient(135deg, var(--hot-pink), var(--pink));
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  height: 40px;
+  margin-top: auto;
+}
+
+.learn-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(231,90,155,.3);
+}
+
+/* Weekly Friends Challenge */
+.weekly-friends-challenge {
+  background: linear-gradient(135deg, rgba(231,90,155,.06), rgba(242,138,178,.03));
+  border-radius: 20px;
+  padding: 16px;
+  margin: 20px 0;
+  border: 1px solid rgba(242,138,178,.15);
+}
+
+.challenge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.challenge-header h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.challenge-header p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.invite-friends-btn {
+  background: linear-gradient(135deg, var(--hot-pink), var(--pink));
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.challenge-leaderboard {
+  margin-bottom: 16px;
+}
+
+.challenge-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,.5);
+  border-radius: 14px;
+  margin-bottom: 6px;
+}
+
+.challenge-item.rank-1 {
+  background: linear-gradient(135deg, rgba(255,215,0,.12), rgba(255,215,0,.04));
+  border-left: 3px solid #FFD700;
+}
+
+.challenge-item.rank-2 {
+  background: linear-gradient(135deg, rgba(192,192,192,.12), rgba(192,192,192,.04));
+  border-left: 3px solid #C0C0C0;
+}
+
+.challenge-item.rank-3 {
+  background: linear-gradient(135deg, rgba(205,127,50,.12), rgba(205,127,50,.04));
+  border-left: 3px solid #CD7F32;
+}
+
+.rank-badge {
+  font-weight: 900;
+  width: 40px;
+  font-size: 14px;
+}
+
+.friend-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.friend-xp {
+  font-weight: 800;
+  color: var(--hot-pink);
+  font-size: 12px;
+}
+
+.friend-status {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* Weekly Goal */
+.weekly-goal {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(242,138,178,.15);
+}
+
+.goal-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.goal-bar {
+  height: 8px;
+  background: rgba(46,42,59,.1);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.goal-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #FFD700, #FFA500);
+  border-radius: 10px;
+}
+
+.goal-reward {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.goal-reward i {
+  color: var(--hot-pink);
+}
+
+/* Daily Quick Practice */
+.daily-quick-practice {
+  background: linear-gradient(135deg, rgba(231,90,155,.08), rgba(242,138,178,.04));
+  border-radius: 20px;
+  padding: 14px;
+  margin-top: 8px;
+}
+
+.quick-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quick-timer {
+  color: var(--hot-pink);
+  font-size: 10px;
+}
+
+.quick-options {
+  display: flex;
+  gap: 10px;
+}
+
+.quick-btn {
+  flex: 1;
+  background: white;
+  border: 1px solid rgba(242,138,178,.3);
+  border-radius: 12px;
+  padding: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quick-btn i {
+  margin-right: 5px;
+  color: var(--hot-pink);
+}
+
+.quick-btn:hover {
+  background: var(--hot-pink);
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .learning-card {
+    flex-direction: column;
+    text-align: center;
+  }
+  .learn-btn {
+    width: 100%;
+  }
+  .quick-options {
+    flex-direction: column;
+  }
+}
+/* Tutor Stats Styles */
+.tutor-stats-header {
+  margin-bottom: 16px;
+}
+
+.tutor-stats-header h4 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.stats-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.top-tutor-card {
+  background: linear-gradient(135deg, rgba(231,90,155,.1), rgba(242,138,178,.05));
+  border-radius: 20px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(242,138,178,.2);
+}
+
+.top-tutor-badge {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 20px;
+  display: inline-block;
+  margin-bottom: 12px;
+}
+
+.top-tutor-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.top-tutor-info img {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.top-tutor-info h5 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.top-tutor-rating {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.top-tutor-stats {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 15px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(242,138,178,.15);
+  border-bottom: 1px solid rgba(242,138,178,.15);
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-number {
+  display: block;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--hot-pink);
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.view-tutor-btn {
+  display: block;
+  text-align: center;
+  background: rgba(231,90,155,.1);
+  border-radius: 30px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--hot-pink);
+  transition: all 0.2s;
+}
+
+.view-tutor-btn:hover {
+  background: var(--hot-pink);
+  color: white;
+}
+
+.quick-stats-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quick-stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255,241,246,.6);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.quick-stat i {
+  font-size: 22px;
+  color: var(--hot-pink);
+}
+
+.quick-stat strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.quick-stat span {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.empty-state-small {
+  text-align: center;
+  padding: 30px 20px;
+  background: rgba(255,241,246,.6);
+  border-radius: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .preferences-section .panel > div {
+    grid-template-columns: 1fr !important;
+    gap: 30px !important;
+  }
+}
+
+/* Top 3 Tutors Ranking Styles */
+.tutor-ranking-list {
+  margin-bottom: 20px;
+}
+
+.tutor-rank-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(255, 241, 246, 0.6);
+  border-radius: 20px;
+  margin-bottom: 10px;
+  transition: all 0.2s ease;
+}
+
+.tutor-rank-item:hover {
+  background: rgba(255, 241, 246, 0.9);
+  transform: translateX(4px);
+}
+
+.tutor-rank-item.gold {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 215, 0, 0.05));
+  border-left: 4px solid #FFD700;
+}
+
+.tutor-rank-item.silver {
+  background: linear-gradient(135deg, rgba(192, 192, 192, 0.15), rgba(192, 192, 192, 0.05));
+  border-left: 4px solid #C0C0C0;
+}
+
+.tutor-rank-item.bronze {
+  background: linear-gradient(135deg, rgba(205, 127, 50, 0.15), rgba(205, 127, 50, 0.05));
+  border-left: 4px solid #CD7F32;
+}
+
+.rank-number {
+  font-size: 32px;
+  font-weight: 800;
+  width: 55px;
+  text-align: center;
+}
+
+.rank-avatar img {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.rank-info {
+  flex: 1;
+}
+
+.rank-name {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.rank-rating {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.rank-lessons {
+  text-align: right;
+}
+
+.rank-lessons strong {
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--hot-pink);
+}
+
+.rank-lessons span {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* Two column layout */
+.preferences-section .panel > div {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .preferences-section .panel > div {
+    grid-template-columns: 1fr !important;
+  }
+}
+
   </style>
 </head>
 <body>
@@ -574,10 +1590,10 @@ function e($value) {
         </a>
 
         <div class="nav-links">
-          <a class="active" href="#overview">Overview</a>
+          <a class="active" href="student_dashboard.php">Home</a>
           <a href="#preferences">Learning Goals</a>
           <a href="find_language.php">Find Language</a>
-          <a href="#bookings">Bookings</a>
+          <a href="booking_status.php">Bookings</a>
           <a href="#progress">Progress</a>
           <a href="#payments">Payments</a>
         </div>
@@ -588,7 +1604,23 @@ function e($value) {
             <input id="globalSearch" type="text" placeholder="Search language..."
               onclick="openSearch()" readonly style="cursor:pointer;">
           </div>
-          <button class="icon-btn" onclick="showToast('Notifications coming soon')"><i class="bi bi-bell"></i><span class="dot"></span></button>
+          <div style="position:relative;">
+          <button class="icon-btn" onclick="toggleNotifications()" id="bellBtn">
+            <i class="bi bi-bell"></i>
+            <span class="dot" id="notifDot" style="display:none;"></span>
+          </button>
+
+          <!-- Notification dropdown -->
+          <div id="notifDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:20px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);width:320px;overflow:hidden;z-index:100;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(242,138,178,.15);">
+              <strong style="font-size:14px;color:#342635;">Notifications</strong>
+              <button onclick="markAllRead()" style="background:none;border:none;color:#E75A9B;font-size:12px;font-weight:900;cursor:pointer;">Mark all read</button>
+            </div>
+            <div id="notifList" style="max-height:320px;overflow-y:auto;">
+              <div style="padding:20px;text-align:center;color:#9080a0;font-size:13px;">Loading...</div>
+            </div>
+          </div>
+        </div>
           <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">
               <img src="<?= e($profilePic) ?>" alt="Student profile">
@@ -615,270 +1647,276 @@ function e($value) {
 
   <main class="container">
     <section class="hero" id="overview">
-      <div class="hero-grid">
-        <article class="hero-card glass">
-          <div class="hero-copy">
-            <div class="eyebrow"><span class="pulse"></span><span>Student dashboard</span></div>
-            <h1>Good morning, <?= e($displayName) ?>. Your language journey is ready.</h1>
-            <p>Choose the languages you want to learn, get tutor recommendations, manage bookings, and track your progress all in one place.</p>
-          </div>
-          <div class="hero-actions">
-            <button class="btn-primary" onclick="scrollToSection('preferences')">Choose Languages</button>
-            <button class="btn-soft" onclick="scrollToSection('find-language')">Find Language</button>
-            <button class="btn-link" onclick="scrollToSection('bookings')">View bookings</button>
-          </div>
-        </article>
-
-        <aside class="hero-side glass">
-          <div>
-            <div class="clock" id="clock">--:--</div>
-            <div class="date-line" id="dateText">Loading date...</div>
-          </div>
-          <?php 
-            $nextBooking = null;
-            foreach ($bookings as $b) {
-                if ($b['status'] === 'confirmed' && $b['booking_date'] >= date('Y-m-d')) {
-                    $nextBooking = $b;
-                    break;
-                }
-            }
-          ?>
-          <div class="next-card">
-            <span>Next confirmed lesson</span>
-            <?php if ($nextBooking): ?>
-              <strong><?= e($nextBooking['language']) ?> · <?= e(date('g:i A', strtotime($nextBooking['booking_time']))) ?></strong>
-              <p><?= e($nextBooking['tutor_name']) ?> · <?= e(date('d M Y', strtotime($nextBooking['booking_date']))) ?></p>
-            <?php else: ?>
-              <strong>No upcoming lessons</strong>
-              <p>Book a tutor to get started!</p>
-            <?php endif; ?>
-          </div>
-        </aside>
+  <div class="hero-grid-new">
+    <!-- Left: Smaller Hero Card -->
+    <article class="hero-card-small glass">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span><span>Student dashboard</span></div>
+        <h2>Good <span id="dynamicGreeting"></span>, <?= e($firstName) ?> ! <span id="greetingEmoji"></h2>
+        <p>Your language journey is ready. Continue where you left off.</p>
+      </div><br>
+      <div class="hero-actions">
+        <button class="btn-primary" onclick="window.location='find_language.php'">Find a tutor</button>
+        <button class="btn-soft" onclick="window.location='booking_status.php'">My bookings</button>
       </div>
-    </section>
-        <section class="section">
-      <div class="section-head">
-        <div>
-          <h2>Student Snapshot</h2>
-          <p>Quick overview of your classes, progress, and saved tutors.</p>
-        </div>
-        <a href="#progress">View progress</a>
-      </div>
-
-      <div class="overview-grid">
-        <?php foreach ($summaryCards as $card): ?>
-          <article class="stat-card glass <?= e($card['tone']) ?> searchable">
-            <div class="stat-icon"><i class="bi <?= e($card['icon']) ?>"></i></div>
-            <span><?= e($card['label']) ?></span>
-            <strong><?= e($card['value']) ?></strong>
-            <small><?= e($card['note']) ?></small>
-          </article>
-        <?php endforeach; ?>
-      </div>
-    </section>
-    <section class="section preferences-section" id="preferences">
-    <div class="panel glass">
-
-        <!-- HEADER: title left, View All right -->
-        <div class="recommend-head">
-            <h4>Recommended Tutors</h4>
-            <a href="#find-language">View All</a>
-        </div>
-
-        <!-- CARDS ROW -->
-        <div class="recommend-grid">
-            <?php foreach ($recommendedTutors as $tutor): ?>
-            <?php
-                $tutorPic = !empty($tutor['profile_pic'])
-                    ? '../uploads/profiles/' . $tutor['profile_pic']
-                    : $assetBase . '/profile-tutor.png';
-            ?>
-            <div class="tutor-card-new">
-                <div class="img-wrapper">
-                    <img src="<?= e($tutorPic) ?>" alt="<?= e($tutor['fullname']) ?>">
-                    <button type="button" class="fav-btn"
-                    onclick="toggleFav(<?= $tutor['id'] ?>, this)"
-                    style="
-                        position:absolute; top:8px; right:8px;
-                        background: <?= in_array($tutor['id'], $favouriteIds) ? 'rgba(255,220,235,0.95)' : 'rgba(255,255,255,0.88)' ?>;
-                        color: <?= in_array($tutor['id'], $favouriteIds) ? '#E75A9B' : '#aaa' ?>;
-                        border:none; border-radius:50%; width:30px; height:30px;
-                        cursor:pointer; font-size:13px; display:grid; place-items:center;
-                        box-shadow:0 2px 8px rgba(0,0,0,0.12);
-                        transition: transform .2s ease;">
-                    ❤
-                </button>
-                </div>
-                <div class="tutor-card-body">
-                    <h5><?= e($tutor['fullname']) ?></h5>
-                    <p class="meta"><?= e($tutor['languages']) ?> · RM <?= e($tutor['rate']) ?>/hr</p>
-                    <a href="tutor_profile.php?id=<?= $tutor['id'] ?>" class="view-btn">View Details</a>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-
+    </article>
+    <div class="stats-row">
+  <!-- Stat 1: Sessions Booked This Month -->
+  <div class="stat-card-small">
+    <div class="stat-icon-small"><i class="bi bi-calendar-check"></i></div>
+    <div class="stat-content">
+      <span class="stat-label">Sessions booked</span>
+      <strong class="stat-number">
+        <?php 
+        $monthStart = date('Y-m-01');
+        $monthEnd = date('Y-m-t');
+        $stmtBooked = $conn->prepare("SELECT COUNT(*) AS cnt FROM bookings WHERE student_id = ? AND created_at BETWEEN ? AND ?");
+        $stmtBooked->bind_param("iss", $userID, $monthStart, $monthEnd);
+        $stmtBooked->execute();
+        $bookedCount = $stmtBooked->get_result()->fetch_assoc()['cnt'];
+        echo (int)$bookedCount;
+        ?>
+      </strong>
+      <small class="stat-period">this month</small>
     </div>
-</section>        
+  </div>
+  
+  <!-- Stat 2: Completed Classes This Month -->
+  <div class="stat-card-small">
+    <div class="stat-icon-small"><i class="bi bi-check-circle"></i></div>
+    <div class="stat-content">
+      <span class="stat-label">Completed</span>
+      <strong class="stat-number">
+        <?php 
+        $stmtCompleted = $conn->prepare("SELECT COUNT(*) AS cnt FROM bookings WHERE student_id = ? AND status = 'completed' AND booking_date BETWEEN ? AND ?");
+        $stmtCompleted->bind_param("iss", $userID, $monthStart, $monthEnd);
+        $stmtCompleted->execute();
+        $completedCountMonth = $stmtCompleted->get_result()->fetch_assoc()['cnt'];
+        echo (int)$completedCountMonth;
+        ?>
+      </strong>
+      <small class="stat-period">classes this month</small>
+    </div>
+  </div>
+  
+  <!-- Stat 3: Languages Learned This Month -->
+  <div class="stat-card-small">
+    <div class="stat-icon-small"><i class="bi bi-chat-dots"></i></div>
+    <div class="stat-content">
+      <span class="stat-label">
+        Learned 
+      </span>
+      <strong class="stat-number">
+        <?php 
+        // Count distinct languages THIS MONTH
+        $stmtLangCount = $conn->prepare("SELECT COUNT(DISTINCT language) AS cnt FROM bookings WHERE student_id = ? AND status = 'completed' AND booking_date BETWEEN ? AND ?");
+        $stmtLangCount->bind_param("iss", $userID, $monthStart, $monthEnd);
+        $stmtLangCount->execute();
+        $langCountMonth = $stmtLangCount->get_result()->fetch_assoc()['cnt'];
+        echo (int)$langCountMonth;
+        ?>
+      </strong>
+      <small class="stat-period">languages this month <br>  <?php 
+      // Get distinct languages from completed bookings THIS MONTH
+      $stmtLangList = $conn->prepare("SELECT DISTINCT language FROM bookings WHERE student_id = ? AND status = 'completed' AND booking_date BETWEEN ? AND ?");
+      $stmtLangList->bind_param("iss", $userID, $monthStart, $monthEnd);
+      $stmtLangList->execute();
+      $langListResult = $stmtLangList->get_result();
+      $languagesThisMonth = [];
+      while ($row = $langListResult->fetch_assoc()) {
+          $languagesThisMonth[] = $row['language'];
+      }
+      
+      if (count($languagesThisMonth) > 0) {
+          echo '(' . implode(', ', $languagesThisMonth) . ')';
+      } else {
+          echo '(None)';
+      }
+      ?></small>
+    </div>
+  </div>
+</div>
+  </div>
+  <!-- ── SCHEDULE WIDGET ── -->
+<div class="schedule-widget">
 
-    <section class="section" id="find-language">
-      <div class="section-head">
-        <div>
-          <h2>Find Language</h2>
-          <p>Choose the language you want to learn, then compare suitable tutors.</p>
-        </div>
-        <a href="#preferences">Recommend tutor</a>
-      </div>
+  <!-- LEFT: Mini Calendar -->
+  <div class="schedule-cal-panel">
+    <div class="sch-cal-header">
+  <span class="sch-cal-title" style="margin-bottom:20px;">My Schedule</span> 
+  <div class="sch-month-wrapper">
+    <div class="sch-cal-nav" style="margin-bottom:20px;">
+      <button id="schPrev">‹</button>
+      <span id="schMonthLabel"></span>
+      <button id="schNext">›</button>
+    </div>
+  </div>
+</div>
+    <div class="sch-cal-grid" id="schGrid"></div>
+    <div class="sch-day-detail" id="schDayDetail" style="display:none;"></div>
+  </div>
 
-      <div class="language-grid">
-        <?php foreach ($languageCards as $card): ?>
-          <article class="language-card glass searchable">
-            <img src="<?= e($assetBase) ?>/<?= e($card['img']) ?>" alt="<?= e($card['language']) ?>">
-            <div class="language-tag"><?= e($card['tag']) ?></div>
-            <h3><?= e($card['language']) ?> · <?= e($card['level']) ?></h3>
-            <p><?= e($card['desc']) ?></p>
-            <div class="card-bottom">
-              <div class="price"><?= e($card['price']) ?></div>
-              <button class="btn-primary" onclick="showToast('<?= e($card['language']) ?> tutors opened')">View tutors</button>
-            </div>
-          </article>
-        <?php endforeach; ?>
-      </div>
-    </section>
+  <!-- RIGHT: Today + Upcoming -->
+  <div class="schedule-upcoming-panel">
+    <!-- Today badge -->
+    <!-- Current Time & Date -->
+<div class="current-datetime">
+  <div class="current-time" id="currentTime"></div>
+  <div class="current-date" id="currentDate"></div>
+</div>
+<div class="sch-upcoming-header">
+  <span class="sch-upcoming-title">Upcoming Sessions</span>
+  <a href="booking_status.php" class="sch-upcoming-link">View all →</a>
+</div><hr>
 
-    <section class="section main-grid" id="bookings">
+<?php if (empty($schedBookings)): ?>
+  <div class="sch-empty">No upcoming sessions.<br>
+    <a href="find_language.php" style="color:var(--pink-dark);font-weight:700;">Find a tutor →</a>
+  </div>
+<?php else: ?>
+  <?php 
+  $displayCount = 0;
+  $currentMonth = '';
+  foreach ($schedBookings as $sb):
+    $displayCount++;
+    if ($displayCount > 4) break; // Only show first 3
+    
+    $modeIcon = $sb['learning_mode'] === 'online' ? '💻' : '🤝';
+    $badgeClass = in_array($sb['status'], ['confirmed','pending','accepted']) ? $sb['status'] : 'pending';
+    $badgeLabel = ucfirst($sb['status']);
+    
+    // Get month name
+    $sessionMonth = date('M', strtotime($sb['booking_date']));
+    $sessionDay = date('d', strtotime($sb['booking_date']));
+    $sessionWeekday = date('D', strtotime($sb['booking_date']));
+  ?>
+  <div class="sch-session-item">
+    <div class="sch-session-date">
+      <div class="session-month"><?= $sessionMonth ?></div>
+      <div class="day-num"><?= $sessionDay ?></div>
+      <div class="day-name"><?= $sessionWeekday ?></div>
+    </div>
+    <div class="sch-session-body">
+      <strong><?= e($sb['language']) ?></strong>
+      <span><?= date('g:i A', strtotime($sb['booking_time'])) ?> · <?= e($sb['tutor_name']) ?> · <?= $modeIcon ?></span>
+    </div>
+    <span class="sch-session-badge <?= $badgeClass ?>"><?= $badgeLabel ?></span>
+  </div>
+  <?php endforeach; ?>
+  
+<?php endif; ?>
+
+</div>
+</section>
+        <section class="section preferences-section" id="preferences">
       <div class="panel glass">
-        <div class="panel-top">
+        <!-- TWO COLUMN LAYOUT inside the panel -->
+        <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: 24px;">
+          
+          <!-- LEFT SIDE: Recommended Tutors -->
           <div>
-            <h3>My Bookings</h3>
-            <p>Confirmed, pending, and completed lessons.</p>
+            <div class="recommend-head">
+              <h4>🎓 Recommended Tutors</h4>
+              <a href="search_tutors.php">View All →</a>
+            </div>
+            <div class="recommend-grid">
+              <?php foreach ($recommendedTutors as $tutor): ?>
+              <?php
+                  $tutorPic = !empty($tutor['profile_pic'])
+                      ? '../uploads/profiles/' . $tutor['profile_pic']
+                      : $assetBase . '/profile-tutor.png';
+              ?>
+              <div class="tutor-card-new">
+                  <div class="img-wrapper">
+                      <img src="<?= e($tutorPic) ?>" alt="<?= e($tutor['fullname']) ?>">
+                      <button type="button" class="fav-btn"
+                      onclick="toggleFav(<?= $tutor['id'] ?>, this)"
+                      style="
+                          position:absolute; top:8px; right:8px;
+                          background: <?= in_array($tutor['id'], $favouriteIds) ? 'rgba(255,220,235,0.95)' : 'rgba(255,255,255,0.88)' ?>;
+                          color: <?= in_array($tutor['id'], $favouriteIds) ? '#E75A9B' : '#aaa' ?>;
+                          border:none; border-radius:50%; width:30px; height:30px;
+                          cursor:pointer; font-size:13px; display:grid; place-items:center;
+                          box-shadow:0 2px 8px rgba(0,0,0,0.12);
+                          transition: transform .2s ease;">
+                      ❤
+                  </button>
+                  </div>
+                  <div class="tutor-card-body">
+                      <h5><?= e($tutor['fullname']) ?></h5>
+                      <p class="meta"><?= e($tutor['languages']) ?> · RM <?= e($tutor['rate']) ?>/hr</p>
+                      <a href="tutor_profile.php?id=<?= $tutor['id'] ?>" class="view-btn">View Details</a>
+                  </div>
+              </div>
+              <?php endforeach; ?>
+            </div>
           </div>
-          <div class="chips">
-            <button class="chip active" data-filter="all">All</button>
-            <button class="chip" data-filter="confirmed">Confirmed</button>
-            <button class="chip" data-filter="pending">Pending</button>
-            <button class="chip" data-filter="review">Completed</button>
-          </div>
-        </div>
 
-        <div class="booking-list" id="bookingList">
-          <?php if (empty($bookings)): ?>
-            <div class="empty-state">You have no bookings yet. Find a tutor to get started!</div>
-          <?php else: ?>
-            <?php foreach ($bookings as $booking):
-              $css = statusClass($booking['status']);
-              $tutorBookingPic = !empty($booking['tutor_pic'])
-                  ? '../uploads/profiles/' . $booking['tutor_pic']
-                  : $assetBase . '/profile-tutor.png';
+          <div>
+            <div class="tutor-stats-header">
+              <h4>🏆 Top Tutors Ranking</h4>
+              <span class="stats-subtitle">Most lessons taught this month</span>
+            </div>
+
+            <?php 
+            // Get top 3 tutors by lessons taught this month
+            $stmtTopTutors = $conn->prepare("
+                SELECT u.id, u.fullname, u.profile_pic, 
+                       COUNT(b.id) as total_sessions,
+                       ROUND(COALESCE(AVG(r.rating), 0), 1) as avg_rating
+                FROM users u
+                JOIN tutor_profiles tp ON u.id = tp.user_id
+                LEFT JOIN bookings b ON b.tutor_id = u.id AND b.status = 'completed' AND MONTH(b.booking_date) = MONTH(CURDATE())
+                LEFT JOIN ratings r ON r.tutor_id = u.id
+                WHERE u.role = 'tutor' AND u.status = 'approved'
+                GROUP BY u.id
+                ORDER BY total_sessions DESC
+                LIMIT 3
+            ");
+            $stmtTopTutors->execute();
+            $topTutors = $stmtTopTutors->get_result()->fetch_all(MYSQLI_ASSOC);
             ?>
-              <div class="booking-item <?= e($css) ?> searchable">
-                <div class="person-line">
-                  <img src="<?= e($tutorBookingPic) ?>" alt="<?= e($booking['tutor_name']) ?>">
-                  <div>
-                    <strong><?= e($booking['language']) ?> Lesson</strong>
-                    <span><?= e($booking['tutor_name']) ?> · <?= e(date('d M Y', strtotime($booking['booking_date']))) ?> at <?= e(date('g:i A', strtotime($booking['booking_time']))) ?></span>
+
+            <div class="tutor-ranking-list">
+              <?php if (!empty($topTutors)): ?>
+                <?php foreach ($topTutors as $index => $tutor): 
+                  $rank = $index + 1;
+                  if ($rank == 1) {
+                    $medal = '🥇';
+                    $medalColor = 'gold';
+                  } elseif ($rank == 2) {
+                    $medal = '🥈';
+                    $medalColor = 'silver';
+                  } else {
+                    $medal = '🥉';
+                    $medalColor = 'bronze';
+                  }
+                ?>
+                <div class="tutor-rank-item <?= $medalColor ?>">
+                  <div class="rank-number"><?= $medal ?></div>
+                  <div class="rank-avatar">
+                    <img src="<?= !empty($tutor['profile_pic']) ? '../uploads/profiles/' . $tutor['profile_pic'] : $assetBase . '/profile-tutor.png' ?>" alt="<?= e($tutor['fullname']) ?>">
+                  </div>
+                  <div class="rank-info">
+                    <div class="rank-name"><?= e($tutor['fullname']) ?></div>
+                    <div class="rank-rating">★ <?= $tutor['avg_rating'] ?></div>
+                  </div>
+                  <div class="rank-lessons">
+                    <strong><?= $tutor['total_sessions'] ?></strong>
+                    <span>lesson<?= $tutor['total_sessions'] != 1 ? 's' : '' ?></span>
                   </div>
                 </div>
-                <div class="lesson-info">
-                  <strong><?= e(ucfirst($booking['status'])) ?></strong>
-                  <span>Booking #<?= e($booking['id']) ?></span>
-                </div>
-                <div class="booking-actions">
-                  <span class="status <?= e($css) ?>"><?= e(ucfirst($booking['status'])) ?></span>
-                  <button class="mini-btn" onclick="showToast('Booking details opened')"><i class="bi bi-arrow-right"></i></button>
-                </div>
-              </div>
-            <?php endforeach; ?>
-          <?php endif; ?>
-        </div>
-      </div>
-
-      <!-- Saved Tutors sidebar (uses correct DB field names) -->
-      <aside class="panel glass" id="favourites">
-        <div class="panel-top">
-          <div>
-            <h3>Saved Tutors</h3>
-            <p>Tutors matching your language preferences.</p>
-          </div>
-          <a href="#find-language">Find more</a>
-        </div>
-
-        <div class="favourite-list">
-          <?php if (empty($recommendedTutors)): ?>
-            <div class="empty-state">No saved tutors yet. Set your language preferences above!</div>
-          <?php else: ?>
-            <?php foreach (array_slice($recommendedTutors, 0, 3) as $tutor):
-              $favPic = !empty($tutor['profile_pic'])
-                  ? '../uploads/profiles/' . $tutor['profile_pic']
-                  : $assetBase . '/profile-tutor.png';
-            ?>
-              <div class="favourite-item searchable">
-                <img src="<?= e($favPic) ?>" alt="<?= e($tutor['fullname']) ?>">
-                <div>
-                  <strong><?= e($tutor['fullname']) ?></strong>
-                  <span><?= e($tutor['languages'] ?? '—') ?> · RM <?= e($tutor['rate']) ?>/hr</span>
-                </div>
-                <button class="mini-btn" onclick="showToast('Tutor added to comparison')"><i class="bi bi-star-fill"></i></button>
-              </div>
-            <?php endforeach; ?>
-          <?php endif; ?>
-        </div>
-      </aside>
-    </section>
-
-    <section class="section" id="progress">
-      <div class="panel glass">
-        <div class="panel-top">
-          <div>
-            <h3>Learning Progress</h3>
-            <p>Progress tracking will be available once your tutor submits feedback.</p>
-          </div>
-        </div>
-        <div class="empty-state">No progress data yet. Complete a lesson to see your progress here.</div>
-      </div>
-    </section>
-
-    <section class="section" id="payments">
-      <div class="panel glass">
-        <div class="panel-top">
-          <div>
-            <h3>Payment Status</h3>
-            <p>Track payment proof and verified class payments.</p>
-          </div>
-        </div>
-
-        <div class="payment-table">
-          <?php if (empty($payments)): ?>
-            <div class="empty-state">No payment records found.</div>
-          <?php else: ?>
-            <table>
-              <thead>
-                <tr>
-                  <th>Class</th>
-                  <th>Amount</th>
-                  <th>Method</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php foreach ($payments as $payment):
-                  $pCss = paymentStatusClass($payment['payment_status']);
-                ?>
-                  <tr class="searchable">
-                    <td><?= e($payment['language']) ?></td>
-                    <td>RM <?= e(number_format($payment['amount'], 2)) ?></td>
-                    <td><?= e($payment['payment_method']) ?></td>
-                    <td><?= e(date('d M Y', strtotime($payment['created_at']))) ?></td>
-                    <td><span class="status <?= e($pCss) ?>"><?= e(ucfirst($payment['payment_status'])) ?></span></td>
-                  </tr>
                 <?php endforeach; ?>
-              </tbody>
-            </table>
-          <?php endif; ?>
+              <?php else: ?>
+                <div class="empty-state-small">No tutor data available yet.</div>
+              <?php endif; ?>
+            </div>
+          </div>
         </div>
       </div>
     </section>
+
+  
 
     <div style="height:38px;"></div>
   </main>
@@ -887,7 +1925,7 @@ function e($value) {
 
 <script>
   // 1. Global variables FIRST
-  let activeFilters = { langs: [], modes: [], locations: [], rating: 0 };
+  let activeFilters = { langs: [], modes: [], locations: [], days: [], timeslots: [], rating: 0 };
   let activeRatingBtn = null;
   let toastTimer;
 
@@ -978,132 +2016,388 @@ function e($value) {
       document.getElementById('searchModal').style.display = 'none';
   }
 
-  // 9. Filter functions
-  function toggleFilterPanel() {
-      const panel = document.getElementById('filterPanel');
-      const isOpen = panel.style.display !== 'none';
-      panel.style.display = isOpen ? 'none' : 'block';
-  }
+// 9. Filter functions - IMPROVED VERSION
+function toggleFilterPanel() {
+    const panel = document.getElementById('filterPanel');
+    const isOpen = panel.style.display !== 'none';
+    panel.style.display = isOpen ? 'none' : 'block';
+}
+function toggleFilterChip(el, type) {
+    const val = el.dataset.value;
+    const isActive = el.classList.contains('chip-active');
+    if (isActive) {
+        el.classList.remove('chip-active');
+        el.style.background = 'white';
+        el.style.color = '#7A5570';
+        el.style.borderColor = 'rgba(46,42,59,.12)';
+        if (type === 'lang')     activeFilters.langs     = activeFilters.langs.filter(v => v !== val);
+        if (type === 'mode')     activeFilters.modes     = activeFilters.modes.filter(v => v !== val);
+        if (type === 'location') activeFilters.locations = activeFilters.locations.filter(v => v !== val);
+        if (type === 'day')      activeFilters.days      = activeFilters.days.filter(v => v !== val);
+        if (type === 'timeslot') activeFilters.timeslots = activeFilters.timeslots.filter(v => v !== val);
+    } else {
+        el.classList.add('chip-active');
+        el.style.background = 'linear-gradient(135deg,#E75A9B,#F28AB2)';
+        el.style.color = 'white';
+        el.style.borderColor = '#E75A9B';
+        if (type === 'lang')     activeFilters.langs.push(val);
+        if (type === 'mode')     activeFilters.modes.push(val);
+        if (type === 'location') activeFilters.locations.push(val);
+        if (type === 'day')      activeFilters.days.push(val);
+        if (type === 'timeslot') activeFilters.timeslots.push(val);
+    }
+    updateFilterDot();
+}
 
-  function toggleFilterChip(el, type) {
-      const val = el.dataset.value;
-      const isActive = el.classList.contains('chip-active');
-      if (isActive) {
-          el.classList.remove('chip-active');
-          el.style.background = 'white';
-          el.style.color = '#7A5570';
-          el.style.borderColor = 'rgba(46,42,59,.12)';
-          if (type === 'lang')     activeFilters.langs     = activeFilters.langs.filter(v => v !== val);
-          if (type === 'mode')     activeFilters.modes     = activeFilters.modes.filter(v => v !== val);
-          if (type === 'location') activeFilters.locations = activeFilters.locations.filter(v => v !== val);
-      } else {
-          el.classList.add('chip-active');
-          el.style.background = 'linear-gradient(135deg,#E75A9B,#F28AB2)';
-          el.style.color = 'white';
-          el.style.borderColor = '#E75A9B';
-          if (type === 'lang')     activeFilters.langs.push(val);
-          if (type === 'mode')     activeFilters.modes.push(val);
-          if (type === 'location') activeFilters.locations.push(val);
+function checkLocationFilter() {
+    const f2fActive = document.getElementById('f2fChip').classList.contains('chip-active');
+    document.getElementById('locationFilterBox').style.display = f2fActive ? 'block' : 'none';
+    if (!f2fActive) {
+        activeFilters.locations = [];
+        document.querySelectorAll('#locationFilterChips .filter-chip').forEach(b => {
+            b.classList.remove('chip-active');
+            b.style.background = 'white'; b.style.color = '#7A5570'; b.style.borderColor = 'rgba(46,42,59,.12)';
+        });
+    }
+}
+
+function updateFilterDot() {
+    const from = parseFloat(document.getElementById('priceFrom').value) || 0;
+    const to   = parseFloat(document.getElementById('priceTo').value) || 100;
+    const hasFilters = activeFilters.langs.length > 0
+        || activeFilters.modes.length > 0
+        || activeFilters.locations.length > 0
+        || activeFilters.days?.length > 0
+        || activeFilters.timeslots?.length > 0
+        || activeFilters.rating > 0
+        || from > 0 || to < 100;
+    document.getElementById('filterDot').style.display = hasFilters ? 'block' : 'none';
+}
+
+function setRating(el, val) {
+    if (activeRatingBtn === el) {
+        el.classList.remove('chip-active');
+        el.style.background = 'white'; el.style.color = '#7A5570'; el.style.borderColor = 'rgba(46,42,59,.12)';
+        activeFilters.rating = 0;
+        activeRatingBtn = null;
+    } else {
+        if (activeRatingBtn) {
+            activeRatingBtn.classList.remove('chip-active');
+            activeRatingBtn.style.background = 'white'; activeRatingBtn.style.color = '#7A5570'; activeRatingBtn.style.borderColor = 'rgba(46,42,59,.12)';
+        }
+        el.classList.add('chip-active');
+        el.style.background = 'linear-gradient(135deg,#E75A9B,#F28AB2)';
+        el.style.color = 'white'; el.style.borderColor = '#E75A9B';
+        activeFilters.rating = val;
+        activeRatingBtn = el;
+    }
+    updateFilterDot();
+    filterTutors();
+}
+
+function clearFilters() {
+    activeFilters = { langs: [], modes: [], locations: [], days: [], timeslots: [], rating: 0 };
+    document.getElementById('priceFrom').value = 0;
+    document.getElementById('priceTo').value   = 100;
+    document.getElementById('locationFilterBox').style.display = 'none';
+    document.querySelectorAll('.filter-chip').forEach(b => {
+        b.classList.remove('chip-active');
+        b.style.background = 'white';
+        b.style.color = '#7A5570';
+        b.style.borderColor = 'rgba(46,42,59,.12)';
+    });
+    if (activeRatingBtn) {
+        activeRatingBtn.classList.remove('chip-active');
+        activeRatingBtn.style.background = 'white';
+        activeRatingBtn.style.color = '#7A5570';
+        activeRatingBtn.style.borderColor = 'rgba(46,42,59,.12)';
+        activeRatingBtn = null;
+    }
+    updateFilterDot();
+    filterTutors();
+}
+
+// IMPROVED filterTutors function - now checks availability and uses STARTS WITH for language
+function filterTutors() {
+    const searchVal = document.getElementById('tutorSearchInput').value.toLowerCase().trim();
+    const fromPrice = parseFloat(document.getElementById('priceFrom').value) || 0;
+    const toPrice   = parseFloat(document.getElementById('priceTo').value) || 100;
+
+    const items = document.querySelectorAll('.search-tutor-item');
+    let visibleCount = 0;
+
+    items.forEach(item => {
+        const langs    = (item.dataset.lang || '').split(',').map(l => l.trim().toLowerCase()).filter(Boolean);
+        const modes    = (item.dataset.mode || '').split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
+        const location = (item.dataset.location || '').toLowerCase().trim();
+        const rate     = parseFloat(item.dataset.rate || 0);
+        const rating   = parseFloat(item.dataset.rating || 0);
+        const availability = item.dataset.availability || '';
+        
+        // IMPROVED: Search matches if ANY language STARTS WITH the search term
+        let searchMatch = false;
+        if (searchVal === '') {
+            searchMatch = true;
+        } else {
+            for (let lang of langs) {
+                if (lang.startsWith(searchVal)) {
+                    searchMatch = true;
+                    break;
+                }
+            }
+        }
+        
+        const priceMatch    = rate >= fromPrice && rate <= toPrice;
+        const langMatch     = activeFilters.langs.length === 0 || activeFilters.langs.some(fl => langs.some(l => l.startsWith(fl)));
+        const modeMatch     = activeFilters.modes.length === 0 || activeFilters.modes.some(fm => modes.some(m => m.includes(fm)));
+        const locationMatch = activeFilters.locations.length === 0 || activeFilters.locations.some(loc => location.includes(loc));
+        const ratingMatch   = activeFilters.rating === 0 || rating >= activeFilters.rating;
+        
+        // Availability filter
+        let availabilityMatch = true;
+        if (activeFilters.days && activeFilters.days.length > 0) {
+            availabilityMatch = activeFilters.days.some(day => availability.includes(day));
+        }
+
+        const show = searchMatch && priceMatch && langMatch && modeMatch && locationMatch && ratingMatch && availabilityMatch;
+        item.style.display = show ? 'flex' : 'none';
+        if (show) visibleCount++;
+    });
+
+    const rc = document.getElementById('resultCount');
+    if (rc) rc.textContent = visibleCount + ' tutor' + (visibleCount !== 1 ? 's' : '') + ' found';
+}
+
+function toggleNotifications() {
+  notifOpen = !notifOpen;
+  const dd = document.getElementById('notifDropdown');
+  dd.style.display = notifOpen ? 'block' : 'none';
+  if (notifOpen) loadNotifications();
+}
+
+function loadNotifications() {
+  fetch('get_notifications.php')
+    .then(r => r.json())
+    .then(data => {
+      const dot  = document.getElementById('notifDot');
+      const list = document.getElementById('notifList');
+
+      dot.style.display = data.count > 0 ? 'block' : 'none';
+
+      if (data.notifications.length === 0) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:#9080a0;font-size:13px;">No notifications yet.</div>';
+        return;
       }
-      updateFilterDot();
+
+      list.innerHTML = data.notifications.map(n => `
+        <div onclick="markRead(${n.id}, this)" style="padding:14px 16px;border-bottom:1px solid rgba(242,138,178,.08);cursor:pointer;background:${n.is_read ? 'white' : 'rgba(255,241,246,.6)'};transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='${n.is_read ? 'white' : 'rgba(255,241,246,.6)'}'">
+          <div style="display:flex;align-items:flex-start;gap:10px;">
+            <div style="width:8px;height:8px;border-radius:50%;background:${n.is_read ? 'transparent' : '#E75A9B'};flex-shrink:0;margin-top:5px;"></div>
+            <div style="flex:1;min-width:0;">
+              <strong style="display:block;font-size:13px;color:#342635;">${n.title}</strong>
+              <p style="margin:3px 0 0;font-size:12px;color:#7B6178;line-height:1.4;">${n.message}</p>
+              <span style="display:block;margin-top:4px;font-size:11px;color:#aaa;">${timeAgo(n.created_at)}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    });
+    
+function markRead(id, el) {
+  fetch('mark_notification_read.php', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({id})
+  });
+  el.style.background = 'white';
+  el.querySelector('div > div').style.background = 'transparent';
+  loadNotifications();
+}
+
+function markAllRead() {
+  fetch('mark_notification_read.php', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({id: 0})
+  }).then(() => loadNotifications());
+}
+
+function timeAgo(dateStr) {
+  const diff = Math.floor((new Date() - new Date(dateStr)) / 1000);
+  if (diff < 60)   return 'Just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return Math.floor(diff/86400) + 'd ago';
+}
+function getTimeSlot($time) {
+    $hour = date('H', strtotime($time));
+    if ($hour < 12) return 'morning';
+    if ($hour < 18) return 'afternoon';
+    return 'evening';
+}
+// Auto-check unread count every 60 seconds
+function checkUnread() {
+  fetch('get_notifications.php')
+    .then(r => r.json())
+    .then(data => {
+      const dot = document.getElementById('notifDot');
+      if (dot) dot.style.display = data.count > 0 ? 'block' : 'none';
+    });
+}
+checkUnread();
+setInterval(checkUnread, 60000);
+
+// Close notification dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  const bell = document.getElementById('bellBtn');
+  const dd   = document.getElementById('notifDropdown');
+  if (bell && dd && !bell.contains(e.target) && !dd.contains(e.target)) {
+    dd.style.display = 'none';
+    notifOpen = false;
+  }
+});
+  
+  
+    }
+</script>
+<script>
+// Dynamic greeting based on user's local time
+function updateGreeting() {
+    const now = new Date();
+    const hour = now.getHours();
+    let greeting = '';
+    let emoji = '';
+    
+    if (hour >= 5 && hour < 12) {
+        greeting = 'Morning';
+        emoji = '🌅';
+    } else if (hour >= 12 && hour < 18) {
+        greeting = 'Afternoon';
+        emoji = '☕';
+    } else if (hour >= 18 && hour < 22) {
+        greeting = 'Evening';
+        emoji = '🌆';
+    } else {
+        greeting = 'Night';
+        emoji = '🌃';
+    }
+    
+    const greetingSpan = document.getElementById('dynamicGreeting');
+    const emojiSpan = document.getElementById('greetingEmoji');
+    
+    if (greetingSpan) {
+        greetingSpan.textContent = greeting;
+    }
+    if (emojiSpan) {
+        emojiSpan.textContent = emoji;
+    }
+}
+
+// Call it when page loads
+updateGreeting();
+</script>
+<script>
+  // ── SCHEDULE CALENDAR ──
+const schedData = <?= $schedJSON ?>;
+let schY = <?= $calYearJS ?>, schM = <?= $calMonthJS ?>;
+const schMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const schDays = ['S','M','T','W','T','F','S'];
+// Update current time and date automatically every minute
+function updateCurrentDateTime() {
+  const now = new Date();
+  
+  // Format time like "10:17 PM" - updates every minute
+  const timeStr = now.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' });
+  
+  // Format date like "Wednesday, 13 May 2026"
+  const dateStr = now.toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  
+  const timeEl = document.getElementById('currentTime');
+  const dateEl = document.getElementById('currentDate');
+  
+  if (timeEl) timeEl.textContent = timeStr;
+  if (dateEl) dateEl.textContent = dateStr;
+}
+
+// Update immediately when page loads
+updateCurrentDateTime();
+
+// Update automatically every minute (60000 milliseconds = 1 minute)
+setInterval(updateCurrentDateTime, 60000);
+
+
+
+// Update every minute
+setInterval(updateCurrentDateTime, 60000);
+function renderSchCal() {
+  document.getElementById('schMonthLabel').textContent = schMonths[schM].slice(0,3) + ' ' + schY;
+  const fd  = new Date(schY, schM, 1).getDay();
+  const dim = new Date(schY, schM + 1, 0).getDate();
+  const dip = new Date(schY, schM, 0).getDate();
+  const td  = new Date();
+
+  let h = schDays.map(d => `<div class="sch-day-name">${d}</div>`).join('');
+
+  for (let i = 0; i < fd; i++) {
+    h += `<div class="sch-day other-month">${dip - fd + 1 + i}</div>`;
+  }
+  for (let d = 1; d <= dim; d++) {
+    const dateStr = schY + '-' + String(schM+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    const isToday = d === td.getDate() && schM === td.getMonth() && schY === td.getFullYear();
+    const hasB    = schedData[dateStr] && schedData[dateStr].length > 0;
+    h += `<div class="sch-day${isToday?' today':''}${hasB?' has-booking':''}"
+              onclick="schSelectDay('${dateStr}', this)">${d}</div>`;
+  }
+  const rem = 42 - fd - dim;
+  for (let d = 1; d <= Math.min(rem, 7); d++) {
+    h += `<div class="sch-day other-month">${d}</div>`;
   }
 
-  function checkLocationFilter() {
-      const f2fActive = document.getElementById('f2fChip').classList.contains('chip-active');
-      document.getElementById('locationFilterBox').style.display = f2fActive ? 'block' : 'none';
-      if (!f2fActive) {
-          activeFilters.locations = [];
-          document.querySelectorAll('#locationFilterChips .filter-chip').forEach(b => {
-              b.classList.remove('chip-active');
-              b.style.background = 'white'; b.style.color = '#7A5570'; b.style.borderColor = 'rgba(46,42,59,.12)';
-          });
-      }
+  document.getElementById('schGrid').innerHTML = h;
+  
+  // Auto-select today's date after rendering
+  const todayDateStr = td.getFullYear() + '-' + String(td.getMonth()+1).padStart(2,'0') + '-' + String(td.getDate()).padStart(2,'0');
+  const todayElement = document.querySelector('.sch-day.today');
+  if (todayElement) {
+    schSelectDay(todayDateStr, todayElement);
+  } else {
+    // If today is not in current month, clear detail
+    document.getElementById('schDayDetail').style.display = 'none';
   }
+}
+function schSelectDay(dateStr, el) {
+  const detail = document.getElementById('schDayDetail');
+  
+  // Remove selected class from all days
+  document.querySelectorAll('.sch-day.selected').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
 
-  function updateFilterDot() {
-      const from = parseFloat(document.getElementById('priceFrom').value) || 0;
-      const to   = parseFloat(document.getElementById('priceTo').value) || 200;
-      const hasFilters = activeFilters.langs.length > 0
-          || activeFilters.modes.length > 0
-          || activeFilters.locations.length > 0
-          || activeFilters.rating > 0
-          || from > 0 || to < 200;
-      document.getElementById('filterDot').style.display = hasFilters ? 'block' : 'none';
+  const bookings = schedData[dateStr];
+  const label = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-MY', { weekday:'long', day:'numeric', month:'long' });
+    
+  if (!bookings || bookings.length === 0) {
+    detail.innerHTML = `<div class="sch-day-detail-header">📅 ${label}</div>
+      <div class="sch-empty">No sessions on this day.</div>`;
+  } else {
+    const items = bookings.map(b => `
+      <div class="sch-booking-item" onclick="window.location='booking_status.php'">
+        <div class="sch-booking-dot ${b.status}"></div>
+        <div class="sch-booking-time">${b.time}</div>
+        <div class="sch-booking-info">
+          <strong>${b.language}</strong>
+          <span>${b.tutor} · ${b.mode === 'online' ? '💻 Online' : '🤝 Face to face'}</span>
+        </div>
+      </div>`).join('');
+    detail.innerHTML = `<div class="sch-day-detail-header">📅 ${label} — ${bookings.length} session${bookings.length>1?'s':''}</div>${items}`;
   }
+  detail.setAttribute('data-current-date', dateStr);
+  detail.style.display = 'block';
+}
 
-  function setRating(el, val) {
-      if (activeRatingBtn === el) {
-          el.classList.remove('chip-active');
-          el.style.background = 'white'; el.style.color = '#7A5570'; el.style.borderColor = 'rgba(46,42,59,.12)';
-          activeFilters.rating = 0;
-          activeRatingBtn = null;
-      } else {
-          if (activeRatingBtn) {
-              activeRatingBtn.classList.remove('chip-active');
-              activeRatingBtn.style.background = 'white'; activeRatingBtn.style.color = '#7A5570'; activeRatingBtn.style.borderColor = 'rgba(46,42,59,.12)';
-          }
-          el.classList.add('chip-active');
-          el.style.background = 'linear-gradient(135deg,#E75A9B,#F28AB2)';
-          el.style.color = 'white'; el.style.borderColor = '#E75A9B';
-          activeFilters.rating = val;
-          activeRatingBtn = el;
-      }
-      updateFilterDot();
-      filterTutors();
-  }
 
-  function clearFilters() {
-      activeFilters = { langs: [], modes: [], locations: [], rating: 0 };
-      document.getElementById('priceFrom').value = 0;
-      document.getElementById('priceTo').value   = 200;
-      document.getElementById('locationFilterBox').style.display = 'none';
-      document.querySelectorAll('.filter-chip').forEach(b => {
-          b.classList.remove('chip-active');
-          b.style.background = 'white';
-          b.style.color = '#7A5570';
-          b.style.borderColor = 'rgba(46,42,59,.12)';
-      });
-      if (activeRatingBtn) {
-          activeRatingBtn.classList.remove('chip-active');
-          activeRatingBtn.style.background = 'white';
-          activeRatingBtn.style.color = '#7A5570';
-          activeRatingBtn.style.borderColor = 'rgba(46,42,59,.12)';
-          activeRatingBtn = null;
-      }
-      updateFilterDot();
-      filterTutors();
-  }
-
-  function filterTutors() {
-      const val = document.getElementById('tutorSearchInput').value.toLowerCase().trim();
-      const fromPrice = parseFloat(document.getElementById('priceFrom').value) || 0;
-      const toPrice   = parseFloat(document.getElementById('priceTo').value) || 200;
-
-      const items = document.querySelectorAll('.search-tutor-item');
-      let visibleCount = 0;
-
-      items.forEach(item => {
-          const langs    = (item.dataset.lang || '').split(',').map(l => l.trim().toLowerCase()).filter(Boolean);
-          const modes    = (item.dataset.mode || '').split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
-          const location = (item.dataset.location || '').toLowerCase().trim();
-          const rate     = parseFloat(item.dataset.rate || 0);
-          const rating   = parseFloat(item.dataset.rating || 0);
-
-          const searchMatch   = val === '' || langs.some(l => l.includes(val));
-          const priceMatch    = rate >= fromPrice && rate <= toPrice;
-          const langMatch     = activeFilters.langs.length === 0 || activeFilters.langs.some(fl => langs.some(l => l.includes(fl)));
-          const modeMatch     = activeFilters.modes.length === 0 || activeFilters.modes.some(fm => modes.some(m => m.includes(fm)));
-          const locationMatch = activeFilters.locations.length === 0 || activeFilters.locations.some(loc => location.includes(loc));
-          const ratingMatch   = activeFilters.rating === 0 || rating >= activeFilters.rating;
-
-          const show = searchMatch && priceMatch && langMatch && modeMatch && locationMatch && ratingMatch;
-          item.style.display = show ? 'flex' : 'none';
-          if (show) visibleCount++;
-      });
-
-      const rc = document.getElementById('resultCount');
-      if (rc) rc.textContent = visibleCount + ' tutor' + (visibleCount !== 1 ? 's' : '') + ' found';
-  }
+document.getElementById('schPrev').onclick = () => { schM--; if(schM<0){schM=11;schY--;} renderSchCal(); };
+document.getElementById('schNext').onclick = () => { schM++; if(schM>11){schM=0;schY++;} renderSchCal(); };
+renderSchCal();
 </script>
 <div id="searchModal" style="display:none;position:fixed;inset:0;background:rgba(52,38,53,.5);backdrop-filter:blur(6px);z-index:200;padding:60px 20px;overflow-y:auto;">
   <div style="max-width:700px;margin:0 auto;background:white;border-radius:28px;padding:28px;box-shadow:0 30px 60px rgba(201,79,134,.2);position:relative;">
@@ -1136,19 +2430,53 @@ function e($value) {
         <div style="display:flex;align-items:center;gap:10px;">
             <div style="flex:1;position:relative;">
             <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#9080a0;font-weight:700;">RM</span>
-            <input type="number" id="priceFrom" min="0" max="200" value="0" placeholder="0"
+            <input type="number" id="priceFrom" min="0" max="100" value="0" placeholder="0"
                 oninput="filterTutors()"
                 style="width:100%;padding:10px 10px 10px 34px;border:1px solid rgba(46,42,59,.12);border-radius:12px;outline:none;font-size:14px;font-weight:700;color:#342635;">
             </div>
             <span style="color:#9080a0;font-size:13px;flex-shrink:0;">to</span>
             <div style="flex:1;position:relative;">
             <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#9080a0;font-weight:700;">RM</span>
-            <input type="number" id="priceTo" min="0" max="200" value="200" placeholder="200"
+            <input type="number" id="priceTo" min="0" max="100" value="100" placeholder="100"
                 oninput="filterTutors()"
                 style="width:100%;padding:10px 10px 10px 34px;border:1px solid rgba(46,42,59,.12);border-radius:12px;outline:none;font-size:14px;font-weight:700;color:#342635;">
             </div>
         </div>
         </div>
+        <!-- Availability Filter - Add this inside #filterPanel before the footer -->
+        <hr style="border:none;border-top:1px solid rgba(242,138,178,.18);margin:14px 0;">
+        <div style="margin-bottom:18px;">
+            <p style="margin:0 0 10px;font-size:13px;font-weight:900;color:#342635;">
+                <i class="bi bi-calendar-week" style="color:#E75A9B;margin-right:5px;"></i> Available Day
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;" id="dayFilterChips">
+                <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="monday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Monday</button>
+                <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="tuesday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Tuesday</button>
+                <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="wednesday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Wednesday</button>
+                <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="thursday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Thursday</button>
+                <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="friday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Friday</button>
+                <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="saturday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Saturday</button>
+                <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="sunday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Sunday</button>
+            </div><hr>
+        <!-- Time Slot Filter - Add this after the day filter chips -->
+<div style="margin-bottom:18px;">
+    <p style="margin:0 0 10px;font-size:13px;font-weight:900;color:#342635;">
+        <i class="bi bi-clock" style="color:#E75A9B;margin-right:5px;"></i> Available Time
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;" id="timeSlotFilterChips">
+        <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'timeslot');filterTutors();" data-value="morning" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">
+            🌅 Morning (6AM - 12PM)
+        </button>
+        <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'timeslot');filterTutors();" data-value="afternoon" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">
+            ☀️ Afternoon (12PM - 6PM)
+        </button>
+        <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'timeslot');filterTutors();" data-value="evening" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">
+            🌙 Evening/Night (6PM onwards)
+        </button>
+    </div>
+</div><hr style="border:none;border-top:1px solid rgba(242,138,178,.18);margin:14px 0;">
+          </div>
+        
           <div style="margin-bottom:18px;">
             <p style="margin:0 0 10px;font-size:13px;font-weight:900;color:#342635;"><i class="bi bi-globe2" style="color:#E75A9B;margin-right:5px;"></i> Language</p>
             <div style="display:flex;flex-wrap:wrap;gap:8px;" id="langFilterChips">
@@ -1218,12 +2546,13 @@ function e($value) {
             : $assetBase . '/profile-tutor.png';
       ?>
         <div class="search-tutor-item"
-        data-name="<?= e(strtolower($tutor['fullname'])) ?>"
-        data-lang="<?= e(strtolower($tutor['languages'] ?? '')) ?>"
-        data-mode="<?= e(strtolower($tutor['teaching_modes'] ?? '')) ?>"
-        data-location="<?= e(strtolower($tutor['location'] ?? '')) ?>"
-        data-rate="<?= e($tutor['rate'] ?? 0) ?>"
-        data-rating="<?= e($tutor['rating'] ?? 0) ?>"
+    data-name="<?= e(strtolower($tutor['fullname'])) ?>"
+    data-lang="<?= e(strtolower($tutor['languages'] ?? '')) ?>"
+    data-mode="<?= e(strtolower($tutor['teaching_modes'] ?? '')) ?>"
+    data-location="<?= e(strtolower($tutor['location'] ?? '')) ?>"
+    data-rate="<?= e($tutor['rate'] ?? 0) ?>"
+    data-rating="<?= e($tutor['rating'] ?? 0) ?>"
+    data-availability="<?= e(strtolower($tutor['availability'] ?? '')) ?>"
         style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:20px;background:rgba(255,241,246,.8);border:1px solid rgba(242,138,178,.15);">
         <img src="<?= e($tutorPic) ?>" style="width:56px;height:56px;border-radius:16px;object-fit:cover;background:#eee;flex:0 0 auto;">
         <div style="flex:1;min-width:0;">
@@ -1245,5 +2574,23 @@ function e($value) {
 
   </div>
 </div>
+<script>
+function startLearning(module) {
+  let moduleName = module === 'business' ? 'Business Language' : 'Casual & Slang';
+  showToast(`Opening ${moduleName} module! 📚`);
+}
+
+function inviteFriends() {
+  showToast('Share your challenge link with friends! 📱');
+}
+
+function quickPractice(type) {
+  let practiceName = '';
+  if (type === 'vocab') practiceName = '5 new words';
+  else if (type === 'phrase') practiceName = '3 common phrases';
+  else practiceName = '2 min listening';
+  showToast(`Quick practice: ${practiceName}! +10 XP 🎯`);
+}
+            </script>
 </body>
 </html>

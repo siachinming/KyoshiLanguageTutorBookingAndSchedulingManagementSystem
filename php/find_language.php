@@ -169,10 +169,10 @@ $languages = [
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
       </a>
       <div class="nav-links">
-        <a href="student_dashboard.php">Overview</a>
+        <a href="student_dashboard.php">Home</a>
         <a href="student_dashboard.php#preferences">Learning Goals</a>
         <a class="active" href="find_language.php">Find Language</a>
-        <a href="student_dashboard.php#bookings">Bookings</a>
+        <a href="booking_status.php">Bookings</a>
         <a href="student_dashboard.php#progress">Progress</a>
         <a href="student_dashboard.php#payments">Payments</a>
       </div>

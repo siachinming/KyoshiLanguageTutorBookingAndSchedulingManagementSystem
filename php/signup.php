@@ -84,20 +84,30 @@
     }
 
     .role-box {
-      border: 2px solid #ddd;
-      padding: 15px;
-      border-radius: 10px;
-      cursor: pointer;
-      margin-bottom: 10px;
-      text-align: center;
-      transition: border-color 0.2s, background 0.2s;
-      font-size: 15px;
-    }
+  border: 2px solid #e5e7eb;
+  padding: 18px;
+  border-radius: 14px;
+  cursor: pointer;
+  margin-bottom: 12px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  background: #f9fafb;
+  transition: all 0.25s ease;
+  user-select: none;
+}
 
-    .role-box.active {
-      border-color: #38bdf8;
-      background: #f0f9ff;
-    }
+.role-box:hover {
+  border-color: #38bdf8;
+  background: #f0f9ff;
+  transform: translateY(-2px);
+}
+
+.role-box.active {
+  border-color: #38bdf8;
+  background: #e0f2fe;
+  box-shadow: 0 6px 16px rgba(56, 189, 248, 0.25);
+}
 
     .password-wrapper { position: relative; margin-bottom: 8px; }
     .password-wrapper input { padding-right: 45px; }
@@ -174,11 +184,14 @@
         <p class="text-muted mb-3" style="font-size:14px;">Select your role to continue</p>
 
         <div class="role-box" onclick="selectRole(this, 'student')">
-          👩‍🎓 I am a Student
-        </div>
-        <div class="role-box" onclick="selectRole(this, 'tutor')">
-          👨‍🏫 I am a Tutor
-        </div>
+        <div style="font-size:28px;">👩‍🎓</div>
+        <div>I am a Student</div>
+      </div>
+
+      <div class="role-box" onclick="selectRole(this, 'tutor')">
+        <div style="font-size:28px;">👨‍🏫</div>
+        <div>I am a Tutor</div>
+      </div>
 
         <button type="button" class="btn-main mt-3" onclick="goNext()">Continue</button>
         <button type="button" class="btn btn-secondary w-100 mt-2" onclick="goHome()">Back to Home Page</button>
@@ -357,7 +370,7 @@
             <input type="file" name="certificate" class="form-control mb-2">
           </div>
 
-          <button type="submit" class="btn-main mt-3" id="submitBtn">Create Account</button>
+          <button type="submit" class="btn-main mt-3" id="submitBtn" onclick="return confirmRegister()">Create Account</button>
         </form>
 
       </div>
@@ -380,6 +393,11 @@
       ? "url('../assets/img/tutor.jpg')"
       : "url('../assets/img/student.jpg')";
   }
+            function confirmRegister() {
+              const email = document.querySelector("input[name='email']").value;
+              return confirm(`Are you sure you want to use ${email} to register?`);
+            }
+
 
   function goNext() {
     if (!currentRole) { alert('Please select a role first.'); return; }
@@ -576,7 +594,6 @@ document.getElementById('signupForm').addEventListener('submit', function (e) {
     }
   });
 </script>
-</script>
 <div id="toast" style="
   position: fixed;
   bottom: 30px;
@@ -636,6 +653,7 @@ document.addEventListener('change', function(e) {
     }
   }
 });
+
 </script>
 </body>
 </html>
