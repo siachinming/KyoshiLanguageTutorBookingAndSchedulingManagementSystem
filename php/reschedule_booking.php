@@ -7,6 +7,7 @@ if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 $userID = $_SESSION['user_id'];
 
 $bookingID = intval($_GET['id'] ?? 0);
+$nextID = intval($_GET['next'] ?? 0);
 if (!$bookingID) { header("Location: booking_status.php"); exit(); }
 
 // Get original booking
@@ -56,6 +57,27 @@ foreach ($availRows as $row) {
     $availability[$row['day_of_week']] = ['start' => $row['start_time'], 'end' => $row['end_time']];
 }
 
+// Get already booked slots for this tutor (prevent overbooking)
+$stmt = $conn->prepare("
+    SELECT booking_date, booking_time 
+    FROM bookings 
+    WHERE tutor_id = ? 
+    AND status IN ('pending','accepted','confirmed','rescheduled')
+    AND id != ?
+");
+$stmt->bind_param("ii", $b['tutor_id'], $bookingID);
+$stmt->execute();
+$bookedResult = $stmt->get_result();
+$bookedSlots = [];
+while ($row = $bookedResult->fetch_assoc()) {
+    $d = $row['booking_date'];
+    $t = $row['booking_time'];
+    if (!isset($bookedSlots[$d])) $bookedSlots[$d] = [];
+    $bookedSlots[$d][] = $t;
+}
+$stmt->close();
+$bookedSlotsJson = json_encode($bookedSlots);
+
 $tutorLangs = array_filter(array_map('trim', explode(',', $b['tutor_languages'] ?? '')));
 $tutorModes = array_filter(array_map('trim', explode(',', $b['teaching_modes'] ?? '')));
 
@@ -95,7 +117,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
     .brand strong{display:block;font-size:18px;line-height:1.05}
     .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.58);border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
+    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff}
@@ -189,7 +211,34 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
     /* LOCATION */
     .form-group#locationGroup{display:none}
+    /* Modal Styles - Make sure this exists */
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
 
+    .modal.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 24px;
+        width: 450px;
+        max-width: 90%;
+        padding: 28px;
+        position: relative;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
     @media(max-width:900px){.booking-grid{grid-template-columns:1fr}}
   </style>
 </head>
@@ -204,11 +253,10 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       </a>
       <div class="nav-links">
         <a href="student_dashboard.php">Home</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
         <a href="find_language.php">Find Language</a>
-        <a href="booking_status.php" class="active">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
+        <a href="booking_status.php" class="active">My Bookings</a>
+        <a href="my_payments.php">My Payments</a>
+        <a href="my_materials.php">My Materials</a>
       </div>
       <div class="nav-actions">
         <div style="position:relative;">
@@ -240,6 +288,9 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     <div>
       <strong style="display:block;margin-bottom:2px;">Rescheduling Booking #<?= $bookingID ?></strong>
       Your payment will carry over. After rescheduling, the tutor needs to approve the new date.
+      <button onclick="showRescheduleRulesModal()" style="background: none; border: none; color: #f59e0b; font-size: 13px; cursor: pointer; margin-left: 10px;">
+    <i class="bi bi-question-circle"></i> Rules
+</button>
     </div>
   </div>
 
@@ -403,21 +454,105 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       </div>
     </div>
 
+  
     <!-- RIGHT SUMMARY -->
-    <div class="summary-card">
-      <h3>Reschedule Summary</h3>
-      <div class="summary-row"><span class="summary-label">Tutor</span><span class="summary-val"><?= e($b['tutor_name']) ?></span></div>
-      <div class="summary-row"><span class="summary-label">Language</span><span class="summary-val" id="sum-lang"><?= e($b['language']) ?></span></div>
-      <div class="summary-row"><span class="summary-label">Mode</span><span class="summary-val" id="sum-mode"><?= $b['learning_mode']==='online'?'💻 Online':'🤝 Face to Face' ?></span></div>
-      <div class="summary-row"><span class="summary-label">New Date</span><span class="summary-val" id="sum-date">Not selected</span></div>
-      <div class="summary-row"><span class="summary-label">New Time</span><span class="summary-val" id="sum-time">Not selected</span></div>
-      <div style="margin-top:16px;padding:14px;border-radius:16px;background:rgba(221,211,255,.3);border:1px solid rgba(167,123,232,.2);font-size:12px;color:#5A3D7A;font-weight:700;line-height:1.5;">
-        <i class="bi bi-shield-check"></i> Payment already verified — no need to pay again after rescheduling.
-      </div>
-    </div>
-  </div>
-</div>
+<!-- RIGHT SUMMARY -->
+<div style="display:flex;flex-direction:column;gap:18px;">
 
+    <!-- CURRENT BOOKING -->
+    <div style="
+        background:var(--paper);
+        border:1px solid rgba(255,255,255,.55);
+        box-shadow:var(--shadow);
+        border-radius:var(--radius-xl);
+        padding:24px;
+    ">
+        <h3 style="margin:0 0 18px;font-size:18px;">
+            <i class="bi bi-clock-history"></i>
+            Recent Booking Details
+        </h3>
+
+        <div class="summary-row">
+            <span class="summary-label">Date</span>
+            <span class="summary-val">
+                <?= e(date('d M Y', strtotime($b['booking_date']))) ?>
+            </span>
+        </div>
+
+        <div class="summary-row">
+            <span class="summary-label">Time</span>
+            <span class="summary-val">
+                <?= e(date('g:i A', strtotime($b['booking_time']))) ?>
+            </span>
+        </div>
+
+        <div class="summary-row">
+            <span class="summary-label">Language</span>
+            <span class="summary-val"><?= e($b['language']) ?></span>
+        </div>
+
+        <div class="summary-row">
+            <span class="summary-label">Mode</span>
+            <span class="summary-val">
+                <?= $b['learning_mode']=='online' ? '💻 Online' : '🤝 Face to Face' ?>
+            </span>
+        </div>
+    </div>
+
+    <!-- ONLY THIS ONE STICKY -->
+    <div class="summary-card">
+        <h3 style="margin:0 0 18px;font-size:18px;">
+            <i class="bi bi-arrow-repeat"></i>
+            Reschedule Summary
+        </h3>
+
+        <div class="summary-row">
+            <span class="summary-label">New Date</span>
+            <span class="summary-val" id="sum-date">Not selected</span>
+        </div>
+
+        <div class="summary-row">
+            <span class="summary-label">New Time</span>
+            <span class="summary-val" id="sum-time">Not selected</span>
+        </div>
+
+        <div class="summary-row">
+            <span class="summary-label">Language</span>
+            <span class="summary-val" id="sum-lang"><?= e($b['language']) ?></span>
+        </div>
+
+        <div class="summary-row">
+            <span class="summary-label">Mode</span>
+            <span class="summary-val" id="sum-mode">
+                <?= $b['learning_mode']=='online' ? '💻 Online' : '🤝 Face to Face' ?>
+            </span>
+        </div>
+
+    </div>
+
+</div>
+</div>
+<!-- Reschedule Rules Modal -->
+<div id="rescheduleRulesModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; font-size: 18px;"><i class="bi bi-info-circle" style="color: #f59e0b;"></i> Reschedule Rules</h3>
+            <button type="button" onclick="closeRescheduleRulesModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #94a3b8; line-height: 1;">&times;</button>
+        </div>
+        <div style="margin: 16px 0; padding: 12px; background: #fef3c7; border-radius: 12px;">
+            <ul style="margin: 0; padding-left: 20px; color: #92400e; font-size: 13px; line-height: 1.8;">
+                <li>You can only reschedule confirmed bookings after payment</li>
+                <li>You cannot reschedule a class that has already passed</li>
+                <li>You cannot reschedule to a past date or time</li>
+                <li>You cannot reschedule to the same date and time as your current booking</li>
+                <li>You cannot request a time slot that is already booked by another student</li>
+                <li>You can only have ONE pending reschedule request per booking</li>
+                <li>Your original booking remains active until the tutor approves</li>
+                <li>Reschedule requests expire at 12 AM on the original booking date</li>
+            </ul>
+        </div>
+    </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -427,7 +562,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   const bookingID    = <?= $bookingID ?>;
   const tutorModes   = document.body.dataset.tutorModes.split(',').map(m => m.trim()).filter(Boolean);
   const tutorState   = document.body.dataset.tutorState;
-
+  const bookedSlots = <?= $bookedSlotsJson ?>;
   let currentStep = 1;
   let calYear, calMonth;
   const now = new Date(); now.setHours(0,0,0,0);
@@ -515,19 +650,30 @@ let selectedTime = null;
     const h = Math.floor(cur/60);
     const timeVal = String(h).padStart(2,'0') + ':00:00';
 
-    const btn = document.createElement('button');
-    btn.className = 'time-slot' + (selectedTime === timeVal ? ' active' : '');
-    btn.textContent = fmt(h,0) + ' - ' + fmt(h+1,0);
+    // Check if already booked by another student
+    const isBooked = bookedSlots[selectedDate] && 
+                     bookedSlots[selectedDate].includes(timeVal);
 
-    btn.onclick = () => {
-      selectedTime = timeVal;
-      renderDayPanels();
-      updateSummary();
-    };
+    const btn = document.createElement('button');
+
+    if (isBooked) {
+        btn.className = 'time-slot';
+        btn.textContent = fmt(h,0) + ' – ' + fmt(h+1,0) + ' · Booked';
+        btn.disabled = true;
+        btn.style.cssText = 'opacity:.4;cursor:not-allowed;text-decoration:line-through;background:#f5f5f5;';
+    } else {
+        btn.className = 'time-slot' + (selectedTime === timeVal ? ' active' : '');
+        btn.textContent = fmt(h,0) + ' – ' + fmt(h+1,0);
+        btn.onclick = () => {
+            selectedTime = timeVal;
+            renderDayPanels();
+            updateSummary();
+        };
+    }
 
     wrap.appendChild(btn);
     cur += 60;
-  }
+}
 
   panel.appendChild(wrap);
   container.appendChild(panel);
@@ -626,7 +772,9 @@ document.getElementById('rev-time').textContent = selectedTime ? selectedTime.su
     if(!lang||!mode||bookings.length===0){showToast('Please complete all fields');return;}
     const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='Submitting...';
     const form=document.createElement('form');form.method='POST';form.action='submit_reschedule.php';
-    const fields={booking_id:bookingID,language:lang,mode:mode,focus:focus,notes:notes,location:loc};
+    const nextId = new URLSearchParams(window.location.search).get('next') || '';
+    console.log('nextId:', nextId);
+const fields = {booking_id:bookingID,language:lang,mode:mode,focus:focus,notes:notes,location:loc,next_id:nextId};
     Object.entries(fields).forEach(([key,val])=>{const input=document.createElement('input');input.type='hidden';input.name=key;input.value=val;form.appendChild(input);});
     bookings.forEach(bk=>{
       const d=document.createElement('input');d.type='hidden';d.name='booking_date[]';d.value=bk.date;form.appendChild(d);
@@ -670,6 +818,14 @@ document.getElementById('rev-time').textContent = selectedTime ? selectedTime.su
     }).catch(()=>{document.getElementById('locationChecking').style.display='none';showToast('Search failed.');});
   }
 
+  function showRescheduleRulesModal() {
+    document.getElementById('rescheduleRulesModal').classList.add('active');
+}
+
+function closeRescheduleRulesModal() {
+    document.getElementById('rescheduleRulesModal').classList.remove('active');
+}
+
   function checkDistanceFromTutor(){
     const cityCoords={'kuala lumpur':{lat:3.1390,lng:101.6869},'penang':{lat:5.4141,lng:100.3288},'johor bahru':{lat:1.4927,lng:103.7414},'kota kinabalu':{lat:5.9804,lng:116.0735}};
     const key=tutorState.toLowerCase().trim(),tc=cityCoords[key];
@@ -689,10 +845,21 @@ document.getElementById('rev-time').textContent = selectedTime ? selectedTime.su
   function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2000);}
   function toggleDropdown(){const d=document.getElementById('profileDropdown');d.style.display=d.style.display==='none'?'block':'none';}
   document.addEventListener('click',function(e){const btn=document.getElementById('profileBtn');const dd=document.getElementById('profileDropdown');if(btn&&dd&&!btn.contains(e.target)&&!dd.contains(e.target))dd.style.display='none';});
-
+  
   checkModeLocation();
   updateSummary();
   renderCalendar();
+
+  window.onclick = function(event) {
+    const modal = document.getElementById('rejectModal');
+    if (event.target === modal) {
+        closeRejectModal();
+    }
+    const rulesModal = document.getElementById('rescheduleRulesModal');
+    if (event.target === rulesModal) {
+        closeRescheduleRulesModal();
+    }
+}
 </script>
 </body>
 </html>

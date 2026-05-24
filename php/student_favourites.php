@@ -200,47 +200,37 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
       </a>
       <div class="nav-links">
-        <a href="student_dashboard.php">Home</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
-        <a href="find_language.php">Find Language</a>
-        <a href="booking_status.php">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
-      </div>
-      <div class="nav-actions">
-        <div class="search">
-          <i class="bi bi-search"></i>
-          <input type="text" placeholder="Search language..." readonly style="cursor:pointer;" onclick="window.location='student_dashboard.php'">
-        </div>
-        <div style="position:relative;">
-          <button class="icon-btn" onclick="toggleNotifications()" id="bellBtn">
-            <i class="bi bi-bell"></i>
-            <span class="dot" id="notifDot" style="display:none;"></span>
-          </button>
-          <div id="notifDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:20px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);width:320px;overflow:hidden;z-index:100;">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(242,138,178,.15);">
-              <strong style="font-size:14px;color:#342635;">Notifications</strong>
-              <button onclick="markAllRead()" style="background:none;border:none;color:#E75A9B;font-size:12px;font-weight:900;cursor:pointer;">Mark all read</button>
-            </div>
-            <div id="notifList" style="max-height:320px;overflow-y:auto;">
-              <div style="padding:20px;text-align:center;color:#9080a0;font-size:13px;">Loading...</div>
+                    <a href="student_dashboard.php">Home</a>
+                    <a href="find_language.php">Find Language</a>
+                    <a href="booking_status.php">My Bookings</a>
+                    <a href="my_payments.php">My Payments</a>
+                    <a class="active" href="my_materials.php">My Materials</a>
+                </div>
+
+        <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
+          <div style="position:relative;">
+            <button class="profile" onclick="toggleDropdown()" id="profileBtn">
+              <img src="<?= e($profilePic) ?>" alt="Student profile">
+              <span><?= e($displayName) ?></span>
+              <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
+            </button>
+            <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
+              <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
+              </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
+              <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
+              </a>
+              <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
+              <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
             </div>
           </div>
         </div>
-        <div style="position:relative;">
-          <button class="profile" onclick="toggleDropdown()" id="profileBtn">
-            <img src="<?= e($profilePic) ?>" alt="Profile">
-            <span><?= e($displayName) ?></span>
-            <i class="bi bi-chevron-down" style="font-size:11px;margin-left:4px;"></i>
-          </button>
-          <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
-            <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile</a>
-            <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;background:#FFF1F6;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='#FFF1F6'"><i class="bi bi-heart-fill" style="color:#E75A9B;"></i> My Favourites</a>
-            <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
-            <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-box-arrow-right"></i> Logout</a>
-          </div>
-        </div>
-      </div>
     </nav>
   </div>
 </header>
@@ -370,9 +360,6 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
             <a href="tutor_profile.php?id=<?= $tutor['id'] ?>" class="btn-view">
               <i class="bi bi-person" style="margin-right:5px;"></i>View 
             </a>
-            <button class="btn-rate" onclick="openRateModal(<?= $tutor['id'] ?>, '<?= e($tutor['fullname']) ?>')" title="Rate tutor">
-              <i class="bi bi-star"></i>
-            </button>
           </div>
         </div>
       </article>

@@ -48,17 +48,27 @@ if (!$booking) {
     exit();
 }
 
-// Get all slots for this booking (same tutor, student, language, mode, created around same time)
+// Get all slots from the same booking session (last 2 minutes)
 $stmt = $conn->prepare("
-    SELECT booking_date, booking_time FROM bookings
-    WHERE student_id = ? AND tutor_id = ? AND language = ? AND learning_mode = ?
-    AND DATE(created_at) = DATE(?)
+    SELECT booking_date, booking_time 
+    FROM bookings
+    WHERE student_id = ? 
+    AND tutor_id = ? 
+    AND language = ? 
+    AND learning_mode = ?
+    AND created_at > DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+    AND status = 'pending'
     ORDER BY booking_date, booking_time
 ");
-$stmt->bind_param("iisss", $userID, $booking['tutor_id'], $booking['language'], $booking['learning_mode'], $booking['created_at']);
+$stmt->bind_param("iiss", $userID, $booking['tutor_id'], $booking['language'], $booking['learning_mode']);
 $stmt->execute();
 $allSlots = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
+
+// If no slots found from recent query, at least show the current booking
+if (empty($allSlots)) {
+    $allSlots[] = ['booking_date' => $booking['booking_date'], 'booking_time' => $booking['booking_time']];
+}
 
 $tutorPic = !empty($booking['tutor_pic'])
     ? '../uploads/profiles/' . $booking['tutor_pic']
@@ -147,20 +157,38 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <header class="topbar">
   <div class="container" style="width:min(1100px,calc(100% - 40px));max-width:unset">
     <nav class="nav">
-      <a href="student_dashboard.php" class="brand">
-        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
-        <strong>Kyoshi</strong>
-      </a>
-      <button class="profile" onclick="toggleDropdown()" id="profileBtn">
-        <img src="<?= e($profilePic) ?>" alt="Profile">
-        <span><?= e($displayName) ?></span>
-        <i class="bi bi-chevron-down" style="font-size:11px;margin-left:4px;"></i>
-      </button>
-      <div id="profileDropdown" style="display:none;position:absolute;top:82px;right:20px;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
-        <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile</a>
-        <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
-        <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-box-arrow-right"></i> Logout</a>
-      </div>
+        <a href="student_dashboard.php" class="brand">
+          <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
+          <div>
+            <strong>Kyoshi</strong>
+          </div>
+        </a>
+
+        <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
+          <div style="position:relative;">
+            <button class="profile" onclick="toggleDropdown()" id="profileBtn">
+              <img src="<?= e($profilePic) ?>" alt="Student profile">
+              <span><?= e($displayName) ?></span>
+              <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
+            </button>
+            <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
+              <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
+              </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
+              <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
+              </a>
+              <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
+              <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
+            </div>
+          </div>
+        </div>
+      </nav>
     </nav>
   </div>
 </header>

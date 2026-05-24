@@ -122,7 +122,7 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
     .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
     .brand strong{display:block;font-size:18px;line-height:1.05}
     .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.58);border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.70)}
+    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;padding:7px;overflow:auto;scrollbar-width:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.70)}
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;box-shadow:0 8px 18px rgba(231,90,155,.28)}
@@ -410,35 +410,46 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
 <header class="topbar">
   <div class="container">
     <nav class="nav">
-      <a href="student_dashboard.php" class="brand">
-        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
-        <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
-      </a>
-      <div class="nav-links">
-        <a href="student_dashboard.php">Overview</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
-        <a class="active" href="find_language.php">Find Language</a>
-        <a href="booking_status.php">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
-      </div>
-      <div class="nav-actions">
-        <button class="icon-btn" onclick="showToast('Notifications coming soon')"><i class="bi bi-bell"></i><span class="dot"></span></button>
-        <div style="position:relative;">
-          <button class="profile" onclick="toggleDropdown()" id="profileBtn">
-            <img src="<?= e($profilePic) ?>" alt="Profile">
-            <span><?= e($displayName) ?></span>
-            <i class="bi bi-chevron-down" style="font-size:11px;margin-left:4px;"></i>
-          </button>
-          <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
-            <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile</a>
-            <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites</a>
-            <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
-            <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-box-arrow-right"></i> Logout</a>
+        <a href="student_dashboard.php" class="brand">
+          <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
+          <div>
+            <strong>Kyoshi</strong>
+            <span>Student Learning Space</span>
+          </div>
+        </a>
+
+        <div class="nav-links">
+          <a href="student_dashboard.php">Home</a>
+          <a class="active" href="find_language.php">Find Language</a>
+          <a href="booking_status.php">My Bookings</a>
+          <a href="my_payments.php">My Payments</a>
+          <a href="my_materials.php">My Materials</a>
+        </div>
+        <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
+          <div style="position:relative;">
+            <button class="profile" onclick="toggleDropdown()" id="profileBtn">
+              <img src="<?= e($profilePic) ?>" alt="Student profile">
+              <span><?= e($displayName) ?></span>
+              <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
+            </button>
+            <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
+              <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
+              </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
+              <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
+              </a>
+              <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
+              <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
+            </div>
           </div>
         </div>
-      </div>
-    </nav>
+      </nav>
   </div>
 </header>
 

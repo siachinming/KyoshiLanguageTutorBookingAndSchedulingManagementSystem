@@ -10,6 +10,7 @@ if (!$conn) {
     die("Connection failed: " . mysqli_connect_error());
 }
 
-define('SMTP_USER', 'sohisabella87@gmail.com');
-define('SMTP_PASS', 'plvq ersb kkvv vlir');
+define('SMTP_USER','sohisabella87@gmail.com');
+define('SMTP_PASS','lcgv pyln bhkr libc');
+define('STRIPE_SECRET_KEY','sk_test_51TVVHPAjFaJboEtiYlcEc1imL3qWgIBzGa87CvWHFlyuZrhOEA8kDxnS1J7LItiLJJzHKLsgGyg5DNI8oVaJ6KmD00UN9FQYC9');
 ?>

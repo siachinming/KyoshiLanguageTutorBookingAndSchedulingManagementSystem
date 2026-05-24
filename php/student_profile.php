@@ -24,7 +24,7 @@ if (!$user) {
 
 $displayName = $user['fullname'];
 $profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
+    ? '../uploads/profiles/' . $user['profile_pic'] . '?v=' . time()
     : $assetBase . '/profile-student.png';
 
 // Get preferred languages
@@ -76,20 +76,45 @@ foreach ($bookings as $b) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'update_profile') {
-        $fullname = trim($_POST['fullname'] ?? '');
-        $email    = trim($_POST['email'] ?? '');
-        $phone    = trim($_POST['phone'] ?? '');
-
-        // Handle profile pic upload
-        $newPic = $user['profile_pic'];
+    // ── Instant photo upload (no page reload) ──
+    if ($action === 'update_pic_only') {
+        header('Content-Type: application/json');
         if (!empty($_FILES['profile_pic']['name'])) {
             $ext = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
             $allowed = ['jpg','jpeg','png','webp','gif'];
             if (in_array($ext, $allowed)) {
+                $upload_dir = '../uploads/profiles/';
+                if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
                 $filename = 'student_' . $userID . '_' . time() . '.' . $ext;
-                $dest = '../uploads/profiles/' . $filename;
-                if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $dest)) {
+                if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $upload_dir . $filename)) {
+                    $stmt = $conn->prepare("UPDATE users SET profile_pic=? WHERE id=?");
+                    $stmt->bind_param("si", $filename, $userID);
+                    $stmt->execute();
+                    echo json_encode(['success' => true, 'filename' => $filename]);
+                    exit();
+                }
+            }
+        }
+        echo json_encode(['success' => false, 'error' => 'Upload failed']);
+        exit();
+    }
+
+    // ── Full profile update ──
+    if ($action === 'update_profile') {
+        $fullname = trim($_POST['fullname'] ?? '');
+        $email    = trim($_POST['email'] ?? '');
+        $phone    = trim($_POST['phone'] ?? '');
+        $newPic   = $user['profile_pic']; // keep existing by default
+
+        // Handle profile pic upload (fallback if JS upload failed)
+        if (!empty($_FILES['profile_pic']['name'])) {
+            $upload_dir = '../uploads/profiles/';
+            if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+            $ext = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
+            $allowed = ['jpg','jpeg','png','webp','gif'];
+            if (in_array($ext, $allowed)) {
+                $filename = 'student_' . $userID . '_' . time() . '.' . $ext;
+                if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $upload_dir . $filename)) {
                     $newPic = $filename;
                 }
             } else {
@@ -98,32 +123,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$errorMsg) {
-            // Update user table
             $stmt = $conn->prepare("UPDATE users SET fullname=?, email=?, phone=?, profile_pic=? WHERE id=?");
             $stmt->bind_param("ssssi", $fullname, $email, $phone, $newPic, $userID);
             $stmt->execute();
 
-            // DELETE all existing preferences
             $conn->query("DELETE FROM student_preferences WHERE user_id = $userID");
             $conn->query("DELETE FROM student_learning_modes WHERE user_id = $userID");
-            
-            // INSERT new languages
+
             $langs = $_POST['languages'] ?? [];
             foreach ($langs as $lang) {
                 $s = $conn->prepare("INSERT INTO student_preferences (user_id, language) VALUES (?, ?)");
                 $s->bind_param("is", $userID, $lang);
                 $s->execute();
             }
-            
-            // INSERT new modes
+
             $modes = $_POST['modes'] ?? [];
             foreach ($modes as $mode) {
                 $s = $conn->prepare("INSERT INTO student_learning_modes (user_id, mode) VALUES (?, ?)");
                 $s->bind_param("is", $userID, $mode);
                 $s->execute();
             }
-            
-            // Redirect to refresh page
+
             header("Location: student_profile.php?success=1");
             exit();
         }
@@ -156,8 +176,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 }
-}
 
+}
 // Check for success parameter and reload data
 if (isset($_GET['success'])) {
     if ($_GET['success'] == 1) {
@@ -169,7 +189,7 @@ if (isset($_GET['success'])) {
         $stmt->execute();
         $user = $stmt->get_result()->fetch_assoc();
         $displayName = $user['fullname'];
-        $profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/'.$user['profile_pic'] : $assetBase.'/profile-student.png';
+       $profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/'.$user['profile_pic'] . '?v=' . time() : $assetBase.'/profile-student.png';
         
         // Reload languages
         $preferredLanguages = [];
@@ -233,7 +253,7 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
     .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
     .brand strong{display:block;font-size:18px;line-height:1.05}
     .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.58);border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.70);}
+    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.70);}
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;box-shadow:0 8px 18px rgba(231,90,155,.28)}
@@ -352,7 +372,7 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
     .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,18px);opacity:0;pointer-events:none;z-index:500;background:#8E3F70;color:#fff;border-radius:999px;padding:12px 22px;font-size:13px;font-weight:900;transition:.2s ease}
     .toast.show{opacity:1;transform:translate(-50%,0)}
 
-    @media(max-width:1280px){.nav{grid-template-columns:170px minmax(0,1fr) 320px}.profile-layout{grid-template-columns:1fr}}
+    @media(max-width:900px){.nav{grid-template-columns:170px minmax(0,1fr) 320px}.profile-layout{grid-template-columns:1fr}}
     @media(max-width:980px){.nav{grid-template-columns:1fr auto;min-height:auto;padding:10px 0}.nav-links{grid-column:1/-1;grid-row:2;width:100%}.search{display:none}.form-grid{grid-template-columns:1fr}.prog-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:760px){.container{width:min(100% - 22px,100%)}.profile-nav span,.brand span{display:none}.prog-grid{grid-template-columns:1fr}}
     .edit-actions{
@@ -392,6 +412,31 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
   pointer-events: auto;
   cursor: pointer;
 }
+
+.profile-nav{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    border-radius:999px;
+    padding:6px 12px 6px 6px;
+    font-weight:900;
+    color:#7A3D65;
+    border:1px solid rgba(46,42,59,.08);
+    background:rgba(255,255,255,.88);
+    cursor:pointer;
+}
+.profile-nav img{
+    width:34px;
+    height:34px;
+    object-fit:cover;
+    border-radius:50%;
+}
+.profile-nav span{
+    max-width:86px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
   </style>
 </head>
 <body>
@@ -405,45 +450,37 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
       </a>
       <div class="nav-links">
-        <a href="student_dashboard.php">Home</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
-        <a href="find_language.php">Find Language</a>
-        <a href="booking_status.php">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
-      </div>
-      <div class="nav-actions">
-        <div class="search">
-          <i class="bi bi-search"></i>
-          <input type="text" placeholder="Search language..." readonly style="cursor:pointer;" onclick="window.location='student_dashboard.php'">
-        </div>
-        <div style="position:relative;">
-          <button class="icon-btn" onclick="toggleNotifications()" id="bellBtn">
-            <i class="bi bi-bell"></i>
-            <span class="dot" id="notifDot" style="display:none;"></span>
-          </button>
-          <div id="notifDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:20px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);width:320px;overflow:hidden;z-index:100;">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(242,138,178,.15);">
-              <strong style="font-size:14px;">Notifications</strong>
-              <button onclick="markAllRead()" style="background:none;border:none;color:#E75A9B;font-size:12px;font-weight:900;cursor:pointer;">Mark all read</button>
+                    <a href="student_dashboard.php">Home</a>
+                    <a href="find_language.php">Find Language</a>
+                    <a href="booking_status.php">My Bookings</a>
+                    <a href="my_payments.php">My Payments</a>
+                    <a href="my_materials.php">My Materials</a>
+                </div>
+
+        <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
+          <div style="position:relative;">
+            <button class="profile-nav" onclick="toggleDropdown()" id="profileBtn">
+              <img src="<?= e($profilePic) ?>" alt="Student profile">
+              <span><?= e($displayName) ?></span>
+              <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
+            </button>
+            <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
+              <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
+              </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
+              <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
+              </a>
+              <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
+              <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
             </div>
-            <div id="notifList" style="max-height:320px;overflow-y:auto;"><div style="padding:20px;text-align:center;color:#9080a0;font-size:13px;">Loading...</div></div>
           </div>
         </div>
-        <div style="position:relative;">
-          <button class="profile-nav" onclick="toggleDropdown()" id="profileBtn">
-            <img src="<?= e($profilePic) ?>" alt="Profile">
-            <span><?= e($displayName) ?></span>
-            <i class="bi bi-chevron-down" style="font-size:11px;margin-left:4px;"></i>
-          </button>
-          <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
-            <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;background:#FFF1F6;"><i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile</a>
-            <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites</a>
-            <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
-            <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-box-arrow-right"></i> Logout</a>
-          </div>
-        </div>
-      </div>
     </nav>
   </div>
 </header>
@@ -460,7 +497,6 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
     <!-- Tabs -->
     <div class="tabs" style="display: flex; justify-content: center; width: 100%; margin: 0 auto 24px auto;">
       <button class="tab active" onclick="switchTab('profile',this)"><i class="bi bi-person" style="margin-right:6px;"></i>Profile</button>
-      <button class="tab" onclick="switchTab('progress',this)"><i class="bi bi-graph-up" style="margin-right:6px;"></i>Progress</button>
       <button class="tab" onclick="switchTab('password',this)"><i class="bi bi-shield-lock" style="margin-right:6px;"></i>Security</button>
     </div>
 
@@ -496,24 +532,15 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
               <span>Member Since</span>
               <strong><?= date('Y', strtotime($user['created_at'] ?? 'now')) ?></strong>
             </div>
-          </div>
-
-          <?php if (!empty($preferredLanguages)): ?>
-          <div class="sidebar-langs">
-            <?php foreach ($preferredLanguages as $lang): ?>
-              <span class="lang-badge"><?= e($lang) ?></span>
-            <?php endforeach; ?>
-          </div>
-          <?php endif; ?>
-<br><br><br>
+          </div><br><br>
           <div class="sidebar-btns">
             <button type="button" class="btn-primary" onclick="enableEditMode()">
               <i class="bi bi-pencil" style="margin-right:7px;"></i>Edit Profile
             </button><br>
             <button class="btn-outline" onclick="switchTab('password', document.querySelectorAll('.tab')[2])">
-              <i class="bi bi-shield-lock" style="margin-right:7px;"></i>Change Password
-            </button><br><br><br>
-          </div>
+              <i class="bi bi-shield-lock" style="margin-right:7px;margin-bottom:30px;"></i>Change Password
+            </button><br><br>
+          </div><br>
         </aside>
 
         <!-- Edit form -->
@@ -537,7 +564,7 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
               </div>
               <div class="form-group">
                 <label><i class="bi bi-phone" style="color:var(--hot-pink);margin-right:5px;"></i>Contact Number</label>
-                <input type="tel" name="phone" disabled value="<?= e($user['phone'] ?? '') ?>" placeholder="+60 12 345 6789">
+                <input type="tel" name="phone" disabled value="<?= e($user['phone'] ?? '') ?>" placeholder="">
               </div>
             </div>
           </div>
@@ -586,88 +613,6 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
         </form>
       </div>
     </div>
-
-    <!-- ═══════════ TAB: PROGRESS ═══════════ -->
-    <div id="tab-progress" style="display:none;">
-      <div class="progress-section glass">
-        <h3 style="margin:0 0 6px;font-size:22px;letter-spacing:-.5px;">Learning Progress</h3>
-        <p style="color:var(--muted);font-size:14px;margin:0 0 24px;">Your session history and language skill development.</p>
-
-        <!-- Summary cards -->
-        <div class="prog-grid">
-          <div class="prog-card">
-            <div class="val"><?= $totalSessions ?></div>
-            <div class="lbl">Total Sessions</div>
-          </div>
-          <div class="prog-card">
-            <div class="val"><?= $completedCount ?></div>
-            <div class="lbl">Completed</div>
-          </div>
-          <div class="prog-card">
-            <div class="val"><?= count($langStats) ?: '0' ?></div>
-            <div class="lbl">Languages Practiced</div>
-          </div>
-        </div>
-
-        <!-- Skill progress bars -->
-        <?php if (!empty($langStats)): ?>
-        <p class="section-label" style="margin-bottom:12px;"><i class="bi bi-bar-chart" style="color:var(--hot-pink);margin-right:6px;"></i>Sessions Per Language</p>
-        <div class="lang-progress">
-          <?php
-            $maxSessions = max($langStats);
-            foreach ($langStats as $lang => $count):
-              $pct = $maxSessions > 0 ? round(($count / $maxSessions) * 100) : 0;
-          ?>
-          <div class="lp-item">
-            <div class="lp-header">
-              <span><?= e($lang) ?></span>
-              <span><?= $count ?> session<?= $count !== 1 ? 's' : '' ?></span>
-            </div>
-            <div class="track">
-              <div class="fill" style="--w:<?= $pct ?>%;width:<?= $pct ?>%;"></div>
-            </div>
-          </div>
-          <?php endforeach; ?>
-        </div>
-        <?php else: ?>
-          <div class="empty-state">Complete lessons to see your language progress here.</div>
-        <?php endif; ?>
-
-        <!-- Recent sessions -->
-        <div class="section-divider" style="margin:24px 0;"></div>
-        <p class="section-label" style="margin-bottom:12px;"><i class="bi bi-clock-history" style="color:var(--hot-pink);margin-right:6px;"></i>Recent Sessions</p>
-        <?php if (!empty($bookings)): ?>
-        <div class="session-list">
-          <?php foreach (array_slice($bookings, 0, 8) as $b):
-            $statusCss = match($b['status']) {
-              'completed' => 'status-completed',
-              'confirmed' => 'status-confirmed',
-              'cancelled' => 'status-cancelled',
-              default     => 'status-pending'
-            };
-            $statusLabel = ucfirst($b['status']);
-            $langIcon = match(strtolower($b['language'])) {
-              'japanese' => '🇯🇵', 'mandarin','chinese' => '🇨🇳',
-              'korean' => '🇰🇷', 'english' => '🇬🇧',
-              'malay' => '🇲🇾', default => '🌐'
-            };
-          ?>
-          <div class="session-item">
-            <div class="session-icon"><?= $langIcon ?></div>
-            <div>
-              <strong><?= e($b['language']) ?> with <?= e($b['tutor_name']) ?></strong>
-              <span><?= date('d M Y', strtotime($b['booking_date'])) ?></span>
-            </div>
-            <span class="status-badge <?= $statusCss ?>"><?= $statusLabel ?></span>
-          </div>
-          <?php endforeach; ?>
-        </div>
-        <?php else: ?>
-          <div class="empty-state">No sessions yet. Book a tutor to get started!</div>
-        <?php endif; ?>
-      </div>
-    </div>
-
     <!-- ═══════════ TAB: SECURITY ═══════════ -->
     <div id="tab-password" style="display:none;">
        <div class="form-panel glass" style="max-width: 100%;">
@@ -737,7 +682,7 @@ $focusAreaOptions = ['Speaking', 'Listening', 'Reading', 'Writing'];
 <script>
   // ── Tab switching
   function switchTab(name, btn) {
-    ['profile','progress','password'].forEach(t => {
+    ['profile','password'].forEach(t => {
       const tab = document.getElementById('tab-'+t);
       if (tab) tab.style.display = 'none';
     });
@@ -772,14 +717,25 @@ function togglePrefChip(btn, containerId, value) {
 
   // ── Photo preview
   function previewPhoto(input) {
-    if (input.files && input.files[0]) {
-      const reader = new FileReader();
-      reader.onload = e => {
-        document.getElementById('previewImg').src = e.target.result;
-      };
-      reader.readAsDataURL(input.files[0]);
-    }
-  }
+    if (!input.files || !input.files[0]) return;
+
+    // Show preview instantly
+    const reader = new FileReader();
+    reader.onload = e => document.getElementById('previewImg').src = e.target.result;
+    reader.readAsDataURL(input.files[0]);
+
+    // Upload immediately via fetch
+    const formData = new FormData();
+    formData.append('profile_pic', input.files[0]);
+    formData.append('action', 'update_pic_only');
+
+    fetch('student_profile.php', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) showToast('Profile photo updated!');
+            else showToast('Upload failed: ' + data.error);
+        });
+}
 
   // ── Password visibility toggle
   function togglePwd(inputId, iconId) {
@@ -834,24 +790,24 @@ function togglePrefChip(btn, containerId, value) {
   });
 
   function enableEditMode() {
-  document.getElementById('personalPanel').classList.remove('disabled');
-  document.getElementById('prefPanel').classList.remove('disabled');
-  document.getElementById('editActions').style.display = 'flex';
+    document.getElementById('personalPanel').classList.remove('disabled');
+    document.getElementById('prefPanel').classList.remove('disabled');
+    document.getElementById('editActions').style.display = 'flex';
 
-  document.querySelectorAll('#profileForm input').forEach(el => {
-    el.disabled = false;
-  });
+    document.querySelectorAll('#profileForm input').forEach(el => {
+        el.disabled = false;
+    });
 
-  document.querySelectorAll('.pref-chip').forEach(chip => {
-    chip.style.pointerEvents = 'auto';
-    chip.style.opacity = '1';
-  });
+    // Ensure file input and camera button always work
+    document.getElementById('picInput').disabled = false;
+    document.querySelector('.avatar-edit').style.pointerEvents = 'auto';
 
-  document.querySelectorAll('.pref-chip.active').forEach(chip => {
-    chip.classList.add('active');
-  });
+    document.querySelectorAll('.pref-chip').forEach(chip => {
+        chip.style.pointerEvents = 'auto';
+        chip.style.opacity = '1';
+    });
 
-  showToast('Edit mode enabled');
+    showToast('Edit mode enabled — you can now change your details');
 }
 
   function discardChanges() {

@@ -3,13 +3,41 @@ session_start();
 include 'config.php';
 $assetBase = '../assets/img';
 
-if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
 $userID = $_SESSION['user_id'];
 
-$bookingID = intval($_GET['booking_id'] ?? 0);
-if (!$bookingID) { header("Location: booking_status.php"); exit(); }
+// Handle both single and multiple booking IDs
+$booking_ids = [];
 
-// Get booking + payment info
+// Check for multiple bookings
+if (isset($_GET['booking_ids']) && is_array($_GET['booking_ids'])) {
+    $booking_ids = array_map('intval', $_GET['booking_ids']);
+} 
+// Check for single booking
+elseif (isset($_GET['booking_id'])) {
+    $booking_ids = [intval($_GET['booking_id'])];
+}
+// Check POST data
+elseif (isset($_POST['booking_ids']) && is_array($_POST['booking_ids'])) {
+    $booking_ids = array_map('intval', $_POST['booking_ids']);
+}
+elseif (isset($_POST['booking_id'])) {
+    $booking_ids = [intval($_POST['booking_id'])];
+}
+
+if (empty($booking_ids)) {
+    header("Location: booking_status.php?error=no_booking_selected");
+    exit();
+}
+
+// Get all bookings info
+$placeholders = implode(',', array_fill(0, count($booking_ids), '?'));
+$types = str_repeat('i', count($booking_ids));
+
 $stmt = $conn->prepare("
     SELECT b.*, u.fullname AS tutor_name, u.profile_pic AS tutor_pic,
            tp.rate, p.id AS payment_id, p.status AS payment_status
@@ -17,18 +45,40 @@ $stmt = $conn->prepare("
     JOIN users u ON b.tutor_id = u.id
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
     LEFT JOIN payments p ON p.booking_id = b.id
-    WHERE b.id = ? AND b.student_id = ? AND b.status = 'accepted'
+    WHERE b.id IN ($placeholders) AND b.student_id = ? AND b.status IN ('accepted','confirmed')
 ");
-$stmt->bind_param("ii", $bookingID, $userID);
+$all_params = array_merge($booking_ids, [$userID]);
+$all_types = $types . 'i';
+$stmt->bind_param($all_types, ...$all_params);
 $stmt->execute();
-$b = $stmt->get_result()->fetch_assoc();
+$bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-if (!$b) { header("Location: booking_status.php"); exit(); }
-if ($b['payment_status'] === 'verified') {
-    header("Location: booking_detail.php?id=$bookingID");
+if (empty($bookings)) {
+    header("Location: booking_status.php?error=bookings_not_found");
     exit();
 }
+
+// Check if any payment is already verified
+foreach ($bookings as $booking) {
+    if ($booking['payment_status'] === 'verified') {
+        header("Location: booking_detail.php?id=" . $booking['id']);
+        exit();
+    }
+}
+
+// Calculate total amount
+// Calculate total amount - use total_amount from bookings if available, otherwise use rate
+$total_amount = 0;
+foreach ($bookings as $booking) {
+    if (isset($booking['total_amount']) && $booking['total_amount'] > 0) {
+        $total_amount += $booking['total_amount'];
+    } else {
+        $total_amount += $booking['rate'];
+    }
+}
+$is_multi = count($bookings) > 1;
+$first_booking = $bookings[0];
 
 // Get student info
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
@@ -38,25 +88,23 @@ $user = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
-$tutorPic    = !empty($b['tutor_pic']) ? '../uploads/profiles/' . $b['tutor_pic'] : $assetBase . '/profile-tutor.png';
+$profilePic = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $method = trim($_POST['payment_method'] ?? '');
-    $amount = floatval($_POST['amount'] ?? 0);
-    $notes  = trim($_POST['notes'] ?? '');
-
-    if (!$method || $amount <= 0) {
-        $error = 'Please fill in all payment details.';
+    $notes = trim($_POST['notes'] ?? '');
+    
+    if (!$method) {
+        $error = 'Please select a payment method.';
     } else {
         // Handle proof upload
         $proofImage = null;
         if (isset($_FILES['proof_image']) && $_FILES['proof_image']['error'] === 0) {
             $allowed = ['image/jpeg','image/png','image/jpg','image/webp','application/pdf'];
             if (in_array($_FILES['proof_image']['type'], $allowed)) {
-                $ext      = pathinfo($_FILES['proof_image']['name'], PATHINFO_EXTENSION);
-                $filename = 'proof_' . $bookingID . '_' . time() . '.' . $ext;
-                $dest     = '../uploads/payment_proofs/' . $filename;
+                $ext = pathinfo($_FILES['proof_image']['name'], PATHINFO_EXTENSION);
+                $filename = 'proof_' . time() . '_' . rand(1000, 9999) . '.' . $ext;
+                $dest = '../uploads/payment_proofs/' . $filename;
                 if (move_uploaded_file($_FILES['proof_image']['tmp_name'], $dest)) {
                     $proofImage = $filename;
                 }
@@ -64,27 +112,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Invalid file type. Please upload JPG, PNG, or PDF.';
             }
         }
-
+        
+        // Check if proof is required
+        $requires_proof = in_array($method, ['online_banking', 'duitnow']);
+        if ($requires_proof && !$proofImage) {
+            $error = 'Payment proof is required for this method.';
+        }
+        
+        // Check cash for online sessions
+        if ($method === 'cash') {
+            foreach ($bookings as $booking) {
+                if ($booking['learning_mode'] === 'online') {
+                    $error = 'Cash payment is not allowed for online sessions.';
+                    break;
+                }
+            }
+        }
+        
         if (!isset($error)) {
             $receiptNo = 'RCP-' . date('Y') . '-' . str_pad(rand(1, 99999), 6, '0', STR_PAD_LEFT);
-
-            $stmt = $conn->prepare("
-                INSERT INTO payments (booking_id, student_id, tutor_id, amount, payment_method, status, receipt_number, notes, proof_image, created_at)
-                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, NOW())
-                ON DUPLICATE KEY UPDATE
-                    amount = VALUES(amount),
-                    payment_method = VALUES(payment_method),
-                    status = 'pending',
-                    receipt_number = VALUES(receipt_number),
-                    notes = VALUES(notes),
-                    proof_image = VALUES(proof_image),
-                    created_at = NOW()
-            ");
-            $stmt->bind_param("iiidssss", $bookingID, $userID, $b['tutor_id'], $amount, $method, $receiptNo, $notes, $proofImage);
-            $stmt->execute();
-            $stmt->close();
-
-            header("Location: booking_detail.php?id=$bookingID&paid=1");
+            
+            // Insert/Update payments for each booking
+            foreach ($bookings as $booking) {
+                $stmt = $conn->prepare("
+                    INSERT INTO payments (booking_id, student_id, tutor_id, amount, payment_method, status, receipt_number, notes, proof_image, created_at)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        amount = VALUES(amount),
+                        payment_method = VALUES(payment_method),
+                        status = 'pending',
+                        receipt_number = VALUES(receipt_number),
+                        notes = VALUES(notes),
+                        proof_image = VALUES(proof_image),
+                        created_at = NOW()
+                ");
+                $stmt->bind_param("iiidssss", $booking['id'], $userID, $booking['tutor_id'], $booking['rate'], $method, $receiptNo, $notes, $proofImage);
+                $stmt->execute();
+                $stmt->close();
+            }
+            
+            if ($is_multi) {
+                header("Location: my_payments.php?success=payments_submitted");
+            } else {
+                header("Location: booking_detail.php?id=" . $bookings[0]['id'] . "&paid=1");
+            }
             exit();
         }
     }
@@ -106,6 +177,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       --shadow:0 18px 45px rgba(201,79,134,.16);--radius-xl:32px;--radius-lg:24px;
     }
     *{box-sizing:border-box}html{scroll-behavior:smooth}
+    
     body{margin:0;min-height:100vh;font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);
       background:linear-gradient(120deg,rgba(255,241,246,.74),rgba(255,203,220,.30)),
       url("<?= e($assetBase) ?>/background3.jpg") center/cover fixed no-repeat;}
@@ -137,9 +209,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     .card{background:var(--paper);border:1px solid rgba(255,255,255,.55);box-shadow:var(--shadow);border-radius:var(--radius-xl);padding:24px;margin-bottom:16px}
     .card-title{font-size:16px;font-weight:900;margin:0 0 16px;display:flex;align-items:center;gap:8px}
     .card-title i{color:var(--hot-pink)}
-
-    /* METHOD CARDS */
-    .method-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px}
+    .method-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
     .method-card{border:2px solid rgba(46,42,59,.10);border-radius:18px;padding:18px 12px;text-align:center;cursor:pointer;transition:.18s ease;background:white;position:relative}
     .method-card:hover{border-color:var(--pink);transform:translateY(-2px)}
     .method-card.selected{border-color:var(--hot-pink);background:rgba(231,90,155,.06);box-shadow:0 6px 20px rgba(231,90,155,.15)}
@@ -150,14 +220,12 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     .method-card .check{position:absolute;top:10px;right:10px;width:20px;height:20px;border-radius:50%;border:2px solid rgba(46,42,59,.15);background:white;display:grid;place-items:center;font-size:11px;transition:.15s ease}
     .method-card.selected .check{background:var(--hot-pink);border-color:var(--hot-pink);color:white}
 
-    /* FORM */
     .form-group{margin-bottom:16px}
     .form-group label{display:block;font-size:13px;font-weight:900;color:#342635;margin-bottom:7px}
     .form-group label i{color:var(--hot-pink);margin-right:5px}
     .form-control{width:100%;padding:12px 16px;border:1px solid rgba(46,42,59,.12);border-radius:14px;outline:none;font-size:14px;color:#342635;background:rgba(255,255,255,.9);transition:.15s ease}
     .form-control:focus{border-color:var(--hot-pink);box-shadow:0 0 0 3px rgba(231,90,155,.12)}
 
-    /* SUMMARY */
     .summary-card{background:var(--paper);border:1px solid rgba(255,255,255,.55);box-shadow:var(--shadow);border-radius:var(--radius-xl);padding:24px;position:sticky;top:96px}
     .summary-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(46,42,59,.06);font-size:13px}
     .summary-row:last-of-type{border-bottom:none}
@@ -179,6 +247,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
     @media(max-width:900px){.payment-grid{grid-template-columns:1fr}}
     @media(max-width:600px){.method-grid{grid-template-columns:1fr};.nav{grid-template-columns:1fr auto};.nav-links{grid-column:1/-1}}
+    .method-card.disabled{pointer-events:none;border:2px dashed #ccc;background:#f5f5f5;}  
   </style>
 </head>
 <body>
@@ -192,11 +261,10 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       </a>
       <div class="nav-links">
         <a href="student_dashboard.php">Home</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
         <a href="find_language.php">Find Language</a>
         <a href="booking_status.php" class="active">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
+        <a href="my_payments.php">Payments</a>
+        <a href="my_materials.php">Materials</a>
       </div>
       <div class="nav-actions">
         <div style="position:relative;">
@@ -219,7 +287,11 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
 <div class="container">
   <div class="page-wrap">
-    <a href="booking_detail.php?id=<?= $bookingID ?>" class="back-link"><i class="bi bi-arrow-left"></i> Back to Booking</a>
+    <?php if ($is_multi): ?>
+      <a href="my_payments.php" class="back-link"><i class="bi bi-arrow-left"></i> Back to Payments</a>
+    <?php else: ?>
+      <a href="booking_detail.php?id=<?= $first_booking['id'] ?>" class="back-link"><i class="bi bi-arrow-left"></i> Back to Booking</a>
+    <?php endif; ?>
 
     <?php if (isset($error)): ?>
       <div class="error-box"><i class="bi bi-exclamation-circle"></i> <?= e($error) ?></div>
@@ -229,175 +301,154 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       <!-- LEFT -->
       <div>
         <form method="POST" id="paymentForm" enctype="multipart/form-data">
+          <!-- Hidden inputs for all booking IDs -->
+          <?php foreach ($bookings as $booking): ?>
+            <input type="hidden" name="booking_ids[]" value="<?= $booking['id'] ?>">
+          <?php endforeach; ?>
+          
           <!-- Payment Method -->
           <div class="card">
             <div class="card-title"><i class="bi bi-credit-card"></i> Select Payment Method</div>
+            <?php $hasOnlineSession = false; foreach ($bookings as $booking) { if ($booking['learning_mode'] === 'online') $hasOnlineSession = true; } ?>
             <div class="method-grid">
               <label class="method-card" onclick="selectMethod(this,'stripe')">
-              <input type="radio" name="payment_method" value="stripe">
-              <div class="check">✓</div>
-              <span class="method-icon">💳</span>
-              <div class="method-name">Credit / Debit Card</div>
-              <div class="method-desc">Visa, Mastercard, FPX</div>
-            </label>
+                <input type="radio" name="payment_method" value="stripe">
+                <div class="check">✓</div>
+                <span class="method-icon">💳</span>
+                <div class="method-name">Credit / Debit Card</div>
+                <div class="method-desc">Visa, Mastercard</div>
+              </label>
               <label class="method-card" onclick="selectMethod(this,'online_banking')">
                 <input type="radio" name="payment_method" value="online_banking">
                 <div class="check">✓</div>
                 <span class="method-icon">🏦</span>
                 <div class="method-name">Online Banking</div>
-                <div class="method-desc">FPX / Bank Transfer</div>
+                <div class="method-desc">FPX, Bank Transfer</div>
               </label>
               <label class="method-card" onclick="selectMethod(this,'duitnow')">
                 <input type="radio" name="payment_method" value="duitnow">
                 <div class="check">✓</div>
                 <span class="method-icon">📱</span>
-                <div class="method-name">DuitNow / TnG</div>
-                <div class="method-desc">QR or mobile wallet</div>
+                <div class="method-name">DuitNow</div>
+                <div class="method-desc">QR, mobile wallet</div>
               </label>
-              <label class="method-card" onclick="selectMethod(this,'cash')">
-                <input type="radio" name="payment_method" value="cash">
-                <div class="check">✓</div>
-                <span class="method-icon">💵</span>
-                <div class="method-name">Cash</div>
-                <div class="method-desc">Pay in person</div>
-              </label>
+            </div>
+            
+            <div id="payDetails" style="display:none;margin-top:20px;padding-top:20px;border-top:1px solid rgba(46,42,59,.08);">
+              <div id="detailsStripe" style="display:none;padding:16px;border-radius:16px;background:rgba(99,91,255,.06);border:1px solid rgba(99,91,255,.15);text-align:center;">
+                <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#4B44E0;"><i class="bi bi-shield-lock-fill"></i> Secure payment powered by Stripe</p>
+                <button type="button" onclick="submitStripe()" class="btn-primary"><i class="bi bi-credit-card"></i> Pay with Card</button>
               </div>
-
-<!-- Payment Details (shows based on method) -->
-<div id="payDetails" style="display:none;margin-top:16px;">
-<div id="detailsStripe" style="display:none;padding:16px;border-radius:16px;background:rgba(99,91,255,.06);border:1px solid rgba(99,91,255,.15);">
-  <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#4B44E0;">
-    <i class="bi bi-shield-lock-fill"></i>
-    Secure payment powered by Stripe
-  </p>
-
-  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
-    <span class="method-badge">💳 Visa</span>
-    <span class="method-badge">💳 Mastercard</span>
-    <span class="method-badge">🏦 FPX</span>
-    <span class="method-badge">📱 GrabPay</span>
-  </div>
-
-  <button type="button"
-    onclick="window.location.href='create_stripe_session.php?booking_id=<?= $bookingID ?>'"
-    class="btn-primary">
-    <i class="bi bi-credit-card"></i>
-    Pay with Stripe
-  </button>
-</div>
-  <!-- Online Banking Details -->
-  <div id="detailsBanking" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);">
-    <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-bank"></i> Transfer to this account:</p>
-    <div style="display:grid;gap:8px;">
-      <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
-        <span style="color:#4A7A55;font-weight:700;">Bank</span>
-        <strong>Maybank</strong>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
-        <span style="color:#4A7A55;font-weight:700;">Account Name</span>
-        <strong>Kyoshi Education Sdn Bhd</strong>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;">
-        <span style="color:#4A7A55;font-weight:700;">Account Number</span>
-        <strong style="letter-spacing:1px;">1234 5678 9012</strong>
-      </div>
-    </div>
-    <p style="margin:12px 0 0;font-size:12px;color:#4A7A55;font-weight:700;"><i class="bi bi-info-circle"></i> Please use your booking ID <strong>#<?= $bookingID ?></strong> as the payment reference.</p>
-  </div>
-
-  <!-- DuitNow Details -->
-  <div id="detailsDuitnow" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);text-align:center;">
-    <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-qr-code"></i> Scan this QR to pay:</p>
-    <img src="../assets/img/duitnow_qr.png" alt="DuitNow QR"
-         style="width:180px;height:180px;object-fit:contain;border-radius:12px;border:2px solid rgba(45,106,66,.2);background:white;padding:8px;">
-    <p style="margin:12px 0 0;font-size:13px;font-weight:900;color:#2D6A42;">Kyoshi Education Sdn Bhd</p>
-    <p style="margin:4px 0 0;font-size:12px;color:#4A7A55;font-weight:700;"><i class="bi bi-info-circle"></i> Reference: <strong>#<?= $bookingID ?></strong></p>
-  </div>
-
-  <!-- Cash Details -->
-  <div id="detailsCash" style="display:none;padding:16px;border-radius:16px;background:rgba(255,241,246,.6);border:1px solid rgba(242,138,178,.2);">
-    <p style="margin:0 0 8px;font-size:13px;font-weight:900;color:var(--pink-dark);"><i class="bi bi-cash-coin"></i> Cash Payment Instructions:</p>
-    <ul style="margin:0;padding-left:18px;font-size:13px;color:#6D4964;line-height:1.8;font-weight:700;">
-      <li>Pay your tutor directly on the day of your session.</li>
-      <li>Make sure you have the exact amount ready: <strong>RM <?= e($b['rate']) ?></strong></li>
-      <li>Ask your tutor for a handwritten receipt after payment.</li>
-      <li>No proof upload needed — your tutor will confirm receipt.</li>
-    </ul>
-  </div>
-
-</div>
-</div>
-
-<!-- Amount -->
-
-          <!-- Amount -->
+              <div id="detailsBanking" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);text-align:center;">
+                <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-bank"></i> Transfer to this account:</p>
+                <div style="display:grid;gap:8px;">
+                  <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
+                    <span style="color:#4A7A55;font-weight:700;">Bank</span><strong>Maybank</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
+                    <span style="color:#4A7A55;font-weight:700;">Account Name</span><strong>Kyoshi Education Sdn Bhd</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;">
+                    <span style="color:#4A7A55;font-weight:700;">Account Number</span><strong style="letter-spacing:1px;">1234 5678 9012</strong>
+                  </div>
+                </div>
+                <p style="margin:12px 0 0;font-size:12px;color:#4A7A55;font-weight:700;"><i class="bi bi-info-circle"></i> Use booking ID(s) as reference.</p>
+              </div>
+              <div id="detailsDuitnow" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);text-align:center;">
+                <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-qr-code"></i> Scan this QR to pay:</p>
+                <img src="../assets/img/duitnow_qr.png" alt="DuitNow QR" style="width:180px;height:180px;object-fit:contain;border-radius:12px;border:2px solid rgba(45,106,66,.2);background:white;padding:8px;">
+                <p style="margin:12px 0 0;font-size:13px;font-weight:900;color:#2D6A42;">Kyoshi Education Sdn Bhd</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#4A7A55;font-weight:700;">Reference: Use booking ID(s)</p>
+              </div>
+            </div>
+          </div>
+          
           <div class="card">
             <div class="card-title"><i class="bi bi-cash-coin"></i> Payment Amount</div>
-            <div class="form-group">
-              <label><i class="bi bi-currency-dollar"></i> Amount (RM)</label>
-              <input type="number" name="amount" id="amountInput" class="form-control"
-                value="<?= e($b['rate']) ?>" min="1" step="0.01"
-                placeholder="Enter amount" onchange="updateAmount(this.value)">
+            <div style="text-align:center;padding:16px;border-radius:16px;background:linear-gradient(135deg,rgba(231,90,155,.10),rgba(255,195,216,.15));border:1px solid rgba(242,138,178,.22);">
+              <p style="margin:0 0 4px;font-size:12px;color:var(--muted);font-weight:700;"><?= $is_multi ? 'Total Amount' : 'Session Rate' ?></p>
+              <strong style="font-size:36px;color:var(--hot-pink);font-weight:900;">RM <?= number_format($total_amount, 2) ?></strong>
+              <?php if ($is_multi): ?>
+                <p style="margin:8px 0 0;font-size:12px;color:var(--muted);"><?= count($bookings) ?> sessions total</p>
+              <?php else: ?>
+                <p style="margin:8px 0 0;font-size:12px;color:var(--muted);">per hour · non-refundable after session</p>
+              <?php endif; ?>
             </div>
-            <div class="info-note">
-              <i class="bi bi-info-circle"></i>
-              Your payment will be reviewed by the tutor before being marked as verified.
-              The session rate is <strong>RM <?= e($b['rate']) ?>/hr</strong>.
+            <div class="info-note" id="paymentStatusMsg" style="margin-top:12px;">
+              <i class="bi bi-info-circle"></i> Select a payment method above to continue.
             </div>
           </div>
 
-          <!-- Notes -->
+          <div id="proofUploadGroup" style="display:none;margin-top:16px;">
+            <div class="card" style="margin-bottom:20px;">
+              <div class="card-title"><i class="bi bi-upload"></i> Upload Payment Proof</div>
+              <p style="margin:0 0 12px;font-size:13px;color:var(--muted);">(Required for Online Banking & DuitNow only)</p>
+              <input type="file" name="proof_image" accept="image/*,.pdf" style="width:100%;padding:12px 16px;border:1px solid rgba(46,42,59,.12);border-radius:14px;font-size:13px;background:rgba(255,255,255,.9);cursor:pointer;">
+              <p style="margin:8px 0 0;font-size:11px;color:var(--muted);font-weight:700;"><i class="bi bi-info-circle"></i> Accepted: JPG, PNG, PDF. Max 5MB.</p>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-title"><i class="bi bi-chat-left-text"></i> Payment Notes <span style="font-weight:400;color:var(--muted);font-size:12px;">(optional)</span></div>
             <textarea name="notes" class="form-control" placeholder="e.g. Transferred via Maybank at 3pm..." style="min-height:80px;resize:vertical;"></textarea>
           </div>
-        <!-- Proof Upload (not for cash) -->
-            <div id="proofUploadGroup" style="display:none;margin-top:16px;">
-            <div class="card" style="margin-bottom:0;">
-                <div class="card-title"><i class="bi bi-upload"></i> Upload Payment Proof</div>
-                <p style="margin:0 0 12px;font-size:13px;color:var(--muted);">Upload a screenshot or PDF of your transfer receipt.</p>
-                <input type="file" name="proof_image" accept="image/*,.pdf"
-                style="width:100%;padding:12px 16px;border:1px solid rgba(46,42,59,.12);border-radius:14px;font-size:13px;background:rgba(255,255,255,.9);cursor:pointer;">
-                <p style="margin:8px 0 0;font-size:11px;color:var(--muted);font-weight:700;"><i class="bi bi-info-circle"></i> Accepted: JPG, PNG, PDF. Max 5MB.</p>
-            </div>
-            </div>
         </form>
       </div>
 
       <!-- RIGHT SUMMARY -->
       <div class="summary-card">
-        <h3 style="margin:0 0 16px;font-size:18px;">Payment Summary</h3>
-        <div class="summary-row">
-          <span class="summary-label">Tutor</span>
-          <span class="summary-val"><?= e($b['tutor_name']) ?></span>
-        </div>
-        <div class="summary-row">
-          <span class="summary-label">Language</span>
-          <span class="summary-val"><?= e($b['language']) ?></span>
-        </div>
-        <div class="summary-row">
-          <span class="summary-label">Date</span>
-          <span class="summary-val"><?= date('d M Y', strtotime($b['booking_date'])) ?></span>
-        </div>
-        <div class="summary-row">
-          <span class="summary-label">Time</span>
-          <span class="summary-val"><?= date('g:i A', strtotime($b['booking_time'])) ?></span>
-        </div>
-        <div class="summary-row">
-          <span class="summary-label">Mode</span>
-          <span class="summary-val"><?= $b['learning_mode']==='online'?'💻 Online':'🤝 Face to Face' ?></span>
-        </div>
+        <h3 style="margin:0 0 16px;font-size:18px;"><?= $is_multi ? 'Payment Summary (' . count($bookings) . ' sessions)' : 'Payment Summary' ?></h3>
+        
+        <?php if ($is_multi): ?>
+          <?php foreach ($bookings as $booking): ?>
+          <div class="summary-row" style="flex-direction:column;align-items:flex-start;padding:8px 0;">
+            <div style="display:flex;justify-content:space-between;width:100%;">
+              <span class="summary-label"><?= e($booking['language']) ?> with <?= e($booking['tutor_name']) ?></span>
+              <span class="summary-val">RM <?= number_format($booking['rate'], 2) ?></span>
+            </div>
+            <div style="font-size:11px;color:var(--muted);">
+              <?= date('d M Y, g:i A', strtotime($booking['booking_date'] . ' ' . $booking['booking_time'])) ?>
+            </div>
+          </div>
+          <?php endforeach; ?>
+          <div class="summary-row" style="border-top:1px solid rgba(46,42,59,.1);margin-top:8px;padding-top:12px;">
+            <span class="summary-label" style="font-weight:900;">Total Amount</span>
+            <span class="summary-val" style="font-size:20px;color:var(--hot-pink);">RM <?= number_format($total_amount, 2) ?></span>
+          </div>
+        <?php else: ?>
+          <?php $b = $first_booking; ?>
+          <div class="summary-row">
+            <span class="summary-label">Tutor</span>
+            <span class="summary-val"><?= e($b['tutor_name']) ?></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Language</span>
+            <span class="summary-val"><?= e($b['language']) ?></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Date</span>
+            <span class="summary-val"><?= date('d M Y', strtotime($b['booking_date'])) ?></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Time</span>
+            <span class="summary-val"><?= date('g:i A', strtotime($b['booking_time'])) ?></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Mode</span>
+            <span class="summary-val"><?= $b['learning_mode']==='online'?'💻 Online':'🤝 Face to Face' ?></span>
+          </div>
+        <?php endif; ?>
+        
         <div class="amount-box">
           <p>Total Amount</p>
-          <strong id="summaryAmount">RM <?= e($b['rate']) ?></strong>
+          <strong id="summaryAmount">RM <?= number_format($total_amount, 2) ?></strong>
         </div>
+        
         <button class="btn-primary" style="margin-top:16px;" onclick="submitPayment()">
           <i class="bi bi-lock-fill"></i> Confirm Payment
         </button>
-        <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:12px;line-height:1.5;">
-          <i class="bi bi-shield-check" style="color:var(--hot-pink);"></i>
-          Your payment details are kept secure. The tutor will verify and confirm receipt.
-        </p>
+        
+        <p id="paymentInfo" style="font-size:11px;color:var(--muted);text-align:center;margin-top:12px;line-height:1.5;"></p>
       </div>
     </div>
   </div>
@@ -407,33 +458,73 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
 <script>
   let selectedMethod = null;
+  let isMulti = <?= json_encode($is_multi) ?>;
+  let totalAmount = <?= $total_amount ?>;
+  let firstBookingId = <?= $first_booking['id'] ?>;
+
+  function submitPayment() {
+    if (!selectedMethod) {
+        showToast('Please select a payment method');
+        return;
+    }
+
+    if (selectedMethod === 'cash' && <?= json_encode($hasOnlineSession) ?>) {
+        showToast('Cash payment is not allowed for online sessions');
+        return;
+    }
+
+    if (selectedMethod === 'stripe') {
+        submitStripe();
+        return;
+    }
+
+    if ((selectedMethod === 'online_banking' || selectedMethod === 'duitnow')) {
+        const file = document.querySelector('input[name="proof_image"]').files[0];
+        if (!file) {
+            showToast('Please upload payment proof');
+            return;
+        }
+    }
+
+    document.getElementById('paymentForm').submit();
+  }
 
   function selectMethod(el, val) {
     document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
     el.classList.add('selected');
     selectedMethod = val;
+    el.querySelector('input').checked = true;
 
-    // Show payment details
     document.getElementById('payDetails').style.display = 'block';
-    document.getElementById('detailsStripe').style.display   = val === 'stripe' ? 'block' : 'none';
+    document.getElementById('detailsStripe').style.display = val === 'stripe' ? 'block' : 'none';
     document.getElementById('detailsBanking').style.display = val === 'online_banking' ? 'block' : 'none';
-    document.getElementById('detailsDuitnow').style.display = val === 'duitnow'         ? 'block' : 'none';
-    document.getElementById('detailsCash').style.display    = val === 'cash'            ? 'block' : 'none';
+    document.getElementById('detailsDuitnow').style.display = val === 'duitnow' ? 'block' : 'none';
 
-    // Show proof upload only for non-cash
-    document.getElementById('proofUploadGroup').style.display =
-    (val === 'cash' || val === 'stripe') ? 'none' : 'block';
+    document.getElementById('proofUploadGroup').style.display = (val === 'cash' || val === 'stripe') ? 'none' : 'block';
+
+    const paymentInfo = document.getElementById('paymentInfo');
+    const paymentStatusMsg = document.getElementById('paymentStatusMsg');
+
+    if (val === 'stripe') {
+        paymentInfo.innerHTML = '<i class="bi bi-shield-check"></i> Card → Instant confirmation';
+        paymentStatusMsg.innerHTML = '<i class="bi bi-info-circle"></i> Card payment will be confirmed immediately after successful payment';
+    } else if (val === 'online_banking' || val === 'duitnow') {
+        paymentInfo.innerHTML = '<i class="bi bi-shield-check"></i> Banking / DuitNow → Admin verification required';
+        paymentStatusMsg.innerHTML = '<i class="bi bi-info-circle"></i> Upload payment proof for admin verification';
+    } else if (val === 'cash') {
+        paymentInfo.innerHTML = '<i class="bi bi-shield-check"></i> Cash → Tutor confirms after session';
+        paymentStatusMsg.innerHTML = '<i class="bi bi-info-circle"></i> Pay tutor during session. No payment proof required';
+    }
   }
 
-  function updateAmount(val) {
-    document.getElementById('summaryAmount').textContent = 'RM ' + parseFloat(val || 0).toFixed(2);
-  }
-
-  function submitPayment() {
-    if (!selectedMethod) { showToast('Please select a payment method'); return; }
-    const amount = parseFloat(document.getElementById('amountInput').value);
-    if (!amount || amount <= 0) { showToast('Please enter a valid amount'); return; }
-    document.getElementById('paymentForm').submit();
+  function submitStripe() {
+    if (isMulti) {
+        // For multiple bookings, send all booking IDs to Stripe
+        const bookingIds = <?= json_encode(array_column($bookings, 'id')) ?>;
+        window.location.href = 'create_stripe_session.php?booking_ids=' + bookingIds.join(',');
+    } else {
+        window.location.href = 'create_stripe_session.php?booking_id=' + firstBookingId;
+    }
   }
 
   let toastTimer;
@@ -448,9 +539,10 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     const d = document.getElementById('profileDropdown');
     d.style.display = d.style.display === 'none' ? 'block' : 'none';
   }
+
   document.addEventListener('click', function(e) {
     const btn = document.getElementById('profileBtn');
-    const dd  = document.getElementById('profileDropdown');
+    const dd = document.getElementById('profileDropdown');
     if (btn && dd && !btn.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
   });
 </script>

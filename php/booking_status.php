@@ -2,6 +2,144 @@
 session_start();
 include 'config.php';
 $assetBase = '../assets/img';
+// AUTO-CANCEL UNPAID BOOKINGS (Run on every page load)
+// ============================================================
+// Cancel accepted bookings where:
+// 1. Session date has passed
+// 2. No verified payment exists
+$autoCancelQuery = "
+    UPDATE bookings b
+    LEFT JOIN payments p ON b.id = p.booking_id AND p.status = 'verified'
+    SET b.status = 'cancelled',
+        b.cancel_reason = 'Payment not received before session time'
+    WHERE b.status = 'accepted'
+    AND b.booking_date < CURDATE()
+    AND p.id IS NULL
+";
+$conn->query($autoCancelQuery);
+
+// Also cancel same-day sessions where time has passed
+$autoCancelTodayQuery = "
+    UPDATE bookings b
+    LEFT JOIN payments p ON b.id = p.booking_id AND p.status = 'verified'
+    SET b.status = 'cancelled',
+        b.cancel_reason = 'Payment not received before session time'
+    WHERE b.status = 'accepted'
+    AND b.booking_date = CURDATE()
+    AND b.booking_time < CURTIME()
+    AND p.id IS NULL
+";
+$conn->query($autoCancelTodayQuery);
+
+// ============================================================
+// INSERT NOTIFICATIONS FOR AUTO-CANCELLED BOOKINGS
+// ============================================================
+$conn->query("
+    INSERT INTO notifications (user_id, title, message, type, link, created_at)
+    SELECT 
+        b.student_id,
+        'Session Cancelled',
+        CONCAT('Your ', b.language, ' session on ', 
+               DATE_FORMAT(b.booking_date, '%W, %d %M %Y'), ' at ', 
+               TIME_FORMAT(b.booking_time, '%h:%i %p'), 
+               ' has been cancelled because payment was not received before the session. Please book a new session.'),
+        'auto_cancelled',
+        CONCAT('booking_status.php?id=', b.id),
+        NOW()
+    FROM bookings b
+    WHERE b.status = 'cancelled' 
+    AND b.cancel_reason = 'Payment not received before session time'
+    AND NOT EXISTS (
+        SELECT 1 FROM notifications n 
+        WHERE n.type = 'auto_cancelled' 
+        AND n.user_id = b.student_id
+        AND n.link LIKE CONCAT('%', b.id, '%')
+    )
+");
+
+// ============================================================
+// SEND EMAIL NOTIFICATIONS FOR AUTO-CANCELLED BOOKINGS
+// ============================================================
+require_once '../vendor/autoload.php';
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+// Get cancelled bookings that haven't been emailed yet
+$cancelledBookings = $conn->query("
+    SELECT b.*, u.fullname as student_name, u.email as student_email
+    FROM bookings b
+    JOIN users u ON b.student_id = u.id
+    WHERE b.status = 'cancelled' 
+    AND b.cancel_reason = 'Payment not received before session time'
+    AND NOT EXISTS (
+        SELECT 1 FROM notifications n 
+        WHERE n.type = 'auto_cancelled_email' 
+        AND n.user_id = b.student_id
+        AND n.link LIKE CONCAT('%', b.id, '%')
+    )
+");
+
+while ($booking = $cancelledBookings->fetch_assoc()) {
+    try {
+        $mail = new PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host = 'smtp.gmail.com';
+        $mail->SMTPAuth = true;
+        $mail->Username = SMTP_USER;
+        $mail->Password = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port = 587;
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($booking['student_email'], $booking['student_name']);
+        $mail->isHTML(true);
+        $mail->Subject = 'Your Session Has Been Cancelled - Kyoshi';
+        
+        $bookingDate = date('l, F j, Y', strtotime($booking['booking_date']));
+        $bookingTime = date('g:i A', strtotime($booking['booking_time']));
+        
+        $mail->Body = "
+        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; background: #f9f9f9; border-radius: 20px; padding: 30px;'>
+            <div style='text-align: center;'>
+                <h1 style='color: #dc2626;'>Session Cancelled ❌</h1>
+            </div>
+            <div style='background: white; border-radius: 16px; padding: 20px; margin-top: 20px;'>
+                <p>Dear <strong>{$booking['student_name']}</strong>,</p>
+                <p>Your {$booking['language']} session scheduled for:</p>
+                <div style='background: #f0f0f0; border-radius: 12px; padding: 15px; margin: 15px 0;'>
+                    <p><strong>Date:</strong> {$bookingDate}</p>
+                    <p><strong>Time:</strong> {$bookingTime}</p>
+                    <p><strong>Tutor:</strong> " . ($booking['tutor_name'] ?? 'Your tutor') . "</p>
+                </div>
+                <p>has been <strong style='color: #dc2626;'>CANCELLED</strong> because payment was not received before the session time.</p>
+                <p>To avoid this in the future, please complete payment as soon as your tutor accepts the booking.</p>
+                <div style='text-align: center; margin-top: 25px;'>
+                    <a href='http://localhost/kyoshi/php/find_language.php' 
+                       style='display: inline-block; padding: 12px 30px; background: linear-gradient(135deg, #E75A9B, #F28AB2); 
+                              color: white; text-decoration: none; border-radius: 30px; font-weight: bold;'>
+                        Book a New Session
+                    </a>
+                </div>
+            </div>
+            <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
+                © " . date('Y') . " Kyoshi - Language Learning Platform
+            </p>
+        </div>";
+        
+        $mail->send();
+        
+        // Mark as emailed (insert notification record to track)
+        $conn->query("
+            INSERT INTO notifications (user_id, title, message, type, link, created_at)
+            VALUES ({$booking['student_id']}, 'Cancellation Email Sent', 
+                    'An email notification about your cancelled session has been sent.', 
+                    'auto_cancelled_email', 
+                    'booking_status.php?id={$booking['id']}', NOW())
+        ");
+        
+    } catch (Exception $e) {
+        error_log("Auto-cancel email failed: " . $mail->ErrorInfo);
+    }
+}
 
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 $userID = $_SESSION['user_id'];
@@ -65,7 +203,10 @@ $stmt = $conn->prepare("
            u.fullname AS tutor_name, u.profile_pic AS tutor_pic, tp.rate,
            p.status AS payment_status,
            p.amount AS payment_amount,
-           r.id AS rated
+           CASE 
+    WHEN r.id IS NOT NULL THEN 1
+    ELSE 0
+END AS rated
     FROM bookings b
     JOIN users u ON b.tutor_id = u.id
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
@@ -171,7 +312,7 @@ function statusCfg($s) {
     .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
     .brand strong{display:block;font-size:18px;line-height:1.05}
     .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.58);border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
+    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;;border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;box-shadow:0 8px 18px rgba(231,90,155,.28)}
@@ -292,7 +433,7 @@ function statusCfg($s) {
     /* CANCEL MODAL */
     .modal-overlay{position:fixed;inset:0;background:rgba(52,38,53,.5);backdrop-filter:blur(6px);z-index:200;display:none;place-items:center;}
     .modal-overlay.show{display:grid}
-    .modal-box{background:white;border-radius:24px;padding:28px;max-width:400px;width:calc(100% - 40px);box-shadow:0 30px 60px rgba(201,79,134,.2)}
+    .modal-box{background:white;border-radius:24px;padding:28px;max-width:560px;width:calc(100% - 40px);box-shadow:0 30px 60px rgba(201,79,134,.2);max-height:80vh;overflow-y:auto;}
     .modal-box h3{margin:0 0 10px;font-size:18px}
     .modal-box p{margin:0 0 20px;color:var(--muted);font-size:14px;line-height:1.5}
     .modal-actions{display:flex;gap:10px;justify-content:flex-end}
@@ -379,42 +520,46 @@ function statusCfg($s) {
 <header class="topbar">
   <div class="container">
     <nav class="nav">
-    <a href="student_dashboard.php" class="brand">
-        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
-        <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
-    </a>
-    <div class="nav-links">
-        <a href="student_dashboard.php">Home</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
-        <a href="find_language.php">Find Language</a>
-        <a href="booking_status.php" class="active">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
-    </div>
-    <div class="nav-actions">
-        <div class="search">
-            <i class="bi bi-search"></i>
-            
-            <input type="text" id="modalTutorSearchInput" placeholder="Search by language..." readonly style="cursor:pointer;" onclick="openSearch()">
+        <a href="student_dashboard.php" class="brand">
+          <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
+          <div>
+            <strong>Kyoshi</strong>
+            <span>Student Learning Space</span>
+          </div>
+        </a>
+
+        <div class="nav-links">
+          <a href="student_dashboard.php">Home</a>
+          <a  href="find_language.php">Find Language</a>
+          <a class="active" href="booking_status.php">My Bookings</a>
+          <a href="my_payments.php">My Payments</a>
+          <a href="my_materials.php">My Materials</a>
         </div>
-        <button class="icon-btn" onclick="showToast('Notifications coming soon')">
-            <i class="bi bi-bell"></i><span class="dot"></span>
-        </button>
-        <div style="position:relative;">
+        <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
+          <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">
-                <img src="<?= e($profilePic) ?>" alt="Profile">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down" style="font-size:11px;margin-left:4px;"></i>
+              <img src="<?= e($profilePic) ?>" alt="Student profile">
+              <span><?= e($displayName) ?></span>
+              <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
             </button>
             <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
-                <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile</a>
-                <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites</a>
-                <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
-                <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-box-arrow-right"></i> Logout</a>
+              <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
+              </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
+              <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
+              </a>
+              <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
+              <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
             </div>
+          </div>
         </div>
-    </div>
-</nav>
+      </nav>
   </div>
 </header>
 
@@ -496,9 +641,9 @@ function statusCfg($s) {
     <div id="bulkBar" style="display:none;position:sticky;top:90px;z-index:40;
   background:linear-gradient(135deg,#E75A9B,#F28AB2);border-radius:999px;
   padding:12px 20px;margin-bottom:16px;align-items:center;
-  justify-content:space-between;gap:12px;box-shadow:0 8px 24px rgba(231,90,155,.3);">
+  justify-content:center;gap:12px;box-shadow:0 8px 24px rgba(231,90,155,.3);">
   <span id="bulkCount" style="color:white;font-weight:900;font-size:13px;">0 selected</span>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
     <button id="bulkRateBtn"    onclick="bulkAction('rate')"       class="btn-action ghost" style="background:white;display:none;"><i class="bi bi-star"></i> Rate Selected</button>
     <button id="bulkReschedBtn" onclick="bulkAction('reschedule')" class="btn-action ghost" style="background:white;display:none;"><i class="bi bi-calendar-plus"></i> Reschedule Selected</button>
     <button id="bulkCancelBtn"  onclick="bulkAction('cancel')"     class="btn-action ghost" style="background:white;display:none;"><i class="bi bi-x-circle"></i> Cancel Selected</button>
@@ -506,16 +651,16 @@ function statusCfg($s) {
   </div>
 </div>
 <!-- SELECT MODE BAR -->
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
-  <span style="font-size:12px;font-weight:900;color:var(--muted);">Select more to:</span>
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center;justify-content:center;">
+  <span style="font-size:12px;font-weight:900;color:black;justify-content:center;">Press button to select more for </span>
   <button type="button" class="select-mode-btn" id="btnSelectReschedule" onclick="toggleSelectMode('reschedule')">
-    <i class="bi bi-calendar-plus"></i> Reschedule
+    <i class="bi bi-calendar-plus"></i> Rescheduling
   </button>
   <button type="button" class="select-mode-btn" id="btnSelectCancel" onclick="toggleSelectMode('cancel')">
-    <i class="bi bi-x-circle"></i> Cancel
+    <i class="bi bi-x-circle"></i> Cancelling
   </button>
   <button type="button" class="select-mode-btn" id="btnSelectRate" onclick="toggleSelectMode('rate')">
-    <i class="bi bi-star"></i> Rate
+    <i class="bi bi-star"></i> Rating
   </button>
 </div>
     <div class="booking-cards">
@@ -544,7 +689,11 @@ function statusCfg($s) {
     class="card-checkbox <?= $checkboxClass ?>"
     data-id="<?= $b['id'] ?>"
     data-status="<?= e($b['status']) ?>"
-    data-rated="<?= $b['rated'] ? '1' : '0' ?>">
+    data-rated="<?= (int)$b['rated'] ?>"
+     data-tutor="<?= e($b['tutor_name']) ?>"
+    data-lang="<?= e($b['language']) ?>"
+    data-date="<?= e(date('D, d M Y', strtotime($b['booking_date']))) ?>"
+    data-time="<?= e(date('g:i A', strtotime($b['booking_time']))) ?>">
 <?php endif; ?>
 </div>
   <div class="booking-card" style="flex:1;">
@@ -565,40 +714,68 @@ function statusCfg($s) {
         </span>
       </div>
 
-      <!-- TAGS -->
+      <!-- After the status badge, add completion badge for confirmed past sessions -->
+<?php 
+$class_time = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
+$current_time = time();
+$is_past_class = $class_time < $current_time;
+$is_confirmed = ($b['status'] === 'confirmed');
+$is_completed = ($b['status'] === 'completed');
+?>
+
       <div class="card-tags">
-        <span class="tag mode"><?= $b['learning_mode']==='online'?'💻 Online':'🤝 Face to Face' ?></span>
-        <?php if ($b['focus']): foreach(explode(',',$b['focus']) as $f): ?>
-          <span class="tag focus"><?= e(trim($f)) ?></span>
-        <?php endforeach; endif; ?>
-        <?php if ($b['status'] === 'accepted'): ?>
+    <span class="tag mode"><?= $b['learning_mode']==='online'?'💻 Online':'🤝 Face to Face' ?></span>
+    
+    <?php if ($b['focus']): foreach(explode(',',$b['focus']) as $f): ?>
+        <span class="tag focus"><?= e(trim($f)) ?></span>
+    <?php endforeach; endif; ?>
 
-    <?php if ($b['payment_status'] === 'verified'): ?>
-        <span class="tag pay-ok"><i class="bi bi-check-circle"></i> Payment Verified</span>
-
-    <?php elseif ($b['payment_status'] === 'pending'): ?>
-        <span class="tag pay-no"><i class="bi bi-hourglass"></i> Payment Processing</span>
-
-    <?php elseif ($b['payment_status'] === 'failed'): ?>
-        <span class="tag pay-no"><i class="bi bi-x-circle"></i> Payment Failed</span>
-
-    <?php elseif ($b['status'] === 'accepted'): ?>
-        <span class="tag pay-no"><i class="bi bi-clock"></i> Awaiting Payment</span>
-
+    <?php if ($b['status'] === 'accepted'): ?>
+        <?php if ($b['payment_status'] === 'verified'): ?>
+            <span class="tag pay-ok"><i class="bi bi-check-circle"></i> Payment Verified</span>
+        <?php elseif ($b['payment_status'] === 'pending'): ?>
+            <span class="tag pay-no"><i class="bi bi-hourglass"></i> Payment Processing</span>
+        <?php elseif ($b['payment_status'] === 'failed'): ?>
+            <span class="tag pay-no"><i class="bi bi-x-circle"></i> Payment Failed</span>
+        <?php else: ?>
+            <span class="tag pay-no"><i class="bi bi-clock"></i> Awaiting Payment</span>
+        <?php endif; ?>
     <?php endif; ?>
+</div>
 
-<?php endif; ?>
-      </div>
 
       <!-- BOTTOM: meta + actions -->
       <div class="card-bottom">
                 <div class="card-meta">
     <?php if ($b['payment_status'] === 'verified'): ?>
-        <strong>RM <?= e(number_format($b['payment_amount'], 2)) ?> paid</strong>
+        <strong>RM <?= e(number_format($b['payment_amount'], 2)) ?></strong>
     <?php else: ?>
         <strong>RM <?= e($b['rate']) ?>/hr</strong>
     <?php endif; ?>
 </div>
+
+<?php if ($is_confirmed && $is_past_class && !$is_completed): ?>
+<div style="margin-top: 12px; background: white; border-radius: 12px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #e8e8e8; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="background: #ff9800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+            <i class="bi bi-hourglass-split" style="color: white; font-size: 16px;"></i>
+        </div>
+        <div>
+            <div style="font-weight: bold; color: #333; font-size: 13px;">Awaiting Confirmation</div>
+            <div style="color: #999; font-size: 11px;">Your session has ended</div>
+        </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="booking_detail.php?id=<?= $b['id'] ?>" style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 6px 18px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 12px;">
+            <i class="bi bi-check-lg"></i> View 
+        </a>
+        <button onclick="showReportIssue(<?= $b['id'] ?>)" style="background: #f8f9fa; color: #dc3545; padding: 6px 18px; border-radius: 30px; border: 1px solid #dee2e6; cursor: pointer; font-weight: 600; font-size: 12px;">
+            <i class="bi bi-exclamation-triangle"></i> Report
+        </button>
+    </div>
+</div>
+<?php endif; ?>
+
                 <div class="card-actions">
         <a href="booking_detail.php?id=<?= $b['id'] ?>" class="btn-action primary">
             <i class="bi bi-eye"></i> View Details
@@ -610,16 +787,29 @@ function statusCfg($s) {
     </button>
 
 <?php elseif ($b['status'] === 'accepted'): ?>
-    <?php if ($b['payment_status'] !== 'verified'): ?>
-        <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-action purple">
-            <i class="bi bi-credit-card"></i> Pay Now
-        </a>
-    <?php else: ?>
-        <span class="btn-action muted">Waiting admin verification</span>
-    <?php endif; ?>
-    <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
-        <i class="bi bi-x-circle"></i> Cancel
-    </button>
+        <?php if ($b['payment_status'] === 'pending'): ?>
+            <span class="btn-action muted">
+                <i class="bi bi-hourglass-split"></i> Payment Under Review
+            </span>
+        <?php elseif ($b['payment_status'] === 'failed'): ?>
+            <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-action purple">
+                <i class="bi bi-credit-card"></i> Retry Payment
+            </a>
+            <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
+                <i class="bi bi-x-circle"></i> Cancel
+            </button>
+        <?php elseif ($b['payment_status'] === 'verified'): ?>
+            <span class="btn-action muted">
+                <i class="bi bi-check-circle"></i> Awaiting Confirmation
+            </span>
+        <?php else: ?>
+            <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-action purple">
+                <i class="bi bi-credit-card"></i> Pay Now
+            </a>
+            <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
+                <i class="bi bi-x-circle"></i> Cancel
+            </button>
+        <?php endif; ?>
 
 <?php elseif ($b['status'] === 'confirmed'): ?>
     <a href="reschedule_booking.php?id=<?= $b['id'] ?>" class="btn-action ghost">
@@ -635,12 +825,13 @@ function statusCfg($s) {
     <?php if ($b['rated']): ?>
         <span class="btn-action muted"><i class="bi bi-star-fill"></i> Rated</span>
     <?php else: ?>
-        <a href="booking_detail.php?id=<?= $b['id'] ?>#rate" class="btn-action purple">
-            <i class="bi bi-star"></i> Rate Session
-        </a>
+        <a href="rate_session.php?id=<?= $b['id'] ?>" class="btn-action purple">
+    <i class="bi bi-star"></i> Rate Session
+</a>
     <?php endif; ?>
 
 <?php endif; ?>
+
         </div>
       </div>
 
@@ -648,28 +839,62 @@ function statusCfg($s) {
     </div>
     <?php endforeach; ?>
   <?php endif; ?>
+  
 </div>
 
-<!-- CANCEL MODAL -->
+<!-- CANCEL MODAL WITH REASONS -->
 <div class="modal-overlay" id="cancelModal">
   <div class="modal-box">
-    <h3>Cancel Booking?</h3>
-    <p>Are you sure you want to cancel this booking? This action cannot be undone.</p>
-    <div class="modal-actions">
-      <button onclick="closeCancelModal()" style="padding:10px 20px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:none;color:#7A5570;font-size:13px;font-weight:900;cursor:pointer;">Keep Booking</button>
-      <a id="cancelConfirmBtn" href="cancel_booking.php?id=" 
-   style="padding:10px 20px;border-radius:999px;border:none;
-   background:linear-gradient(135deg,#E75A9B,#F28AB2);
-   color:white;font-size:13px;font-weight:900;
-   cursor:pointer;text-decoration:none;">
-   Yes, Cancel
-</a>
-    </div>
+    <h3><i class="bi bi-exclamation-triangle" style="color: #dc2626;"></i> Cancel Booking</h3>
+    <p>Please select a reason for cancelling:</p>
+    <form id="cancelForm" method="POST" action="cancel_booking.php">
+      <input type="hidden" name="booking_id" id="cancel_booking_id">
+      
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="radio" name="cancel_reason" value="Schedule conflict" required>
+          <span>I'm not available at that time</span>
+        </label>
+        
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="radio" name="cancel_reason" value="Found another tutor">
+          <span>Found another tutor</span>
+        </label>
+        
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="radio" name="cancel_reason" value="Change of plans">
+          <span>Change of plans / No longer needed</span>
+        </label>
+                
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="radio" name="cancel_reason" value="Change learning mode">
+          <span>Want to change learning mode</span>
+        </label>
+        
+        <label style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="radio" name="cancel_reason" value="Other" id="otherReasonRadio">
+            <span>Other:</span>
+          </div>
+          <textarea name="other_reason" id="otherReasonText" 
+            style="width: 100%; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 8px; 
+                   font-family: inherit; font-size: 13px; resize: vertical; display: none;"
+            placeholder="Please specify your reason..."></textarea>
+        </label>
+      </div>
+      
+      <div class="modal-actions">
+        <button type="button" onclick="closeCancelModal()" style="padding:10px 20px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:none;color:#7A5570;font-size:13px;font-weight:900;cursor:pointer;">Keep Booking</button>
+        <button type="submit" name="submit_cancel" style="background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;padding:10px 20px;border-radius:999px;border:none;font-size:13px;font-weight:900;cursor:pointer;">
+          Yes, Cancel
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 <script>
 let toastTimer;
-let activeMode = null; // 'reschedule' | 'cancel' | 'rate' | null
+let activeMode = null; 
 
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -691,17 +916,47 @@ document.addEventListener('click', function(e) {
 });
 
 function confirmCancel(id, status) {
-  const msg = status === 'accepted'
-    ? 'You have already been accepted by the tutor. Cancel anyway?'
-    : 'Are you sure you want to cancel this booking?';
-  document.querySelector('#cancelModal p').textContent = msg;
-  document.getElementById('cancelConfirmBtn').href = 'cancel_booking.php?id=' + id;
+  document.getElementById('cancel_booking_id').value = id;
   document.getElementById('cancelModal').classList.add('show');
 }
 
 function closeCancelModal() {
   document.getElementById('cancelModal').classList.remove('show');
+  document.getElementById('cancelForm').reset();
+  document.getElementById('otherReasonText').style.display = 'none';
 }
+
+// Show/hide other reason textarea
+document.addEventListener('DOMContentLoaded', function() {
+  const otherRadio = document.getElementById('otherReasonRadio');
+  const otherText = document.getElementById('otherReasonText');
+  if (otherRadio && otherText) {
+    otherRadio.addEventListener('change', function() {
+      otherText.style.display = this.checked ? 'block' : 'none';
+    });
+  }
+});
+
+// Handle form submission
+document.getElementById('cancelForm')?.addEventListener('submit', function(e) {
+  const selectedReason = document.querySelector('input[name="cancel_reason"]:checked');
+  if (!selectedReason) {
+    e.preventDefault();
+    alert('Please select a reason for cancellation');
+    return;
+  }
+  
+  if (selectedReason.value === 'Other') {
+    const otherText = document.getElementById('otherReasonText').value.trim();
+    if (!otherText) {
+      e.preventDefault();
+      alert('Please specify your reason');
+      return;
+    }
+    // Update the cancel_reason value with the full reason
+    selectedReason.value = 'Other: ' + otherText;
+  }
+});
 
 // ── SELECT MODE ──
 function toggleSelectMode(mode) {
@@ -756,11 +1011,158 @@ function bulkAction(type) {
   const checked = [...document.querySelectorAll('.card-checkbox:checked')];
 
   if (type === 'rate') {
-    checked.forEach(c => window.open('booking_detail.php?id=' + c.dataset.id + '#rate', '_blank'));
+    const ids = checked.map(c => c.dataset.id);
+    if (ids.length === 1) {
+        window.location.href = 'booking_detail.php?id=' + ids[0] + '#rate';
+    } else {
+        const firstUrl = 'booking_detail.php?id=' + ids[0] + '#rate';
 
-  } else if (type === 'reschedule') {
-    checked.forEach(c => window.open('reschedule_booking.php?id=' + c.dataset.id, '_blank'));
+        const rateList = checked.map(c => `
+            <div style="padding:12px 14px;background:rgba(221,211,255,.3);border-radius:12px;
+                 margin-bottom:8px;border:1px solid rgba(167,123,232,.15);">
 
+                <div style="font-size:13px;font-weight:900;color:#342635;margin-bottom:10px;">
+                    <i class="bi bi-star-fill" style="color:#FFB800;"></i>
+                    ${c.dataset.lang} with ${c.dataset.tutor}
+                </div>
+
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+
+                    <!-- Session date/time -->
+                    <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
+                         background:rgba(255,241,246,.8);border:1px solid rgba(242,138,178,.2);">
+                        <div style="font-size:10px;font-weight:900;color:#C94F86;
+                             text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
+                            Session
+                        </div>
+                        <div style="font-size:12px;font-weight:700;color:#342635;">
+                            <i class="bi bi-calendar3"></i> ${c.dataset.date}
+                        </div>
+                        <div style="font-size:12px;font-weight:700;color:#342635;margin-top:2px;">
+                            <i class="bi bi-clock"></i> ${c.dataset.time}
+                        </div>
+                    </div>
+
+                    <!-- Arrow -->
+                    <div style="font-size:18px;color:#FFB800;font-weight:900;">→</div>
+
+                    <!-- Rating placeholder -->
+                    <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
+                         background:rgba(255,184,0,.1);border:1px dashed rgba(255,184,0,.4);">
+                        <div style="font-size:10px;font-weight:900;color:#A06B00;
+                             text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
+                            Your Rating
+                        </div>
+                        <div style="font-size:16px;color:#FFB800;letter-spacing:2px;">
+                            ☆ ☆ ☆ ☆ ☆
+                        </div>
+                        <div style="font-size:11px;color:#7B6178;margin-top:2px;">
+                            on next page
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        `).join('');
+
+        document.querySelector('#cancelModal h3').textContent = 'Rate ' + ids.length + ' Sessions?';
+        document.querySelector('#cancelModal p').innerHTML = `
+            <p style="margin:0 0 10px;font-size:13px;color:var(--muted);">
+                Rating <strong>${ids.length} completed session${ids.length > 1 ? 's' : ''}</strong> 
+                <br> You'll rate each one in order <br>
+            </p>
+            ${rateList}
+        `;
+        document.querySelector('#cancelModal .modal-actions').innerHTML = `
+            <button onclick="closeCancelModal()" style="padding:10px 20px;border-radius:999px;
+             border:1px solid rgba(46,42,59,.12);background:none;color:#7A5570;
+             font-size:13px;font-weight:900;cursor:pointer;">Cancel</button>
+            <a href="${firstUrl}" style="padding:10px 20px;border-radius:999px;border:none;
+             background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;
+             font-size:13px;font-weight:900;text-decoration:none;display:inline-flex;
+             align-items:center;gap:6px;">
+             <i class="bi bi-star-fill"></i> Start Rating
+            </a>`;
+        document.getElementById('cancelModal').classList.add('show');
+    }
+ } else if (type === 'reschedule') {
+    const ids = checked.map(c => c.dataset.id);
+    if (ids.length === 1) {
+        window.location.href = 'reschedule_booking.php?id=' + ids[0];
+    } else {
+        // Build the chained URL: first booking, with next= pointing to second, etc.
+        const firstUrl = 'reschedule_booking.php?id=' + ids[0] + '&next=' + ids[1];
+
+        // Show confirmation
+        document.querySelector('#cancelModal h3').textContent = 'Reschedule ' + ids.length + ' Bookings?';
+        const sessionList = checked.map(c => `
+    <div style="padding:12px 14px;background:rgba(255,241,246,.7);border-radius:12px;
+         margin-bottom:8px;border:1px solid rgba(242,138,178,.15);">
+        
+        <div style="font-size:13px;font-weight:900;color:#342635;margin-bottom:10px;">
+            <i class="bi bi-translate" style="color:var(--hot-pink);"></i> 
+            ${c.dataset.lang} with ${c.dataset.tutor}
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            
+            <!-- Current date -->
+            <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
+                 background:rgba(255,200,200,.4);border:1px solid rgba(163,95,63,.2);">
+                <div style="font-size:10px;font-weight:900;color:#A35F3F;
+                     text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
+                    Current
+                </div>
+                <div style="font-size:12px;font-weight:700;color:#342635;">
+                    <i class="bi bi-calendar3"></i> ${c.dataset.date}
+                </div>
+                <div style="font-size:12px;font-weight:700;color:#342635;margin-top:2px;">
+                    <i class="bi bi-clock"></i> ${c.dataset.time}
+                </div>
+            </div>
+
+            <!-- Arrow -->
+            <div style="font-size:18px;color:var(--hot-pink);font-weight:900;">→</div>
+
+            <!-- New date placeholder -->
+            <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
+                 background:rgba(215,238,219,.5);border:1px solid rgba(45,106,66,.2);
+                 border-style:dashed;">
+                <div style="font-size:10px;font-weight:900;color:#3D7047;
+                     text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
+                    New
+                </div>
+                <div style="font-size:12px;font-weight:700;color:#3D7047;">
+                    <i class="bi bi-calendar-plus"></i> To be selected
+                </div>
+                <div style="font-size:11px;color:#7B6178;margin-top:2px;">
+                    on next page
+                </div>
+            </div>
+
+        </div>
+    </div>
+`).join('');
+
+document.querySelector('#cancelModal p').innerHTML = `
+    <p style="margin:0 0 10px;font-size:13px;color:var(--muted);">
+        Rescheduling <strong>${ids.length} booking${ids.length > 1 ? 's' : ''}</strong> 
+        <br> You'll pick a new date and time for each one <br>
+    </p>
+    ${sessionList}
+`;
+        document.querySelector('#cancelModal .modal-actions').innerHTML = `
+            <button onclick="closeCancelModal()" style="padding:10px 20px;border-radius:999px;
+             border:1px solid rgba(46,42,59,.12);background:none;color:#7A5570;
+             font-size:13px;font-weight:900;cursor:pointer;">Cancel</button>
+            <a href="${firstUrl}" style="padding:10px 20px;border-radius:999px;border:none;
+             background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;
+             font-size:13px;font-weight:900;text-decoration:none;display:inline-flex;
+             align-items:center;gap:6px;">
+             <i class="bi bi-calendar-plus"></i> Start Rescheduling
+            </a>`;
+        document.getElementById('cancelModal').classList.add('show');
+    }
   } else if (type === 'cancel') {
     const ids = checked.map(c => c.dataset.id);
     if (ids.length === 1) {
@@ -780,5 +1182,44 @@ document.addEventListener('change', e => {
 </script>
 <?php include 'nav_search_modal.php'; ?>
 <script src="../js/search_modal.js"></script>
+<script>
+function showReportIssue(bookingId) {
+    const modal = document.createElement('div');
+    modal.id = 'reportModal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="background:white;border-radius:20px;padding:25px;max-width:500px;width:90%;">
+            <h3 style="margin-bottom:15px;">Report Issue</h3>
+            <form method="POST" action="report_issue.php">
+                <input type="hidden" name="booking_id" value="${bookingId}">
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:bold;">Issue Type</label>
+                    <select name="issue_type" required style="width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;">
+                        <option value="">Select issue type</option>
+                        <option value="tutor_no_show">Tutor didn't attend</option>
+                        <option value="technical_issues">Technical issues</option>
+                        <option value="wrong_materials">Wrong materials provided</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:bold;">Description</label>
+                    <textarea name="message" rows="4" required style="width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;" placeholder="Please describe your issue..."></textarea>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" style="background:#E75A9B;color:white;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;">Submit Report</button>
+                    <button type="button" onclick="closeReportModal()" style="background:#ccc;color:#333;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function closeReportModal() {
+    const modal = document.getElementById('reportModal');
+    if (modal) modal.remove();
+}
+</script>
 </body>
 </html>

@@ -6,6 +6,8 @@ $email = trim($_POST['email'] ?? '');
 $password = $_POST['password'] ?? '';
 $redirect = $_POST['redirect'] ?? 'student_dashboard.php';
 $lang = $_POST['lang'] ?? '';
+$remember_me = isset($_POST['remember_me']) ? true : false; // Add this line
+
 // empty check
 if (empty($email) || empty($password)) {
     $_SESSION['error'] = "Please enter email and password.";
@@ -43,6 +45,14 @@ $_SESSION['fullname'] = $user['fullname'];
 $_SESSION['email']    = $user['email'];
 $_SESSION['role']     = $user['role'];
 
+if ($remember_me) {
+    // Keep session alive for 30 days
+    ini_set('session.gc_maxlifetime', 30 * 24 * 60 * 60);
+    session_set_cookie_params(30 * 24 * 60 * 60);
+    
+    // Also set a session variable to mark remember me
+    $_SESSION['remember_me'] = true;
+}
 
 if ($redirect === 'search_tutors.php') {
 

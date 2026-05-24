@@ -10,6 +10,11 @@ if (!isset($_SESSION['user_id'])) {
 
 $userID = $_SESSION['user_id'];
 
+$stmtNotif = $conn->prepare("SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0");
+$stmtNotif->bind_param("i", $userID);
+$stmtNotif->execute();
+$unreadNotifCount = $stmtNotif->get_result()->fetch_assoc()['count'];
+
 // Get student info
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ? AND role = 'student'");
 $stmt->bind_param("i", $userID);
@@ -371,7 +376,7 @@ input, textarea, [contenteditable="true"] {
     .nav{
       min-height:78px;
       display:grid;
-      grid-template-columns:190px minmax(0,1fr) 360px;
+      grid-template-columns:160px 1fr 320px;
       gap:16px;
       align-items:center;
     }
@@ -382,18 +387,15 @@ input, textarea, [contenteditable="true"] {
 
     .nav-links{
       display:flex; align-items:center; justify-content:center; gap:6px;
-      background:rgba(255,255,255,.58);
-      border:1px solid rgba(242,138,178,.18);
-      border-radius:999px; padding:7px;
       overflow:auto; scrollbar-width:none;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.70);
+      
     }
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto; padding:9px 12px; border-radius:999px; font-size:13px; font-weight:900; color:#6D4964; white-space:nowrap; transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg, var(--hot-pink), var(--pink)); color:#fff; box-shadow:0 8px 18px rgba(231,90,155,.28)}
 
     .nav-actions{display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:0}
-    .search{position:relative; flex:1 1 auto; min-width:0}
+    .search{position:relative; flex:1 1 auto; min-width:150px;}
     .search i{position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#91899F}
     .search input{width:100%; border:1px solid rgba(46,42,59,.10); background:rgba(255,255,255,.88); outline:none; border-radius:999px; padding:12px 14px 12px 38px; box-shadow:var(--shadow-soft)}
     .icon-btn,.profile{border:1px solid rgba(46,42,59,.08); background:rgba(255,255,255,.88); box-shadow:var(--shadow-soft); cursor:pointer}
@@ -1591,11 +1593,10 @@ input, textarea, [contenteditable="true"] {
 
         <div class="nav-links">
           <a class="active" href="student_dashboard.php">Home</a>
-          <a href="#preferences">Learning Goals</a>
           <a href="find_language.php">Find Language</a>
-          <a href="booking_status.php">Bookings</a>
-          <a href="#progress">Progress</a>
-          <a href="#payments">Payments</a>
+          <a href="booking_status.php">My Bookings</a>
+          <a href="my_payments.php">My Payments</a>
+          <a href="my_materials.php">My Materials</a>
         </div>
 
         <div class="nav-actions">
@@ -1606,9 +1607,9 @@ input, textarea, [contenteditable="true"] {
           </div>
           <div style="position:relative;">
           <button class="icon-btn" onclick="toggleNotifications()" id="bellBtn">
-            <i class="bi bi-bell"></i>
-            <span class="dot" id="notifDot" style="display:none;"></span>
-          </button>
+    <i class="bi bi-bell"></i>
+    <span class="dot" id="notifDot" style="display: <?php echo $unreadNotifCount > 0 ? 'block' : 'none'; ?>;"></span>
+</button>
 
           <!-- Notification dropdown -->
           <div id="notifDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:20px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);width:320px;overflow:hidden;z-index:100;">
@@ -1631,6 +1632,9 @@ input, textarea, [contenteditable="true"] {
               <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
                 <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
               </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
               <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
                 <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
               </a>
@@ -1643,8 +1647,7 @@ input, textarea, [contenteditable="true"] {
         </div>
       </nav>
     </div>
-  </header>
-
+</header>
   <main class="container">
     <section class="hero" id="overview">
   <div class="hero-grid-new">
@@ -1861,18 +1864,36 @@ input, textarea, [contenteditable="true"] {
             <?php 
             // Get top 3 tutors by lessons taught this month
             $stmtTopTutors = $conn->prepare("
-                SELECT u.id, u.fullname, u.profile_pic, 
-                       COUNT(b.id) as total_sessions,
-                       ROUND(COALESCE(AVG(r.rating), 0), 1) as avg_rating
-                FROM users u
-                JOIN tutor_profiles tp ON u.id = tp.user_id
-                LEFT JOIN bookings b ON b.tutor_id = u.id AND b.status = 'completed' AND MONTH(b.booking_date) = MONTH(CURDATE())
-                LEFT JOIN ratings r ON r.tutor_id = u.id
-                WHERE u.role = 'tutor' AND u.status = 'approved'
-                GROUP BY u.id
-                ORDER BY total_sessions DESC
-                LIMIT 3
-            ");
+    SELECT 
+        u.id,
+        u.fullname,
+        u.profile_pic,
+
+        COUNT(DISTINCT b.id) AS total_sessions,
+
+        ROUND(COALESCE(AVG(DISTINCT r.rating),0),1) AS avg_rating
+
+    FROM users u
+    JOIN tutor_profiles tp 
+        ON u.id = tp.user_id
+
+    LEFT JOIN bookings b 
+        ON b.tutor_id = u.id
+        AND b.status='completed'
+        AND MONTH(b.booking_date)=MONTH(CURDATE())
+        AND YEAR(b.booking_date)=YEAR(CURDATE())
+
+    LEFT JOIN ratings r 
+        ON r.tutor_id=u.id
+
+    WHERE u.role='tutor'
+    AND u.status='approved'
+
+    GROUP BY u.id
+    ORDER BY total_sessions DESC
+    LIMIT 3
+");
+        
             $stmtTopTutors->execute();
             $topTutors = $stmtTopTutors->get_result()->fetch_all(MYSQLI_ASSOC);
             ?>
@@ -1928,7 +1949,8 @@ input, textarea, [contenteditable="true"] {
   let activeFilters = { langs: [], modes: [], locations: [], days: [], timeslots: [], rating: 0 };
   let activeRatingBtn = null;
   let toastTimer;
-
+  let notifOpen = false;
+  
   // 2. toggleFav
   function toggleFav(tutorId, btn) {
       const formData = new FormData();
@@ -2168,100 +2190,218 @@ function filterTutors() {
     if (rc) rc.textContent = visibleCount + ' tutor' + (visibleCount !== 1 ? 's' : '') + ' found';
 }
 
+// ── NOTIFICATIONS SYSTEM ─
+
 function toggleNotifications() {
-  notifOpen = !notifOpen;
-  const dd = document.getElementById('notifDropdown');
-  dd.style.display = notifOpen ? 'block' : 'none';
-  if (notifOpen) loadNotifications();
+    notifOpen = !notifOpen;
+    const dd = document.getElementById('notifDropdown');
+    dd.style.display = notifOpen ? 'block' : 'none';
+    if (notifOpen) loadNotifications();
 }
 
 function loadNotifications() {
-  fetch('get_notifications.php')
-    .then(r => r.json())
-    .then(data => {
-      const dot  = document.getElementById('notifDot');
-      const list = document.getElementById('notifList');
+    fetch('get_notifications.php')
+        .then(r => r.json())
+        .then(data => {
+            const dot = document.getElementById('notifDot');
+            const list = document.getElementById('notifList');
 
-      dot.style.display = data.count > 0 ? 'block' : 'none';
+            // Update red dot based on unread count
+            if (dot) {
+                if (data.count > 0) {
+                    dot.style.display = 'block';
+                    // Add animation for visibility
+                    dot.style.animation = 'pulse 1s infinite';
+                } else {
+                    dot.style.display = 'none';
+                    dot.style.animation = 'none';
+                }
+            }
 
-      if (data.notifications.length === 0) {
-        list.innerHTML = '<div style="padding:20px;text-align:center;color:#9080a0;font-size:13px;">No notifications yet.</div>';
-        return;
-      }
+            if (!data.notifications || data.notifications.length === 0) {
+                list.innerHTML = '<div style="padding:20px;text-align:center;color:#9080a0;font-size:13px;">No notifications yet.</div>';
+                return;
+            }
 
-      list.innerHTML = data.notifications.map(n => `
-        <div onclick="markRead(${n.id}, this)" style="padding:14px 16px;border-bottom:1px solid rgba(242,138,178,.08);cursor:pointer;background:${n.is_read ? 'white' : 'rgba(255,241,246,.6)'};transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='${n.is_read ? 'white' : 'rgba(255,241,246,.6)'}'">
-          <div style="display:flex;align-items:flex-start;gap:10px;">
-            <div style="width:8px;height:8px;border-radius:50%;background:${n.is_read ? 'transparent' : '#E75A9B'};flex-shrink:0;margin-top:5px;"></div>
-            <div style="flex:1;min-width:0;">
-              <strong style="display:block;font-size:13px;color:#342635;">${n.title}</strong>
-              <p style="margin:3px 0 0;font-size:12px;color:#7B6178;line-height:1.4;">${n.message}</p>
-              <span style="display:block;margin-top:4px;font-size:11px;color:#aaa;">${timeAgo(n.created_at)}</span>
-            </div>
-          </div>
-        </div>
-      `).join('');
+            list.innerHTML = data.notifications.map(n => `
+                <div onclick="markRead(${n.id}, this, '${n.link || ''}')"
+                    style="padding:14px 16px;border-bottom:1px solid rgba(242,138,178,.08);cursor:pointer;
+                           background:${n.is_read ? 'white' : 'rgba(255,241,246,.6)'};transition:.15s ease;"
+                    onmouseover="this.style.background='#FFF1F6'"
+                    onmouseout="this.style.background='${n.is_read ? 'white' : 'rgba(255,241,246,.6)'}'">
+                    <div style="display:flex;align-items:flex-start;gap:10px;">
+                        <div style="width:8px;height:8px;border-radius:50%;
+                                    background:${n.is_read ? 'transparent' : '#E75A9B'};
+                                    flex-shrink:0;margin-top:5px;"></div>
+                        <div style="flex:1;min-width:0;">
+                            <strong style="display:block;font-size:13px;color:#342635;">${escapeHtml(n.title)}</strong>
+                            <p style="margin:3px 0 0;font-size:12px;color:#7B6178;line-height:1.4;">${escapeHtml(n.message)}</p>
+                            <span style="display:block;margin-top:4px;font-size:11px;color:#aaa;">${timeAgo(n.created_at)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        })
+        .catch(() => {
+            document.getElementById('notifList').innerHTML =
+                '<div style="padding:20px;text-align:center;color:#9080a0;font-size:13px;">Could not load notifications.</div>';
+        });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function markRead(id, el, link) {
+    const formData = new FormData();
+    formData.append('id', id);
+
+    fetch('mark_notification_read.php', {
+        method: 'POST',
+        body: formData
+    }).then(() => {
+        // After marking as read, check unread count again
+        checkUnreadCount();
+        if (notifOpen) {
+            loadNotifications();
+        }
     });
-    
-function markRead(id, el) {
-  fetch('mark_notification_read.php', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({id})
-  });
-  el.style.background = 'white';
-  el.querySelector('div > div').style.background = 'transparent';
-  loadNotifications();
+
+    el.style.background = 'white';
+
+    const unreadDot = el.querySelector('[style*="border-radius:50%"]');
+    if (unreadDot) {
+        unreadDot.style.background = 'transparent';
+    }
+
+    if (link) {
+        window.location.href = link;
+    }
 }
 
 function markAllRead() {
-  fetch('mark_notification_read.php', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({id: 0})
-  }).then(() => loadNotifications());
+    const formData = new FormData();
+    formData.append('id', 0);
+    fetch('mark_notification_read.php', { method: 'POST', body: formData })
+        .then(() => {
+            checkUnreadCount();
+            if (notifOpen) {
+                loadNotifications();
+            }
+        });
 }
 
 function timeAgo(dateStr) {
-  const diff = Math.floor((new Date() - new Date(dateStr)) / 1000);
-  if (diff < 60)   return 'Just now';
-  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
-  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
-  return Math.floor(diff/86400) + 'd ago';
+    const diff = Math.floor((new Date() - new Date(dateStr)) / 1000);
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
 }
+
+// Single checkUnreadCount function - this updates the red dot
+function checkUnreadCount() {
+    fetch('get_notifications.php', {
+        method: 'GET',
+        headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Network response was not ok');
+        return response.json();
+    })
+    .then(data => {
+        const dot = document.getElementById('notifDot');
+        
+        if (dot) {
+            if (data.count > 0) {
+                dot.style.display = 'block';
+                dot.style.animation = 'pulse 1s infinite';
+            } else {
+                dot.style.display = 'none';
+                dot.style.animation = 'none';
+            }
+        }
+        
+        // If notification dropdown is currently open, refresh the content too
+        if (notifOpen) {
+            loadNotifications();
+        }
+    })
+    .catch(error => {
+        console.error('Error checking notifications:', error);
+    });
+}
+
+// Auto-check function that runs on page load and periodically
+function startAutoNotificationCheck() {
+    // Check immediately when page loads
+    checkUnreadCount();
+    
+    // Check every 10 seconds for new notifications
+    setInterval(checkUnreadCount, 10000);
+    
+    // Check when window regains focus (user returns to tab)
+    window.addEventListener('focus', function() {
+        checkUnreadCount();
+    });
+    
+    // Check when page becomes visible again after being hidden
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            checkUnreadCount();
+        }
+    });
+}
+
+// Add CSS animation for the dot if not already added
+if (!document.querySelector('#notification-dot-style')) {
+    const style = document.createElement('style');
+    style.id = 'notification-dot-style';
+    style.textContent = `
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.3); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        #notifDot {
+            transition: all 0.3s ease;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// Start auto-checking when page loads
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startAutoNotificationCheck);
+} else {
+    startAutoNotificationCheck();
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const bell = document.getElementById('bellBtn');
+    const dd = document.getElementById('notifDropdown');
+    if (bell && dd && !bell.contains(e.target) && !dd.contains(e.target)) {
+        dd.style.display = 'none';
+        notifOpen = false;
+    }
+});
+    
+</script>
+<script>
+// Dynamic greeting based on user's local time
 function getTimeSlot($time) {
     $hour = date('H', strtotime($time));
     if ($hour < 12) return 'morning';
     if ($hour < 18) return 'afternoon';
     return 'evening';
 }
-// Auto-check unread count every 60 seconds
-function checkUnread() {
-  fetch('get_notifications.php')
-    .then(r => r.json())
-    .then(data => {
-      const dot = document.getElementById('notifDot');
-      if (dot) dot.style.display = data.count > 0 ? 'block' : 'none';
-    });
-}
-checkUnread();
-setInterval(checkUnread, 60000);
 
-// Close notification dropdown when clicking outside
-document.addEventListener('click', function(e) {
-  const bell = document.getElementById('bellBtn');
-  const dd   = document.getElementById('notifDropdown');
-  if (bell && dd && !bell.contains(e.target) && !dd.contains(e.target)) {
-    dd.style.display = 'none';
-    notifOpen = false;
-  }
-});
-  
-  
-    }
-</script>
-<script>
-// Dynamic greeting based on user's local time
 function updateGreeting() {
     const now = new Date();
     const hour = now.getHours();
@@ -2574,23 +2714,5 @@ renderSchCal();
 
   </div>
 </div>
-<script>
-function startLearning(module) {
-  let moduleName = module === 'business' ? 'Business Language' : 'Casual & Slang';
-  showToast(`Opening ${moduleName} module! 📚`);
-}
-
-function inviteFriends() {
-  showToast('Share your challenge link with friends! 📱');
-}
-
-function quickPractice(type) {
-  let practiceName = '';
-  if (type === 'vocab') practiceName = '5 new words';
-  else if (type === 'phrase') practiceName = '3 common phrases';
-  else practiceName = '2 min listening';
-  showToast(`Quick practice: ${practiceName}! +10 XP 🎯`);
-}
-            </script>
 </body>
 </html>

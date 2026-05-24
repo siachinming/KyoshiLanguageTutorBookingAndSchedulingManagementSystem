@@ -69,12 +69,16 @@ while ($row = $availResult->fetch_assoc()) {
 $stmt->close();
 $availability = [];
 foreach ($availRows as $row) {
-    $availability[$row['day_of_week']] = [
+    $day = $row['day_of_week'];
+    if (!isset($availability[$day])) {
+        $availability[$day] = [];
+    }
+    $availability[$day][] = [
         'start' => $row['start_time'],
         'end'   => $row['end_time']
     ];
 }
-// Get already booked slots for this tutor (block overbooking)
+// Get already booked slots for this tutor by ANY student (to show as "Booked")
 $stmt = $conn->prepare("
     SELECT booking_date, booking_time 
     FROM bookings 
@@ -83,7 +87,7 @@ $stmt = $conn->prepare("
 $stmt->bind_param("i", $tutorID);
 $stmt->execute();
 $bookedResult = $stmt->get_result();
-$bookedSlots = []; // ['2025-05-21' => ['09:00:00','10:00:00'], ...]
+$bookedSlots = []; // ['2025-05-21' => ['09:00:00','10:00:00']]
 while ($row = $bookedResult->fetch_assoc()) {
     $d = $row['booking_date'];
     $t = $row['booking_time'];
@@ -91,8 +95,23 @@ while ($row = $bookedResult->fetch_assoc()) {
     $bookedSlots[$d][] = $t;
 }
 $stmt->close();
-$bookedSlotsJson = json_encode($bookedSlots);
 
+// Get count of booked slots per day for THIS STUDENT ONLY (for max 2 per day limit)
+$stmt = $conn->prepare("
+    SELECT booking_date, COUNT(*) as count
+    FROM bookings 
+    WHERE tutor_id = ? AND student_id = ? AND status IN ('pending','accepted','confirmed')
+    GROUP BY booking_date
+");
+$stmt->bind_param("ii", $tutorID, $userID);
+$stmt->execute();
+$countResult = $stmt->get_result();
+$myBookedCountPerDay = [];
+while ($row = $countResult->fetch_assoc()) {
+    $myBookedCountPerDay[$row['booking_date']] = $row['count'];
+}
+$stmt->close();
+$bookedSlotsJson = json_encode($bookedSlots);
 // Query 4 - student prefenguages
 $stmt = $conn->prepare("SELECT language FROM student_preferences WHERE user_id = ?");
 $stmt->bind_param("i", $userID);
@@ -124,7 +143,6 @@ $tutorModes = array_filter(array_map('trim', explode(',', $tutor['teaching_modes
 
 function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
-// Available days JSON for JS
 $availDaysJson = json_encode(array_keys($availability));
 $availJson = json_encode($availability);
 ?>
@@ -275,23 +293,38 @@ $availJson = json_encode($availability);
 <header class="topbar">
   <div class="container">
     <nav class="nav">
-      <a href="student_dashboard.php" class="brand">
-        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
-        <strong>Kyoshi</strong>
-      </a>
-      <div class="nav-actions">
-        <button class="profile" onclick="toggleDropdown()" id="profileBtn">
-          <img src="<?= e($profilePic) ?>" alt="Profile">
-          <span><?= e($displayName) ?></span>
-          <i class="bi bi-chevron-down" style="font-size:11px;margin-left:4px;"></i>
-        </button>
-        <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:20px;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
-          <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile</a>
-          <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
-          <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-box-arrow-right"></i> Logout</a>
+        <a href="student_dashboard.php" class="brand">
+          <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
+          <div>
+            <strong>Kyoshi</strong>
+          </div>
+        </a>
+
+        <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
+          <div style="position:relative;">
+            <button class="profile" onclick="toggleDropdown()" id="profileBtn">
+              <img src="<?= e($profilePic) ?>" alt="Student profile">
+              <span><?= e($displayName) ?></span>
+              <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
+            </button>
+            <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
+              <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
+              </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
+              <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
+              </a>
+              <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
+              <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
+            </div>
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
   </div>
 </header>
 
@@ -462,11 +495,13 @@ $availJson = json_encode($availability);
             This tutor hasn't set their availability yet. Please contact them directly.
           </div>
         <?php else: ?>
-          <div class="avail-note">
-            <i class="bi bi-info-circle-fill"></i>
-            <span>Green dates are available. <br>Tap a date to select and choose your time slots.</span>
-            </div>
-
+          <div class="avail-note" style="background: rgba(221, 244, 230, 0.6); border-color: rgba(45, 106, 66, 0.2); color: #2D6A42;">
+    <i class="bi bi-info-circle-fill"></i>
+    <div>
+        <strong>Green dates are available.</strong> Tap a date to select and choose your time slots.<br>
+        <span style="color: #f5220b;">Bookings must be made at least 1 day in advance. Same day bookings are not allowed.</span>
+    </div>
+</div>
             <!-- Calendar -->
             <div class="form-group">
             <label><i class="bi bi-calendar3"></i> Pick your session date(s)</label>
@@ -559,8 +594,9 @@ $availJson = json_encode($availability);
   const availDays    = <?= $availDaysJson ?>;
   const tutorRate    = <?= intval($tutor['rate']) ?>;
   const tutorId      = <?= $tutorID ?>;
-  const bookedSlots = <?= $bookedSlotsJson ?>;
-const MAX_SLOTS_PER_DAY = 2;
+  const bookedSlots = <?= $bookedSlotsJson ?>;  // All students (show as Booked)
+  const myBookedCountPerDay = <?= json_encode($myBookedCountPerDay) ?>;  // Current student only (for limit)
+  const MAX_SLOTS_PER_DAY = 2;
 
   // ── State ────────────────────────────────────────
   let currentStep  = 1;
@@ -593,59 +629,88 @@ let modeUserSelected = null;
     return new Date(y, m-1, d);
   }
   function dayName(d)  { return DAY_NAMES[d.getDay()]; }
-  function isAvail(d)  { return availDays.includes(dayName(d)); }
-  function isPast(d)   { return d < now; }
+  function isAvail(date) { 
+    // Check if date is today - DISALLOW
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (date.getDate() === today.getDate() &&
+        date.getMonth() === today.getMonth() &&
+        date.getFullYear() === today.getFullYear()) {
+        return false; // Cannot book for today
+    }
+    
+    return availability[dayName(date)] && availability[dayName(date)].length > 0; 
+}
 
-  function fmt(h, m) {
+function isPast(date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date < today;
+}
+
+function fmt(h, m) {
     const suffix = h >= 12 ? 'PM' : 'AM';
     const h12 = h % 12 || 12;
-    return h12 + (m ? ':' + String(m).padStart(2,'0') : '') + ' ' + suffix;
-  }
-
-  // ── Calendar rendering ───────────────────────────
-  function renderCalendar() {
+    return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + ' ' + suffix;
+}
+        
+function renderCalendar() {
     document.getElementById('calMonthLabel').textContent =
-      MONTH_NAMES[calMonth] + ' ' + calYear;
+        MONTH_NAMES[calMonth] + ' ' + calYear;
     const grid = document.getElementById('calGrid');
     grid.innerHTML = '';
 
     // Day-name headers
-    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(n => {
-      const el = document.createElement('div');
-      el.className = 'cal-day-name';
-      el.textContent = n;
-      grid.appendChild(el);
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(n => {
+        const el = document.createElement('div');
+        el.className = 'cal-day-name';
+        el.textContent = n;
+        grid.appendChild(el);
     });
 
-    const firstDay    = new Date(calYear, calMonth, 1).getDay();
-    const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+    const firstDay = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
+    // Fill empty cells before first day
     for (let i = 0; i < firstDay; i++) {
-      const el = document.createElement('div');
-      el.className = 'cal-day empty';
-      grid.appendChild(el);
+        const el = document.createElement('div');
+        el.className = 'cal-day empty';
+        grid.appendChild(el);
     }
 
+    // Fill actual days
     for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(calYear, calMonth, d);
-      const ds   = dateStr(date);
-      const el   = document.createElement('div');
-      el.textContent = d;
-      el.dataset.date = ds;
+        const date = new Date(calYear, calMonth, d);
+        const ds = dateStr(date);
+        const el = document.createElement('div');
+        el.textContent = d;
+        el.dataset.date = ds;
 
-      if (isPast(date)) {
-        el.className = 'cal-day past';
-      } else if (!isAvail(date)) {
-  el.className = 'cal-day unavailable';
-} else {
-  let cls = 'cal-day available';
-  if (sessions[ds]) cls += ' selected'; // simple highlight for selected
-  el.className = cls;
-  el.onclick = () => handleDateClick(date);
-}
-      grid.appendChild(el);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const isTodayDate = date.getDate() === today.getDate() &&
+            date.getMonth() === today.getMonth() &&
+            date.getFullYear() === today.getFullYear();
+
+        if (isPast(date)) {
+            el.className = 'cal-day past';
+        } else if (isTodayDate) {
+            el.className = 'cal-day unavailable';
+            el.title = 'Cannot book for today';
+        } else if (!isAvail(date)) {
+            el.className = 'cal-day unavailable';
+        } else {
+            let cls = 'cal-day available';
+            if (sessions[ds]) cls += ' selected';
+            el.className = cls;
+            el.onclick = (function(date) {
+                return function() { handleDateClick(date); };
+            })(date);
+        }
+        grid.appendChild(el);
     }
-  }
+}
 
   function changeMonth(dir) {
     calMonth += dir;
@@ -696,8 +761,7 @@ let modeUserSelected = null;
     updateRunningTotal();
   }
 
-  // ── Per-day slot panels ──────────────────────────
-  function renderDayPanels() {
+function renderDayPanels() {
     const container = document.getElementById('daySlotPanels');
     container.innerHTML = '';
 
@@ -705,91 +769,111 @@ let modeUserSelected = null;
     if (sortedDates.length === 0) return;
 
     sortedDates.forEach(ds => {
-      const sess   = sessions[ds];
-      const avail  = availability[sess.dayName];
-      if (!avail) return;
+        const sess  = sessions[ds];
+        const blocks = availability[sess.dayName]; // now an array
+        if (!blocks || blocks.length === 0) return;
 
-      const panel = document.createElement('div');
-      panel.style.cssText = 'margin-bottom:16px;background:rgba(255,241,246,.7);border:1px solid rgba(242,138,178,.18);border-radius:20px;padding:16px;';
+        const panel = document.createElement('div');
+        panel.style.cssText = 'margin-bottom:16px;background:rgba(255,241,246,.7);border:1px solid rgba(242,138,178,.18);border-radius:20px;padding:16px;';
 
-      // Header
-      const header = document.createElement('div');
-      header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
-      header.innerHTML = `
-        <div>
-          <strong style="font-size:14px;">${sess.dayName}, ${parseDateStr(ds).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})}</strong>
-          <span style="display:block;font-size:12px;color:var(--muted);margin-top:2px;">
-            Available ${fmt(...avail.start.split(':').map(Number))} – ${fmt(...avail.end.split(':').map(Number))}
-          </span>
-        </div>
-        <button type="button" onclick="removeDay('${ds}')"
-          style="width:28px;height:28px;border-radius:8px;border:1px solid rgba(46,42,59,.10);background:white;cursor:pointer;font-size:14px;color:#9080a0;">✕</button>
-      `;
-      panel.appendChild(header);
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
+        
+        const availText = blocks.map(b => {
+            const [sh, sm] = b.start.split(':').map(Number);
+            const [eh, em] = b.end.split(':').map(Number);
+            return fmt(sh, sm) + ' – ' + fmt(eh, em);
+        }).join(', ');
 
-      // Time slots
-      const slotWrap = document.createElement('div');
-      slotWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+        header.innerHTML = `
+            <div>
+                <strong style="font-size:14px;">${sess.dayName}, ${parseDateStr(ds).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})}</strong>
+            </div>
+            <button type="button" onclick="removeDay('${ds}')"
+                style="width:28px;height:28px;border-radius:8px;border:1px solid rgba(46,42,59,.10);background:white;cursor:pointer;font-size:14px;color:#9080a0;">✕</button>
+        `;
+        panel.appendChild(header);
 
-      const [sh] = avail.start.split(':').map(Number);
-      const [eh] = avail.end.split(':').map(Number);
-      let cur = parseInt(avail.start.split(':')[0]) * 60 + parseInt(avail.start.split(':')[1]);
-      const end = parseInt(avail.end.split(':')[0]) * 60 + parseInt(avail.end.split(':')[1]);
+        // Time slots — loop through ALL blocks
+        const slotWrap = document.createElement('div');
+        slotWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
 
-      while (cur + 60 <= end) {
-  const h1 = Math.floor(cur/60), m1 = cur % 60;
-  const h2 = Math.floor((cur+60)/60), m2 = (cur+60) % 60;
-  const label   = fmt(h1,m1) + ' – ' + fmt(h2,m2);
-  const timeVal = String(h1).padStart(2,'0') + ':' + String(m1).padStart(2,'0') + ':00';
+        blocks.forEach(block => {
+            let cur = parseInt(block.start.split(':')[0]) * 60 + parseInt(block.start.split(':')[1]);
+            const end = parseInt(block.end.split(':')[0]) * 60 + parseInt(block.end.split(':')[1]);
 
-  // Check if already booked by another student
-  const isBooked = bookedSlots[ds] && bookedSlots[ds].includes(timeVal);
-  const isSelected = sess.slots.has(timeVal);
+            while (cur + 60 <= end) {
+                const h1 = Math.floor(cur/60), m1 = cur % 60;
+                const h2 = Math.floor((cur+60)/60), m2 = (cur+60) % 60;
+                const label   = fmt(h1,m1) + ' – ' + fmt(h2,m2);
+                const timeVal = String(h1).padStart(2,'0') + ':' + String(m1).padStart(2,'0') + ':00';
 
-  const btn = document.createElement('button');
-  btn.type = 'button';
+                const isBooked   = bookedSlots[ds] && bookedSlots[ds].includes(timeVal);
+                const isSelected = sess.slots.has(timeVal);
 
-  if (isBooked) {
-    btn.className = 'time-slot';
-    btn.textContent = label + ' · Booked';
-    btn.disabled = true;
-    btn.style.cssText = 'opacity:.4;cursor:not-allowed;text-decoration:line-through;';
-  } else {
-    btn.className = 'time-slot' + (isSelected ? ' active' : '');
-    btn.textContent = label;
-    btn.onclick = () => toggleSlot(ds, timeVal, btn);
-  }
+                const btn = document.createElement('button');
+                btn.type = 'button';
 
-  slotWrap.appendChild(btn);
-  cur += 60;
-}
+                if (isBooked) {
+                    btn.className = 'time-slot';
+                    btn.textContent = label + ' · Booked';
+                    btn.disabled = true;
+                    btn.style.cssText = 'opacity:.4;cursor:not-allowed;text-decoration:line-through;';
+                } else {
+                    btn.className = 'time-slot' + (isSelected ? ' active' : '');
+                    btn.textContent = label;
+                    btn.onclick = () => toggleSlot(ds, timeVal, btn);
+                }
+                slotWrap.appendChild(btn);
+                cur += 60;
+            }
+        });
 
-      panel.appendChild(slotWrap);
+        panel.appendChild(slotWrap);
 
-      // Per-day subtotal
-      const sub = document.createElement('div');
-      sub.id = 'subtotal-' + ds;
-      sub.style.cssText = 'margin-top:10px;font-size:12px;font-weight:700;color:var(--pink-dark);';
-      sub.textContent = sess.slots.size > 0
-        ? sess.slots.size + ' slot' + (sess.slots.size>1?'s':'') + ' selected'
-        : 'No slots selected yet';
-      panel.appendChild(sub);
+        const sub = document.createElement('div');
+        sub.id = 'subtotal-' + ds;
+        sub.style.cssText = 'margin-top:10px;font-size:12px;font-weight:700;color:var(--pink-dark);';
+        sub.textContent = sess.slots.size > 0
+            ? sess.slots.size + ' slot' + (sess.slots.size>1?'s':'') + ' selected'
+            : 'No slots selected yet';
+        panel.appendChild(sub);
 
-      container.appendChild(panel);
+        container.appendChild(panel);
     });
-  }
+}
 function toggleSlot(ds, timeVal, btn) {
   const sess = sessions[ds];
   if (!sess) return;
 
+  // Get MY existing booked count for this day (not all students)
+  const myExistingBookedCount = (typeof myBookedCountPerDay !== 'undefined' && myBookedCountPerDay[ds]) ? myBookedCountPerDay[ds] : 0;
+  const currentSelectedCount = sess.slots.size;
+  
   if (sess.slots.has(timeVal)) {
     // Deselect
     sess.slots.delete(timeVal);
     btn.classList.remove('active');
   } else {
-    // Check max 2 per day
-    if (sess.slots.size >= MAX_SLOTS_PER_DAY) {
-      showToast('Maximum ' + MAX_SLOTS_PER_DAY + ' sessions per day allowed.');
+    // Check if this slot is already booked by ANY student
+    const isBookedByOther = bookedSlots[ds] && bookedSlots[ds].includes(timeVal);
+    if (isBookedByOther) {
+      showToast('This time slot is already booked by another student.');
+      return;
+    }
+    
+    // Calculate total after adding this slot (MY bookings + current selections)
+    const totalAfterSelection = myExistingBookedCount + currentSelectedCount + 1;
+    
+    // Check max 2 per day for THIS STUDENT only
+    if (totalAfterSelection > MAX_SLOTS_PER_DAY) {
+      const remainingSlots = MAX_SLOTS_PER_DAY - myExistingBookedCount;
+      if (remainingSlots <= 0) {
+        showToast('You already have ' + myExistingBookedCount + ' session(s) booked on this day. Maximum ' + MAX_SLOTS_PER_DAY + ' sessions per day allowed.');
+      } else {
+        showToast('You can only select ' + remainingSlots + ' more slot(s) on this day. You already have ' + myExistingBookedCount + ' booked.');
+      }
       return;
     }
     sess.slots.add(timeVal);
@@ -798,11 +882,22 @@ function toggleSlot(ds, timeVal, btn) {
 
   const sub = document.getElementById('subtotal-' + ds);
   if (sub) {
-    sub.textContent = sess.slots.size > 0
-      ? sess.slots.size + ' slot' + (sess.slots.size>1?'s':'') + ' · RM ' + (sess.slots.size * tutorRate)
-        + (sess.slots.size >= MAX_SLOTS_PER_DAY ? ' (max reached)' : '')
-      : 'No slots selected yet';
-    sub.style.color = sess.slots.size >= MAX_SLOTS_PER_DAY ? '#A35F3F' : 'var(--pink-dark)';
+    const newSelectedCount = sess.slots.size;
+    const totalSlotsAfter = existingBookedCount + newSelectedCount;
+    const remainingAllowed = MAX_SLOTS_PER_DAY - existingBookedCount;
+    
+    if (newSelectedCount > 0) {
+      sub.textContent = newSelectedCount + ' slot' + (newSelectedCount > 1 ? 's' : '') + ' selected · RM ' + (newSelectedCount * tutorRate);
+      if (totalSlotsAfter >= MAX_SLOTS_PER_DAY) {
+        sub.textContent += ' (max reached)';
+        sub.style.color = '#A35F3F';
+      } else {
+        sub.style.color = 'var(--pink-dark)';
+      }
+    } else {
+      sub.textContent = 'No slots selected yet';
+      sub.style.color = 'var(--pink-dark)';
+    }
   }
 
   const calDay = document.querySelector('[data-date="' + ds + '"]');

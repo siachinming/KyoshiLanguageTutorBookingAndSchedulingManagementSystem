@@ -2,24 +2,44 @@
 session_start();
 include 'config.php';
 
-if (!isset($_SESSION['user_id'])) exit();
+header('Content-Type: text/plain'); // Force plain text response
 
-$tutorId = (int)($_POST['tutor_id'] ?? 0);
-$userId = $_SESSION['user_id'];
+if (!isset($_SESSION['user_id'])) {
+    echo 'error';
+    exit();
+}
 
-$stmt = $conn->prepare("SELECT id FROM student_favourites WHERE student_id = ? AND tutor_id = ?");
-$stmt->bind_param("ii", $userId, $tutorId);
-$stmt->execute();
-$exists = $stmt->get_result()->fetch_assoc();
+$studentID = $_SESSION['user_id'];
+$tutorID = $_POST['tutor_id'] ?? 0;
+
+if (!$tutorID) {
+    echo 'error';
+    exit();
+}
+
+// Check if already favourited
+$check = $conn->prepare("SELECT id FROM student_favourites WHERE student_id = ? AND tutor_id = ?");
+$check->bind_param("ii", $studentID, $tutorID);
+$check->execute();
+$exists = $check->get_result()->fetch_assoc();
 
 if ($exists) {
-    $stmt = $conn->prepare("DELETE FROM student_favourites WHERE student_id = ? AND tutor_id = ?");
-    $stmt->bind_param("ii", $userId, $tutorId);
-    $stmt->execute();
-    echo "removed";  // just plain text
+    // Remove from favourites
+    $delete = $conn->prepare("DELETE FROM student_favourites WHERE student_id = ? AND tutor_id = ?");
+    $delete->bind_param("ii", $studentID, $tutorID);
+    if ($delete->execute()) {
+        echo 'removed';
+    } else {
+        echo 'error';
+    }
 } else {
-    $stmt = $conn->prepare("INSERT INTO student_favourites (student_id, tutor_id) VALUES (?, ?)");
-    $stmt->bind_param("ii", $userId, $tutorId);
-    $stmt->execute();
-    echo "added";    // just plain text
+    // Add to favourites
+    $insert = $conn->prepare("INSERT INTO student_favourites (student_id, tutor_id, created_at) VALUES (?, ?, NOW())");
+    $insert->bind_param("ii", $studentID, $tutorID);
+    if ($insert->execute()) {
+        echo 'added';
+    } else {
+        echo 'error';
+    }
 }
+?>

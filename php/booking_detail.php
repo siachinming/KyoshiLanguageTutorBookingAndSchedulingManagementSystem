@@ -7,12 +7,13 @@ if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 $userID = $_SESSION['user_id'];
 $bookingID = intval($_GET['id'] ?? 0);
 if (!$bookingID) { header("Location: booking_status.php"); exit(); }
-
 $stmt = $conn->prepare("
     SELECT b.*, 
            u.fullname AS tutor_name, 
            u.profile_pic AS tutor_pic, 
            u.email AS tutor_email,
+           s.phone AS student_phone,  -- Add student phone
+           s.fullname AS student_name, -- Add student name
            tp.rate, tp.bio, tp.experience,
            GROUP_CONCAT(DISTINCT tl.language) AS tutor_languages,
            p.id AS payment_id, 
@@ -20,12 +21,15 @@ $stmt = $conn->prepare("
            p.payment_method, 
            p.status AS payment_status,
            p.receipt_number AS receipt_number, 
+           p.receipt_url AS receipt_url,
            p.created_at AS paid_at,
            r.id AS rated, 
            r.rating AS my_rating, 
-           r.comment AS my_comment
+           r.comment AS my_comment,
+           r.is_anonymous AS my_anonymous
     FROM bookings b
     JOIN users u ON b.tutor_id = u.id
+    JOIN users s ON b.student_id = s.id  -- Add this join for student
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
     LEFT JOIN tutor_languages tl ON b.tutor_id = tl.user_id
     LEFT JOIN payments p ON p.booking_id = b.id
@@ -36,6 +40,7 @@ $stmt = $conn->prepare("
 $stmt->bind_param("iii", $userID, $bookingID, $userID);
 $stmt->execute();
 $b = $stmt->get_result()->fetch_assoc();
+
 $stmt->close();
 
 if (!$b) { header("Location: booking_status.php"); exit(); }
@@ -45,17 +50,40 @@ $displayName = $user['fullname'];
 $profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
 $tutorPic    = !empty($b['tutor_pic']) ? '../uploads/profiles/' . $b['tutor_pic'] : $assetBase . '/profile-tutor.png';
 $payStatus   = $b['payment_status'] ?? null;
+$payMethod   = $b['payment_method'] ?? '';
 $bookStatus  = $b['status'];
+$paymentState = 'unpaid';
+
+if (!empty($payStatus)) {
+
+    if ($payStatus === 'failed') {
+        $paymentState = 'failed';
+
+    } elseif (in_array($payStatus, ['verified', 'completed', 'approved', 'paid'])) {
+    $paymentState = 'paid';
+
+    } elseif (in_array($payStatus, ['pending'])) {
+        $paymentState = 'processing';
+    }
+
+} else {
+
+    // fallback if no payment row yet
+    if ($payMethod === 'cash') {
+        $paymentState = 'cash';
+    }
+}
 
 $displayState = $bookStatus;
 
-// Handle rating submission
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_rating']) && $b['status'] === 'completed' && !$b['rated']) {
-    $rating  = intval($_POST['rating'] ?? 0);
-    $comment = trim($_POST['comment'] ?? '');
+    $rating      = intval($_POST['rating'] ?? 0);
+    $comment     = trim($_POST['comment'] ?? '');
+    $isAnonymous = isset($_POST['is_anonymous']) ? 1 : 0;
     if ($rating >= 1 && $rating <= 5) {
-        $stmt = $conn->prepare("INSERT INTO ratings (booking_id, student_id, tutor_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
-        $stmt->bind_param("iiiis", $bookingID, $userID, $b['tutor_id'], $rating, $comment);
+        $stmt = $conn->prepare("INSERT INTO ratings (booking_id, student_id, tutor_id, rating, comment, is_anonymous, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+        $stmt->bind_param("iiiisi", $bookingID, $userID, $b['tutor_id'], $rating, $comment, $isAnonymous);
         $stmt->execute();
         $stmt->close();
         header("Location: booking_detail.php?id=$bookingID&rated=1");
@@ -69,8 +97,8 @@ function statusCfg($s) {
         'pending'   => ['label'=>'Pending',   'icon'=>'bi-hourglass-split',   'bg'=>'rgba(255,217,199,.74)', 'color'=>'#A35F3F', 'desc'=>'Waiting for tutor to approve your booking.'],
         'accepted'  => ['label'=>'Accepted',   'icon'=>'bi-check-circle',      'bg'=>'rgba(216,236,255,.78)', 'color'=>'#1A5FA8', 'desc'=>'Tutor accepted! Please make payment to confirm your session.'],
         'confirmed' => ['label'=>'Confirmed',  'icon'=>'bi-check-circle-fill', 'bg'=>'rgba(215,238,219,.78)', 'color'=>'#3D7047', 'desc'=>'Payment verified! Your session is confirmed.'],
-        'completed' => ['label'=>'Completed',  'icon'=>'bi-patch-check-fill',  'bg'=>'rgba(221,211,255,.78)', 'color'=>'#7648B8', 'desc'=>'Session completed. Don\'t forget to rate your tutor!'],
         'rescheduled' => ['label'=>'Rescheduled', 'icon'=>'bi-calendar-plus', 'bg'=>'rgba(255,241,200,.78)', 'color'=>'#A06B00', 'desc'=>'Your reschedule request is waiting for tutor approval.'],
+        'completed' => ['label'=>'Completed',  'icon'=>'bi-patch-check-fill',  'bg'=>'rgba(221,211,255,.78)', 'color'=>'#7648B8', 'desc'=>'Session completed. Don\'t forget to rate your tutor!'],
         'cancelled' => ['label'=>'Cancelled',  'icon'=>'bi-x-circle-fill',     'bg'=>'rgba(255,200,200,.78)', 'color'=>'#C94F4F', 'desc'=>'This booking was cancelled.'],
     ];
     return $map[$s] ?? $map['pending'];
@@ -116,7 +144,7 @@ $steps = [
     .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
     .brand strong{display:block;font-size:18px;line-height:1.05}
     .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.58);border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
+    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff}
@@ -224,6 +252,24 @@ $steps = [
       .nav{grid-template-columns:1fr auto}
       .nav-links{display:none}
     }
+
+    .star-btn { font-size:24px; width:44px; height:44px; }
+#starRow { gap:10px; margin:14px 0; }
+.card-title { font-size:16px; }
+.star-display i { font-size:20px; }
+
+    .completed-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  align-items:start;
+}
+
+@media(max-width:768px){
+  .completed-grid{
+    grid-template-columns:1fr;
+  }
+}
   </style>
 </head>
 <body>
@@ -231,62 +277,114 @@ $steps = [
 <header class="topbar">
   <div class="container">
     <nav class="nav">
-    <a href="student_dashboard.php" class="brand">
-        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
-        <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
-    </a>
-    <div class="nav-links">
-        <a href="student_dashboard.php">Home</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
-        <a href="find_language.php">Find Language</a>
-        <a href="booking_status.php" class="active">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
-    </div>
-    <div class="nav-actions">
-        <div class="search">
-            <i class="bi bi-search"></i>
-           <input type="text"
-       id="tutorSearchInput"
-       placeholder="Search by language..."
-       readonly
-       style="cursor:pointer;"
-       onclick="openSearch()">
+        <a href="student_dashboard.php" class="brand">
+          <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
+          <div>
+            <strong>Kyoshi</strong>
+            <span>Student Learning Space</span>
+          </div>
+        </a>
+
+        <div class="nav-links">
+          <a href="student_dashboard.php">Home</a>
+          <a  href="find_language.php">Find Language</a>
+          <a class="active" href="booking_status.php">My Bookings</a>
+          <a href="my_payments.php">My Payments</a>
+          <a href="my_materials.php">My Materials</a>
         </div>
-       <button class="icon-btn" onclick="showToast('Notifications coming soon')">
-            <i class="bi bi-bell"></i><span class="dot"></span>
-        </button>
-        <div style="position:relative;">
+        <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
+          <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">
-                <img src="<?= e($profilePic) ?>" alt="Profile">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down" style="font-size:11px;margin-left:4px;"></i>
+              <img src="<?= e($profilePic) ?>" alt="Student profile">
+              <span><?= e($displayName) ?></span>
+              <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
             </button>
             <div id="profileDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:16px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);min-width:180px;overflow:hidden;z-index:100;">
-                <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile</a>
-                <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites</a>
-                <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
-                <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'"><i class="bi bi-box-arrow-right"></i> Logout</a>
+              <a href="student_profile.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-person-circle" style="color:#E75A9B;"></i> My Profile
+              </a>
+              <a href="my_progress.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+  <i class="bi bi-bar-chart-steps" style="color:#E75A9B;"></i> My Progress
+</a>
+              <a href="student_favourites.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#342635;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-heart" style="color:#E75A9B;"></i> My Favourites
+              </a>
+              <hr style="margin:4px 0;border-color:rgba(242,138,178,.2);">
+              <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:14px 16px;font-size:14px;font-weight:700;color:#dc2626;transition:.15s ease;" onmouseover="this.style.background='#FFF1F6'" onmouseout="this.style.background='white'">
+                <i class="bi bi-box-arrow-right"></i> Logout
+              </a>
             </div>
+          </div>
         </div>
-        </div>
-    </nav>
+      </nav>
   </div>
 </header>
+<?php 
+// Check if session has ended and needs confirmation
+$class_time = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
+$current_time = time();
+$is_past_class = $class_time < $current_time;
+$is_confirmed = ($bookStatus === 'confirmed');
+$is_completed = ($bookStatus === 'completed');
+$hours_passed = round(($current_time - $class_time) / 3600, 1);
+$role = $_SESSION['role']; // 'student'
+
+// Get completion status from session_completion table
+$completionStmt = $conn->prepare("
+    SELECT tutor_confirmed, student_confirmed FROM session_completion 
+    WHERE booking_id = ?
+");
+$completionStmt->bind_param("i", $bookingID);
+$completionStmt->execute();
+$completion = $completionStmt->get_result()->fetch_assoc();
+
+$tutor_confirmed = $completion['tutor_confirmed'] ?? false;
+$student_confirmed = $completion['student_confirmed'] ?? false;
+$both_confirmed = ($tutor_confirmed && $student_confirmed);
+?>
 
 <div class="container">
   <div class="page-wrap">
     <a href="booking_status.php" class="back-link"><i class="bi bi-arrow-left"></i> Back to My Bookings</a>
-
-    <!-- STATUS BANNER -->
-    <div class="status-banner" style="background:<?= $cfg['bg'] ?>;border:1px solid <?= $cfg['color'] ?>33;">
-      <div class="s-icon" style="color:<?= $cfg['color'] ?>"><i class="bi <?= $cfg['icon'] ?>"></i></div>
-      <div>
+<div class="status-banner" style="background:<?= $cfg['bg'] ?>;border:1px solid <?= $cfg['color'] ?>33;align-items:center;">
+    <div class="s-icon" style="color:<?= $cfg['color'] ?>"><i class="bi <?= $cfg['icon'] ?>"></i></div>
+    <div style="flex:1;">
         <strong style="color:<?= $cfg['color'] ?>"><?= $cfg['label'] ?></strong>
-        <p style="color:<?= $cfg['color'] ?>"><?= $cfg['desc'] ?></p>
-      </div>
+        <p style="color:<?= $cfg['color'] ?>;margin:0;text-size:25px;">
+            <?php 
+            if ($is_past_class && $is_confirmed && !$is_completed) {
+                echo '⚠️ Session has ended. Please confirm your attendance.';
+            } elseif ($is_completed) {
+                echo '✨Session completed. Thank you for attending!';
+            } elseif ($is_confirmed) {
+                echo '✨Payment verified! Your session is confirmed.';
+            } else {
+                echo $cfg['desc'];
+            }
+            ?>
+        </p>
+        <?php if ($is_completed && ($b['auto_completed'] ?? false)): ?>
+        <small style="color:<?= $cfg['color'] ?>; text-size:25px; opacity:0.8;">(Auto-completed after 24 hours)</small>
+        <?php endif; ?>
     </div>
-    
+
+    <?php if ($is_past_class && $is_confirmed && !$is_completed): ?>
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+        <form method="POST" action="confirm_session.php" style="margin:0;">
+            <input type="hidden" name="booking_id" value="<?= $bookingID ?>">
+            <input type="hidden" name="action" value="confirm">
+            <button type="submit" style="background:linear-gradient(135deg,#28a745,#20c997);color:white;padding:10px 18px;border:none;border-radius:999px;cursor:pointer;font-weight:900;font-size:13px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;">
+                <i class="bi bi-check-lg"></i> Confirm Attendance
+            </button>
+        </form>
+        <button onclick="showReportIssue(<?= $bookingID ?>)" style="background:#dc3545;color:white;padding:10px 18px;border:none;border-radius:999px;cursor:pointer;font-weight:900;font-size:13px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;">
+            <i class="bi bi-exclamation-triangle"></i> Report
+        </button>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- ========== END COMPLETION SECTION ========== -->
 
     <?php if ($bookStatus !== 'cancelled'): ?>
     <div class="progress-wrap">
@@ -383,52 +481,222 @@ $steps = [
             </div>  
             <?php elseif ($bookStatus === 'rescheduled'): ?>
     <div class="pay-box review">
-        <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#A06B00;"><i class="bi bi-calendar-plus"></i> Reschedule Requested</span></div>
-        <div class="pay-row"><span class="pl">Amount</span><span class="pv">RM <?= e(number_format($b['payment_amount'] ?? 0, 2)) ?></span></div>
+        <div class="pay-row">
+            <span class="pl">Status</span>
+            <span class="pv" style="color:#A06B00;">
+                <i class="bi bi-calendar-plus"></i> Reschedule Requested
+            </span>
+        </div>
+        <div class="pay-row">
+            <span class="pl">Amount</span>
+            <span class="pv">
+                RM <?= e(number_format($b['payment_amount'] ?? $b['rate'], 2)) ?>
+            </span>
+        </div>
+        <?php if (!empty($b['payment_method'])): ?>
+        <div class="pay-row">
+            <span class="pl">Method</span>
+            <span class="pv"><?= e(ucwords(str_replace('_', ' ', $b['payment_method']))) ?></span>
+        </div>
+        <?php endif; ?>
     </div>
     <div class="info-note">
         <i class="bi bi-info-circle"></i> Your reschedule request has been sent. Waiting for tutor to approve the new schedule.
     </div>
-        <?php elseif ($bookStatus === 'accepted'): ?>
-        <div class="pay-box unpaid">
+    <?php elseif ($bookStatus === 'accepted'): ?>
+
+  <?php if ($paymentState === 'processing'): ?>
+    <div class="pay-box review">
+      <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#A06B00;"><i class="bi bi-hourglass-split"></i> Payment Under Review</span></div>
+      <div class="pay-row"><span class="pl">Amount</span><span class="pv">RM <?= e(number_format($b['payment_amount'] ?? 0,2)) ?></span></div>
+      <?php if (!empty($b['payment_method'])): ?>
+      <div class="pay-row"><span class="pl">Method</span><span class="pv"><?= e(ucwords(str_replace('_',' ',$b['payment_method']))) ?></span></div>
+      <?php endif; ?>
+      <?php if (!empty($b['paid_at'])): ?>
+      <div class="pay-row"><span class="pl">Submitted On</span><span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span></div>
+      <?php endif; ?>
+    </div>
+    <div class="info-note"><i class="bi bi-info-circle"></i> Your payment is being verified. Session will be confirmed shortly.</div>
+
+  <?php elseif ($paymentState === 'failed'): ?>
+    <div class="pay-box cancelled">
+      <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#C94F4F;"><i class="bi bi-x-circle-fill"></i> Payment Failed</span></div>
+    </div>
+    <div class="action-bar">
+      <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-primary"><i class="bi bi-credit-card"></i> Retry Payment</a>
+    </div>
+
+  <?php else: ?>
+    <div class="pay-box unpaid">
       <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#A35F3F;"><i class="bi bi-clock"></i> Awaiting Payment</span></div>
       <div class="pay-row"><span class="pl">Amount Due</span><span class="pv" style="color:var(--hot-pink);font-size:18px;">RM <?= e($b['rate']) ?></span></div>
     </div>
-    <div class="info-note" style="margin-bottom:12px;">
-      <i class="bi bi-info-circle"></i> After payment, admin will verify and confirm your session within 1–2 business days.
-    </div>
+    <div class="info-note" style="margin-bottom:12px;"><i class="bi bi-info-circle"></i> After payment, admin will verify and confirm your session within 1–2 business days.</div>
     <div class="action-bar">
       <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-primary"><i class="bi bi-credit-card"></i> Pay Now</a>
       <button class="btn-danger" onclick="openCancelModal()"><i class="bi bi-x-circle"></i> Cancel Booking</button>
     </div>
+  <?php endif; ?>
+<?php elseif ($bookStatus === 'confirmed'): ?>
 
-  <?php elseif ($bookStatus === 'confirmed'): ?>
-        <div class="pay-box paid">
-          <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#3D7047;"><i class="bi bi-check-circle-fill"></i> Verified & Paid</span></div>
-          <div class="pay-row"><span class="pl">Amount</span><span class="pv">RM <?= e(number_format($b['payment_amount'] ?? 0, 2)) ?></span></div>
-          <div class="pay-row"><span class="pl">Method</span><span class="pv"><?= e(ucwords(str_replace('_',' ',$b['payment_method'] ?? ''))) ?></span></div>
-          <div class="pay-row"><span class="pl">Paid On</span><span class="pv"><?= date('d M Y', strtotime($b['paid_at'])) ?></span></div>
-          <?php if ($b['receipt_number']): ?>
-          <div class="pay-row"><span class="pl">Receipt No.</span><span class="pv"><?= e($b['receipt_number']) ?></span></div>
-          <?php endif; ?>
-        </div>
-        <div class="action-bar">
-          <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-primary"><i class="bi bi-download"></i> Download Receipt</a>
-            <a href="reschedule_booking.php?id=<?= $b['id'] ?>" class="btn-secondary"><i class="bi bi-calendar-plus"></i> Reschedule</a>
-        </div>
-
-      <?php elseif ($bookStatus === 'completed'): ?>
-        <div class="pay-box paid">
-          <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#7648B8;"><i class="bi bi-shield-check"></i> Under Review</span></div>
-          <div class="pay-row"><span class="pl">Amount</span><span class="pv">RM <?= e(number_format($b['payment_amount'] ?? 0, 2)) ?></span></div>
-          <div class="pay-row"><span class="pl">Method</span><span class="pv"><?= e(ucwords(str_replace('_',' ',$b['payment_method'] ?? ''))) ?></span></div>
-        </div>
-        <div class="info-note">
-          <i class="bi bi-info-circle"></i> Your payment is being reviewed by our admin. This usually takes 1–2 business days.
-        </div>
-            <div class="action-bar">
-      <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-primary"><i class="bi bi-download"></i> Download Receipt</a>
+<div class="pay-box paid">
+    <div class="pay-row">
+        <span class="pl">Status</span>
+        <span class="pv" style="color:#3D7047;">
+            <i class="bi bi-check-circle-fill"></i>
+            Payment Paid & Verified
+        </span>
     </div>
+
+    <div class="pay-row">
+    <span class="pl">Amount</span>
+    <span class="pv">
+        <?php 
+        $amount = $b['payment_amount'] ?? 0;
+        if ($amount > 0) {
+            echo 'RM ' . number_format($amount, 2);
+        } else {
+            echo '<span style="color: #999;">—</span>';
+        }
+        ?>
+    </span>
+</div>
+
+<div class="pay-row">
+    <span class="pl">Method</span>
+    <span class="pv">
+        <?php 
+        $method = $b['payment_method'] ?? '';
+        if (!empty($method)) {
+            echo ucwords(str_replace('_', ' ', $method));
+        } else {
+            echo '<span style="color: #999;">Not selected</span>';
+        }
+        ?>
+    </span>
+</div>
+
+    <?php if (!empty($b['paid_at'])): ?>
+      <div class="pay-row"><span class="pl">Submitted On</span><span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span></div>
+      <?php endif; ?>
+    </div>
+</div>
+
+<div class="action-bar" style="margin-top:16px;">
+    <a href="reschedule_booking.php?id=<?= $bookingID ?>" class="btn-primary">
+        <i class="bi bi-calendar-plus"></i> Reschedule Session
+    </a>
+    <?php if ($paymentState === 'paid'): ?>
+  <?php if ($b['payment_method'] === 'stripe'): ?>
+    <a href="receipt_stripe.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
+      <i class="bi bi-download"></i> Download Receipt
+    </a>
+  <?php else: ?>
+    <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
+      <i class="bi bi-download"></i> Download Receipt
+    </a>
+  <?php endif; ?>
+<?php endif; ?>
+</div>
+
+    <?php elseif ($bookStatus === 'completed'): ?>
+
+<?php if($paymentState === 'paid'): ?>
+<div class="pay-box paid">
+    <div class="pay-row">
+        <span class="pl">Status</span>
+        <span class="pv" style="color:#3D7047;">
+            <i class="bi bi-check-circle-fill"></i> Payment Verified
+        </span>
+    </div>
+    <div class="pay-row">
+        <span class="pl">Amount</span>
+        <span class="pv">RM <?= e(number_format($b['payment_amount'] ?? 0, 2)) ?></span>
+    </div>
+    <div class="pay-row">
+        <span class="pl">Method</span>
+        <span class="pv"><?= e(ucwords(str_replace('_', ' ', $b['payment_method'] ?? ''))) ?></span>
+    </div>
+    <?php if (!empty($b['receipt_number'])): ?>
+    <div class="pay-row">
+        <span class="pl">Receipt No.</span>
+        <span class="pv"><?= e($b['receipt_number']) ?></span>
+    </div>
+    <?php endif; ?>
+    <?php if (!empty($b['paid_at'])): ?>
+    <div class="pay-row">
+        <span class="pl">Paid On</span>
+        <span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span>
+    </div>
+    <?php endif; ?>
+</div>
+
+<?php elseif($paymentState === 'processing'): ?>
+
+<div class="pay-box review">
+  <div class="pay-row">
+    <span class="pl">Status</span>
+    <span class="pv" style="color:#A06B00;">
+      <i class="bi bi-hourglass-split"></i>
+      Waiting For Verification
+    </span>
+  </div>
+</div>
+
+<div class="info-note">
+<i class="bi bi-info-circle"></i>
+Admin will verify your payment within 1–2 business days.
+</div>
+
+<?php elseif($paymentState === 'cash'): ?>
+
+<div class="pay-box unpaid">
+  <div class="pay-row">
+    <span class="pl">Status</span>
+    <span class="pv" style="color:#A35F3F;">
+      <i class="bi bi-cash"></i>
+      Cash Payment
+    </span>
+  </div>
+</div>
+
+<div class="info-note">
+<i class="bi bi-info-circle"></i>
+Payment made directly during session.
+</div>
+
+<?php elseif ($paymentState === 'failed'): ?>
+<div class="pay-box cancelled">
+  <div class="pay-row">
+    <span class="pl">Status</span>
+    <span class="pv" style="color:#C94F4F;"><i class="bi bi-x-circle-fill"></i> Payment Failed</span>
+  </div>
+</div>
+
+<?php else: ?>
+<div class="pay-box unpaid">
+  <div class="pay-row">
+    <span class="pl">Status</span>
+    <span class="pv" style="color:#A35F3F;"><i class="bi bi-clock"></i> No Payment Record</span>
+  </div>
+</div>
+
+<?php endif; ?>
+
+<?php if ($paymentState === 'paid'): ?>
+<div class="action-bar" style="margin-top:16px;">
+  <?php if ($b['payment_method'] === 'card'): ?>
+    <a href="receipt_stripe.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
+      <i class="bi bi-download"></i> Download Receipt
+    </a>
+  <?php else: ?>
+    <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
+      <i class="bi bi-download"></i> Download Receipt
+    </a>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
 
       <?php elseif ($bookStatus === 'cancelled'): ?>
         <?php
@@ -446,59 +714,93 @@ $steps = [
         </div>
       <?php endif; ?>
     </div>
+<?php if ($b['status'] === 'completed'): ?>
+<div class="completed-grid">
 
-    <!-- RATING -->
-    <?php if ($b['status'] === 'completed'): ?>
-    <div class="card" id="rate">
-      <div class="card-title"><i class="bi bi-star"></i> Rate Your Session</div>
-      <?php if ($b['rated']): ?>
-        <div style="padding:16px;border-radius:14px;background:rgba(221,211,255,.3);border:1px solid rgba(167,123,232,.2);">
-          <p style="margin:0 0 8px;font-size:13px;font-weight:900;color:#7648B8;">You rated this session:</p>
-          <div class="star-display">
-            <?php for($i=1;$i<=5;$i++): ?>
-              <i class="bi bi-star<?= $i<=$b['my_rating']?'-fill':'' ?>"></i>
-            <?php endfor; ?>
-          </div>
-          <?php if ($b['my_comment']): ?>
-            <p style="margin:10px 0 0;font-size:13px;color:var(--muted);font-style:italic;">"<?= e($b['my_comment']) ?>"</p>
-          <?php endif; ?>
+<div class="card" id="rate">
+  <div class="card-title"><i class="bi bi-star"></i> Rate Your Session</div>
+  <?php if ($b['rated']): ?>
+    <div style="padding:16px;border-radius:14px;background:rgba(221,211,255,.3);border:1px solid rgba(167,123,232,.2);">
+      <p style="margin:0 0 8px;font-size:13px;font-weight:900;color:#7648B8;">You rated this session:</p>
+      <div class="star-display">
+        <?php for($i=1;$i<=5;$i++): ?>
+          <i class="bi bi-star<?= $i<=$b['my_rating']?'-fill':'' ?>"></i>
+        <?php endfor; ?>
+      </div>
+      <?php if ($b['my_comment']): ?>
+        <p style="margin:10px 0 0;font-size:13px;color:var(--muted);font-style:italic;">"<?= e($b['my_comment']) ?>"</p>
+      <?php endif; ?>
+      <?php if ($b['my_anonymous']): ?>
+        <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:900;background:rgba(255,241,246,.8);color:var(--pink-dark);border:1px solid rgba(242,138,178,.2);">
+          <i class="bi bi-incognito"></i> Posted anonymously
         </div>
       <?php else: ?>
-        <form method="POST">
-          <p style="margin:0 0 10px;font-size:13px;color:var(--muted);">How was your session with <?= e($b['tutor_name']) ?>?</p>
-          <div class="star-row" id="starRow">
-            <?php for($i=1;$i<=5;$i++): ?>
-              <button type="button" class="star-btn" data-val="<?= $i ?>" onclick="setRating(<?= $i ?>)">⭐</button>
-            <?php endfor; ?>
-          </div>
-          <input type="hidden" name="rating" id="ratingInput" value="0">
-          <textarea name="comment" placeholder="Share your experience (optional)..." style="width:100%;padding:12px 16px;border:1px solid rgba(46,42,59,.12);border-radius:14px;outline:none;font-size:13px;resize:vertical;min-height:80px;margin-bottom:12px;"></textarea>
-          <button type="submit" name="submit_rating" class="btn-primary"><i class="bi bi-star-fill"></i> Submit Rating</button>
-        </form>
+        <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:900;background:rgba(215,238,219,.5);color:#3D7047;border:1px solid rgba(45,106,66,.2);">
+          <i class="bi bi-person-check"></i> Posted as <?= e($displayName) ?>
+        </div>
       <?php endif; ?>
     </div>
-<div class = "card">
-    <div class="card-title"><i class="bi bi-arrow-repeat"></i> Book Again</div>
-    <p style="margin:0 0 14px;font-size:13px;color:var(--muted);">Had a great session? Book <?= e($b['tutor_name']) ?> again with the same settings.</p>
-    <form method="POST" action="booking_form.php?tutor_id=<?= $b['tutor_id'] ?>" id="rebookForm">
+  <?php else: ?>
+    <form method="POST">
+      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:var(--ink);">How was your session with <strong><?= e($b['tutor_name']) ?></strong>?</p>
+      <div class="star-row" id="starRow">
+        <?php for($i=1;$i<=5;$i++): ?>
+          <button type="button" class="star-btn" data-val="<?= $i ?>" onclick="setRating(<?= $i ?>)">⭐</button>
+        <?php endfor; ?>
+      </div>
+      <input type="hidden" name="rating" id="ratingInput" value="0">
+      <textarea name="comment" placeholder="Share your experience (optional)..." style="width:100%;padding:14px 16px;border:1px solid rgba(46,42,59,.12);border-radius:14px;outline:none;font-size:14px;resize:vertical;min-height:100px;margin:14px 0;color:var(--ink);"></textarea>
+
+      <!-- Anonymous toggle -->
+<label id="anonToggle" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;border:1px solid rgba(46,42,59,.10);background:rgba(255,255,255,.7);cursor:pointer;margin-bottom:12px;">
+  <input type="checkbox" name="is_anonymous" id="anonCheckbox" style="display:none;">
+  <i class="bi bi-incognito" style="font-size:18px;color:var(--muted);transition:.15s ease;" id="anonIcon"></i>
+  <div>
+    <strong style="display:block;font-size:13px;font-weight:900;color:#342635;">Post anonymously</strong>
+    <span style="font-size:12px;color:var(--muted);">Your name will be hidden from the tutor and other students.</span>
+  </div>
+  <div id="anonCheck" style="margin-left:auto;width:20px;height:20px;border-radius:6px;border:2px solid rgba(46,42,59,.15);background:white;display:grid;place-items:center;flex-shrink:0;transition:.15s ease;"></div>
+</label>
+
+      <div id="previewBox" style="padding:10px 14px;border-radius:12px;background:rgba(221,211,255,.2);border:1px solid rgba(167,123,232,.15);font-size:12px;color:#6D4964;font-weight:700;margin-bottom:14px;">
+        <i class="bi bi-eye"></i> Will appear as: <strong id="previewName"><?= e($displayName) ?></strong>
+      </div>
+
+      <button type="submit" name="submit_rating" class="btn-primary"><i class="bi bi-star-fill"></i> Submit Rating</button>
+    </form>
+  <?php endif; ?>
+</div>
+<div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 24px;">
+  <div style="width:64px;height:64px;border-radius:20px;background:rgba(231,90,155,.1);display:grid;place-items:center;margin-bottom:16px;">
+    <i class="bi bi-arrow-repeat" style="font-size:28px;color:var(--hot-pink);"></i>
+  </div>
+  <h3 style="margin:0 0 8px;font-size:18px;font-weight:900;">Book Again</h3>
+  <p style="margin:0 0 20px;font-size:14px;color:var(--muted);line-height:1.6;max-width:260px;">Had a great session? Book <strong><?= e($b['tutor_name']) ?></strong> again with the same settings.</p>
+  <form method="POST" action="booking_form.php?tutor_id=<?= $b['tutor_id'] ?>">
     <input type="hidden" name="prefill_lang" value="<?= e($b['language']) ?>">
     <input type="hidden" name="prefill_mode" value="<?= e($b['learning_mode']) ?>">
     <input type="hidden" name="prefill_focus" value="<?= e($b['focus']) ?>">
-    <button type="submit" class="btn-secondary"><i class="bi bi-arrow-repeat"></i> Rebook This Tutor</button>
+    <button type="submit" class="btn-primary" style="padding:12px 28px;"><i class="bi bi-arrow-repeat"></i> Rebook This Tutor</button>
   </form>
 </div>    
+</div>
 <?php endif; ?>
    
-    <div class="action-bar">
-      <?php if ($displayState === 'pending'): ?>
-        <button class="btn-danger" onclick="openCancelModal()"><i class="bi bi-x-circle"></i> Cancel Booking</button>
-      <?php endif; ?>
-    </div>
+    <?php if (
+    $displayState === 'pending'
+): ?>
 
+<div class="action-bar">
+    <button class="btn-danger" onclick="openCancelModal()">
+        <i class="bi bi-x-circle"></i>
+        Cancel Booking
+    </button>
+</div>
+
+<?php endif; ?>
   </div>
 </div>
 </div>
-
 <div class="modal-overlay" id="cancelModal">
   <div class="modal-box">
     <h3>Cancel this booking?</h3>
@@ -514,6 +816,40 @@ $steps = [
 <?php include 'nav_search_modal.php'; ?>
 <script src="../js/search_modal.js"></script>
 <script>
+
+const studentName = <?= json_encode($displayName) ?>;
+
+const anonCb = document.getElementById('anonCheckbox');
+if (anonCb) anonCb.addEventListener('change', function () {
+
+  const anonActive = this.checked;
+
+  const toggle = document.getElementById('anonToggle');
+  const check  = document.getElementById('anonCheck');
+  const icon   = document.getElementById('anonIcon');
+
+  toggle.style.borderColor =
+    anonActive ? 'var(--hot-pink)' : 'rgba(46,42,59,.10)';
+
+  toggle.style.background =
+    anonActive ? 'rgba(255,241,246,.8)' : 'rgba(255,255,255,.7)';
+
+  check.style.background =
+    anonActive ? 'linear-gradient(135deg,#E75A9B,#F28AB2)' : 'white';
+
+  check.style.borderColor =
+    anonActive ? 'var(--pink)' : 'rgba(46,42,59,.15)';
+
+  check.innerHTML = anonActive
+    ? '<i class="bi bi-check" style="font-size:13px;color:white;"></i>'
+    : '';
+
+  icon.style.color =
+    anonActive ? 'var(--hot-pink)' : 'var(--muted)';
+
+  document.getElementById('previewName').textContent =
+    anonActive ? 'Anonymous Student' : studentName;
+}); // end of anonCb listener
   function setRating(val) {
     document.getElementById('ratingInput').value = val;
     document.querySelectorAll('.star-btn').forEach((btn, i) => {
@@ -549,6 +885,45 @@ $steps = [
   <?php if (isset($_GET['email_failed'])): ?>showToast('Failed to send email. Please try again.');<?php endif; ?>
   <?php if (isset($_GET['paid'])): ?>showToast('Payment submitted! Waiting for admin verification.');<?php endif; ?>
   <?php if (isset($_GET['rescheduled'])): ?>showToast('Rescheduled! Waiting for tutor approval.');<?php endif; ?>
+</script>
+<script>
+function showReportIssue(bookingId) {
+    const modal = document.createElement('div');
+    modal.id = 'reportModal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="background:white;border-radius:20px;padding:25px;max-width:500px;width:90%;">
+            <h3 style="margin-bottom:15px;">Report Issue</h3>
+            <form method="POST" action="report_issue.php">
+                <input type="hidden" name="booking_id" value="${bookingId}">
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:bold;">Issue Type</label>
+                    <select name="issue_type" required style="width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;">
+                        <option value="">Select issue type</option>
+                        <option value="tutor_no_show">Tutor didn't attend</option>
+                        <option value="technical_issues">Technical issues</option>
+                        <option value="wrong_materials">Wrong materials provided</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:bold;">Description</label>
+                    <textarea name="message" rows="4" required style="width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;" placeholder="Please describe your issue..."></textarea>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" style="background:#E75A9B;color:white;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;">Submit Report</button>
+                    <button type="button" onclick="closeReportModal()" style="background:#ccc;color:#333;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function closeReportModal() {
+    const modal = document.getElementById('reportModal');
+    if (modal) modal.remove();
+}
 </script>
 </body>
 </html>

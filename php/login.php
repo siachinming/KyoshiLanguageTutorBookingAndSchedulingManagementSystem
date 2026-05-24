@@ -59,7 +59,8 @@ session_start();
 
         <div class="d-flex justify-content-between mb-3">
           <div>
-            <input type="checkbox"> Remember me
+            <input type="checkbox" name="remember_me" id="remember_me"> 
+        <label for="remember_me">Remember me</label>
           </div>
           <a href="forgotpassword.php">Forgot password?</a>
         </div>
