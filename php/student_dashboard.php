@@ -1591,13 +1591,14 @@ input, textarea, [contenteditable="true"] {
           </div>
         </a>
 
-        <div class="nav-links">
-          <a class="active" href="student_dashboard.php">Home</a>
-          <a href="find_language.php">Find Language</a>
-          <a href="booking_status.php">My Bookings</a>
-          <a href="my_payments.php">My Payments</a>
-          <a href="my_materials.php">My Materials</a>
-        </div>
+         <div class="nav-links">
+                <a href="student_dashboard.php" class="active">Home</a>
+                <a href="find_language.php">Find Language</a>
+                <a href="booking_status.php">My Bookings</a>
+                <a href="my_payments.php">My Payments</a>
+                <a href="my_materials.php">My Materials</a>
+                <a href="my_assignments.php">My Assignments</a>
+            </div>
 
         <div class="nav-actions">
           <div class="search">
@@ -1654,7 +1655,6 @@ input, textarea, [contenteditable="true"] {
     <!-- Left: Smaller Hero Card -->
     <article class="hero-card-small glass">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="pulse"></span><span>Student dashboard</span></div>
         <h2>Good <span id="dynamicGreeting"></span>, <?= e($firstName) ?> ! <span id="greetingEmoji"></h2>
         <p>Your language journey is ready. Continue where you left off.</p>
       </div><br>
@@ -2196,7 +2196,16 @@ function toggleNotifications() {
     notifOpen = !notifOpen;
     const dd = document.getElementById('notifDropdown');
     dd.style.display = notifOpen ? 'block' : 'none';
-    if (notifOpen) loadNotifications();
+    if (notifOpen) {
+        loadNotifications();
+    } else {
+        // When closing, immediately hide the dot
+        const dot = document.getElementById('notifDot');
+        if (dot) {
+            dot.style.display = 'none';
+            dot.style.animation = 'none';
+        }
+    }
 }
 
 function loadNotifications() {
@@ -2207,14 +2216,20 @@ function loadNotifications() {
             const list = document.getElementById('notifList');
 
             // Update red dot based on unread count
-            if (dot) {
-                if (data.count > 0) {
-                    dot.style.display = 'block';
-                    // Add animation for visibility
-                    dot.style.animation = 'pulse 1s infinite';
-                } else {
+            if (!notifOpen) {
+                if (dot) {
                     dot.style.display = 'none';
                     dot.style.animation = 'none';
+                }
+            } else {
+                if (dot) {
+                    if (data.count > 0) {
+                        dot.style.display = 'block';
+                        dot.style.animation = 'pulse 1s infinite';
+                    } else {
+                        dot.style.display = 'none';
+                        dot.style.animation = 'none';
+                    }
                 }
             }
 
@@ -2262,15 +2277,13 @@ function markRead(id, el, link) {
         method: 'POST',
         body: formData
     }).then(() => {
-        // After marking as read, check unread count again
-        checkUnreadCount();
+        checkUnreadCount();  
         if (notifOpen) {
             loadNotifications();
         }
     });
 
     el.style.background = 'white';
-
     const unreadDot = el.querySelector('[style*="border-radius:50%"]');
     if (unreadDot) {
         unreadDot.style.background = 'transparent';
@@ -2281,12 +2294,13 @@ function markRead(id, el, link) {
     }
 }
 
+
 function markAllRead() {
     const formData = new FormData();
     formData.append('id', 0);
     fetch('mark_notification_read.php', { method: 'POST', body: formData })
         .then(() => {
-            checkUnreadCount();
+            checkUnreadCount();  // ← ADD THIS LINE
             if (notifOpen) {
                 loadNotifications();
             }
@@ -2383,12 +2397,19 @@ if (document.readyState === 'loading') {
 }
 
 // Close dropdown when clicking outside
+// Close dropdown when clicking outside
 document.addEventListener('click', function(e) {
     const bell = document.getElementById('bellBtn');
     const dd = document.getElementById('notifDropdown');
     if (bell && dd && !bell.contains(e.target) && !dd.contains(e.target)) {
         dd.style.display = 'none';
         notifOpen = false;
+        // Immediately hide the dot when closing by clicking outside
+        const dot = document.getElementById('notifDot');
+        if (dot) {
+            dot.style.display = 'none';
+            dot.style.animation = 'none';
+        }
     }
 });
     

@@ -61,7 +61,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_material'])) {
         $deleteMessageType = "error";
     }
 }
-
 // Handle edit material
 $editMessage = '';
 $editMessageType = '';
@@ -71,20 +70,186 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_material'])) {
     $title = trim($_POST['title']);
     $description = trim($_POST['description']);
     $materialType = $_POST['material_type'];
+    $proficiency_level = $_POST['proficiency_level'];
     $feedback = trim($_POST['feedback']);
+    $replace_type = $_POST['replace_type'];
     
-    $stmt = $conn->prepare("UPDATE learning_materials SET title = ?, description = ?, material_type = ?, feedback = ? WHERE id = ? AND tutor_id = ?");
-    $stmt->bind_param("ssssii", $title, $description, $materialType, $feedback, $materialId, $userID);
+    // First, get current values to check if anything changed
+    $checkStmt = $conn->prepare("SELECT title, description, material_type, proficiency_level, feedback FROM learning_materials WHERE id = ? AND tutor_id = ?");
+    $checkStmt->bind_param("ii", $materialId, $userID);
+    $checkStmt->execute();
+    $current = $checkStmt->get_result()->fetch_assoc();
     
-    if ($stmt->execute()) {
-        $editMessage = "Material updated successfully!";
-        $editMessageType = "success";
-    } else {
-        $editMessage = "Error updating material: " . $conn->error;
-        $editMessageType = "error";
+    $hasChanges = false;
+    $updateFields = [];
+    $updateValues = [];
+    
+    // Check each field for changes
+    if ($current['title'] !== $title) {
+        $hasChanges = true;
+        $updateFields[] = "title = ?";
+        $updateValues[] = $title;
+    }
+    if ($current['description'] !== $description) {
+        $hasChanges = true;
+        $updateFields[] = "description = ?";
+        $updateValues[] = $description;
+    }
+    if ($current['material_type'] !== $materialType) {
+        $hasChanges = true;
+        $updateFields[] = "material_type = ?";
+        $updateValues[] = $materialType;
+    }
+    if ($current['proficiency_level'] !== $proficiency_level) {
+        $hasChanges = true;
+        $updateFields[] = "proficiency_level = ?";
+        $updateValues[] = $proficiency_level;
+    }
+    if ($current['feedback'] !== $feedback) {
+        $hasChanges = true;
+        $updateFields[] = "feedback = ?";
+        $updateValues[] = $feedback;
+    }
+    // Handle file/URL replacement (these always count as changes)
+        // Handle file/URL replacement (these always count as changes)
+    if ($replace_type === 'file' && isset($_FILES['new_material_file']) && $_FILES['new_material_file']['error'] === UPLOAD_ERR_OK) {
+        $hasChanges = true;
+        
+        // VALIDATE FILE
+        $file = $_FILES['new_material_file'];
+        $fileExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        $allowedExts = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'zip', 'txt'];
+        
+        // Check file extension
+        if (!in_array($fileExt, $allowedExts)) {
+            $editMessage = "File type not allowed. Supported File Type : " . implode(', ', $allowedExts);
+            $editMessageType = "error";
+            $hasChanges = false;
+        }
+        // Check file size (max 50MB)
+        elseif ($file['size'] > 50 * 1024 * 1024) {
+            $editMessage = "File too large! Maximum size is 50MB";
+            $editMessageType = "error";
+            $hasChanges = false;
+        }
+        // For PDF files, verify it's actually a PDF
+        elseif ($fileExt === 'pdf') {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mimeType = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+            
+            if ($mimeType !== 'application/pdf') {
+                $editMessage = "Invalid PDF file. Please upload a valid PDF document.";
+                $editMessageType = "error";
+                $hasChanges = false;
+            }
+        }
+        // For images, verify they're actual images
+        elseif (in_array($fileExt, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+            if (!getimagesize($file['tmp_name'])) {
+                $editMessage = "Invalid image file. Please upload a valid image.";
+                $editMessageType = "error";
+                $hasChanges = false;
+            }
+        }
+        
+        if ($hasChanges) {
+            // Delete old file
+            $oldStmt = $conn->prepare("SELECT file_path, is_url FROM learning_materials WHERE id = ? AND tutor_id = ?");
+            $oldStmt->bind_param("ii", $materialId, $userID);
+            $oldStmt->execute();
+            $oldMaterial = $oldStmt->get_result()->fetch_assoc();
+            if ($oldMaterial && $oldMaterial['is_url'] == 0 && !empty($oldMaterial['file_path'])) {
+                $oldFilePath = '../uploads/learning_materials/' . $oldMaterial['file_path'];
+                if (file_exists($oldFilePath)) {
+                    unlink($oldFilePath);
+                }
+            }
+            
+            // Upload new file
+            $uploadDir = '../uploads/learning_materials/';
+            if (!file_exists($uploadDir)) mkdir($uploadDir, 0777, true);
+            $newFileName = time() . '_' . bin2hex(random_bytes(8)) . '.' . $fileExt;
+            $newFilePath = $uploadDir . $newFileName;
+            
+            if (move_uploaded_file($file['tmp_name'], $newFilePath)) {
+                $origName = $file['name'];
+                $fileType = $file['type'];
+                $fileSize = $file['size'];
+                
+                $updateFields[] = "file_name = ?";
+                $updateFields[] = "file_path = ?";
+                $updateFields[] = "file_type = ?";
+                $updateFields[] = "file_size = ?";
+                $updateFields[] = "is_url = ?";
+                $updateFields[] = "material_url = ?";
+                $updateValues[] = $origName;
+                $updateValues[] = $newFileName;
+                $updateValues[] = $fileType;
+                $updateValues[] = $fileSize;
+                $updateValues[] = 0;
+                $updateValues[] = null;
+            } else {
+                $editMessage = "File upload failed.";
+                $editMessageType = "error";
+                $hasChanges = false;
+            }
+        }
+    } 
+    elseif ($replace_type === 'url' && !empty($_POST['new_material_url'])) {
+        $hasChanges = true;
+        $newUrl = trim($_POST['new_material_url']);
+        
+        // VALIDATE URL FORMAT
+        if (!filter_var($newUrl, FILTER_VALIDATE_URL)) {
+            $editMessage = "Invalid URL format. Please enter a valid URL (e.g., https://example.com)";
+            $editMessageType = "error";
+            $hasChanges = false;
+        } 
+        else {
+            // Delete old file if exists
+            if ($current && $current['is_url'] == 0 && !empty($current['file_path'])) {
+                $oldFilePath = '../uploads/learning_materials/' . $current['file_path'];
+                if (file_exists($oldFilePath)) {
+                    unlink($oldFilePath);
+                }
+            }
+            
+            $updateFields[] = "material_url = ?";
+            $updateFields[] = "is_url = ?";
+            $updateFields[] = "file_name = ?";
+            $updateFields[] = "file_path = ?";
+            $updateValues[] = $newUrl;
+            $updateValues[] = 1;
+            $updateValues[] = null;
+            $updateValues[] = null;
+        }
+    }
+    
+    // Only run update if there are changes
+    if ($hasChanges && !empty($updateFields)) {
+        $updateFields[] = "updated_at = NOW()";
+        $sql = "UPDATE learning_materials SET " . implode(", ", $updateFields) . " WHERE id = ? AND tutor_id = ?";
+        $updateValues[] = $materialId;
+        $updateValues[] = $userID;
+        
+        $stmt = $conn->prepare($sql);
+        $types = str_repeat("s", count($updateValues) - 2) . "ii";
+        $stmt->bind_param($types, ...$updateValues);
+        
+        if ($stmt->execute()) {
+            $editMessage = "Material updated successfully!";
+            $editMessageType = "success";
+        } else {
+            $editMessage = "Error updating material: " . $conn->error;
+            $editMessageType = "error";
+        }
+    } elseif (!$hasChanges) {
+        $editMessage = "No changes were made.";
+        $editMessageType = "warning";
     }
 }
-
+   
 // Fetch all materials with student, booking, and session info
 $stmt = $conn->prepare("
     SELECT 
@@ -93,6 +258,8 @@ $stmt = $conn->prepare("
         b.booking_date,
         b.booking_time,
         b.learning_mode,
+        b.focus,
+        b.proficiency_level,
         u.fullname as student_name,
         u.id as student_id
     FROM learning_materials lm
@@ -681,7 +848,103 @@ body::before {
     font-weight: 600;
     cursor: pointer;
 }
+/* Edit Modal Toggle Buttons */
+.edit-toggle-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.edit-toggle-btn {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    border-radius: 30px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.2s;
+    color: #1d3156;
+}
+.edit-toggle-btn.active {
+    background: #1d3156;
+    color: white;
+    border-color: #1d3156;
+}
+.edit-toggle-btn:hover {
+    background: #e2e8f0;
+}
+.edit-toggle-btn.active:hover {
+    background: #142544;
+}
 
+.alert-warning { background: #fff3e0; color: #e67e22; border-left: 4px solid #f59e0b; }
+/* File input with clear button */
+.file-input-wrapper {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.file-input-wrapper input[type="file"] {
+    flex: 1;
+}
+.btn-clear-file {
+    background: #fee2e2;
+    color: #dc2626;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 30px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.btn-clear-file:hover {
+    background: #fecaca;
+    transform: translateY(-1px);
+}
+.selected-file-name {
+    font-size: 12px;
+    color: #28a745;
+    margin-top: 5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.selected-file-name i {
+    font-size: 14px;
+}
+.selected-file-name .remove-file {
+    background: none;
+    border: none;
+    color: #dc2626;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 20px;
+    transition: 0.2s;
+}
+.selected-file-name .remove-file:hover {
+    background: #fee2e2;
+}
+
+.url-input-wrapper {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.url-input-wrapper input {
+    flex: 1;
+}
 @media (max-width: 768px) {
     .materials-grid { grid-template-columns: 1fr; }
     .filter-row { flex-direction: column; align-items: stretch; }
@@ -710,7 +973,8 @@ body::before {
                 <a href="tutor_dashboard.php">Dashboard</a>
                 <a href="booking_requests.php">My Bookings</a>
                 <a href="material_overview.php" class="active">My Materials</a>
-                <a href="assignments.php">My Assignments</a>
+                <a href="assignment_overview.php">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
@@ -719,7 +983,7 @@ body::before {
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -759,14 +1023,18 @@ body::before {
     <?php endif; ?>
 
     <?php if ($editMessage): ?>
-        <div class="alert alert-<?= $editMessageType === 'success' ? 'success' : 'error' ?>">
-            <i class="bi bi-<?= $editMessageType === 'success' ? 'check-circle' : 'exclamation-circle' ?>"></i>
-            <?= e($editMessage) ?>
-        </div>
+    <div class="alert alert-<?= $editMessageType === 'success' ? 'success' : ($editMessageType === 'warning' ? 'warning' : 'error') ?>">
+        <i class="bi bi-<?= $editMessageType === 'success' ? 'check-circle' : ($editMessageType === 'warning' ? 'exclamation-triangle' : 'exclamation-circle') ?>"></i>
+        <?= e($editMessage) ?>
+    </div>
     <?php endif; ?>
 
     <div class="filter-bar">
         <div class="filter-row">
+            <div class="filter-group search-group">
+                <label>Search</label>
+                <input type="text" id="searchInput" placeholder="By title, student, language">
+            </div>
             <div class="filter-group">
                 <label><i class="bi bi-tag"></i> Session Type</label>
                 <select id="sessionTypeFilter">
@@ -782,7 +1050,6 @@ body::before {
                         <option value="url">URL</option>
                         <option value="pdf">PDF</option>
                         <option value="word">Word</option>
-                        <option value="excel">Excel</option>
                         <option value="powerpoint">PowerPoint</option>
                         <option value="image">Image</option>
                         <option value="video">Video</option>
@@ -793,10 +1060,6 @@ body::before {
                     </select>
                 </div>
             
-            <div class="filter-group search-group">
-                <label><i class="bi bi-search"></i> Search</label>
-                <input type="text" id="searchInput" placeholder="By title, student, language">
-            </div>
             <div class="filter-group">
                 <label><i class="bi bi-sort-alpha-down"></i> Sort By</label>
                 <select id="sortBy">
@@ -807,7 +1070,7 @@ body::before {
                 </select>
             </div>
             <div>
-                <button class="btn-search" onclick="applyFilters()"><i class="bi bi-funnel"></i> Apply</button>
+                <button class="btn-search" onclick="applyFilters()">Apply</button>
             </div>
             <div>
                 <button class="btn-reset" onclick="resetFilters()"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
@@ -820,22 +1083,19 @@ body::before {
 
 <!-- Edit Modal -->
 <div id="editModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 600px;">
         <h3><i class="bi bi-pencil-square"></i> Edit Material</h3>
-        <form method="POST" action="" id="editForm">
+        <form method="POST" action="" id="editForm" enctype="multipart/form-data">
             <input type="hidden" name="material_id" id="edit_material_id">
             <input type="hidden" name="edit_material" value="1">
+            <input type="hidden" name="current_file_path" id="edit_current_file_path">
+            <input type="hidden" name="current_is_url" id="edit_current_is_url">
             
             <div class="form-group">
                 <label>Title</label>
                 <input type="text" name="title" id="edit_title" required>
             </div>
-            
-            <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" id="edit_description"></textarea>
-            </div>
-            
+
             <div class="form-group">
                 <label>Material Type</label>
                 <select name="material_type" id="edit_material_type">
@@ -844,12 +1104,70 @@ body::before {
                     <option value="post">Post-Session (After class)</option>
                 </select>
             </div>
-            
+
             <div class="form-group">
-                <label>Feedback for Student</label>
-                <textarea name="feedback" id="edit_feedback" placeholder="Add comments or feedback for the student about this material..."></textarea>
+                <label>Proficiency Level</label>
+                <select name="proficiency_level" id="edit_proficiency_level">
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                    <option value="master">Master</option>
+                </select>
             </div>
             
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" id="edit_description" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Instruction / Feedback</label>
+                <textarea name="feedback" id="edit_feedback" rows="3" placeholder="Add comments or feedback for the student..."></textarea>
+            </div>
+
+            <!-- Current File Display -->
+            <div class="form-group" id="edit_current_file_section">
+                <label>Current File/Link</label>
+                <div id="edit_current_file_display" style="background: #f8fafc; padding: 10px; border-radius: 12px; font-size: 13px; word-break: break-all;">
+                    <!-- Will be filled by JS -->
+                </div>
+            </div>
+
+            <!-- Option to replace file/URL -->
+            <div class="form-group">
+                <div class="edit-toggle-row">
+                    <div class="edit-toggle-btn active" data-edit-content="keep">Keep Current</div>
+                    <div class="edit-toggle-btn" data-edit-content="file">Replace with File</div>
+                    <div class="edit-toggle-btn" data-edit-content="url">Replace with URL</div>
+                </div>
+                <input type="hidden" name="replace_type" id="edit_replace_type" value="keep">
+            </div>
+
+            <div id="edit_file_section" style="display: none;">
+                <div class="form-group">
+                    <label>New File</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" name="new_material_file" id="edit_new_file" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.mp3,.m4a,.mov,.zip">
+                        <button type="button" class="btn-clear-file" id="clearFileBtn" onclick="clearSelectedFile()" style="display: none;">
+                            <i class="bi bi-x-circle"></i> Clear
+                        </button>
+                    </div>
+                    <small class="form-hint">Supported FIle Type: PDF, Word, PowerPoint, Images, Video, Audio</small>
+                </div>
+            </div>
+            <div id="edit_url_section" style="display: none;">
+            <div class="form-group">
+                <label>New URL</label>
+                <div class="url-input-wrapper">
+                    <input type="url" name="new_material_url" id="edit_new_url" placeholder="https://...">
+                    <button type="button" id="clearUrlBtn" class="btn-clear-file" style="display: none;" onclick="clearUrlInput()">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </button>
+                </div>
+                <small class="form-hint"> Leave Empty if no changes</small>
+            </div>
+        </div>
+                <br>
             <div class="modal-buttons">
                 <button type="button" class="btn-cancel" onclick="closeEditModal()">Cancel</button>
                 <button type="submit" class="btn-save">Save Changes</button>
@@ -881,6 +1199,8 @@ const allMaterials = <?= json_encode(array_map(function($material) {
         'title' => $material['title'],
         'description' => $material['description'],
         'feedback' => $material['feedback'],
+        'focus' => $material['focus'],
+        'proficiency_level' => $material['proficiency_level'],
         'file_name' => $material['file_name'],
         'file_size' => $material['file_size'],
         'is_url' => $material['is_url'],
@@ -900,6 +1220,10 @@ const allMaterials = <?= json_encode(array_map(function($material) {
     ];
 }, $allMaterials)) ?>;
 
+// Store original values for reset
+let originalFilePath = null;
+let originalIsUrl = null;
+let originalMaterialUrl = null;
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
     dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
@@ -929,6 +1253,43 @@ function showToast(message, color = '#1d3156') {
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
+// Reset file inputs when cancel is clicked
+function resetFileInputs() {
+    const fileInput = document.getElementById('edit_new_file');
+    const clearFileBtn = document.getElementById('clearFileBtn');
+    const fileNameDisplay = document.getElementById('selectedFileName');
+    
+    if (fileInput) {
+        fileInput.value = '';
+        selectedFile = null;
+    }
+    if (clearFileBtn) {
+        clearFileBtn.style.display = 'none';
+    }
+    if (fileNameDisplay) {
+        fileNameDisplay.style.display = 'none';
+        fileNameDisplay.innerHTML = '';
+    }
+}
+
+// Reset URL inputs when cancel is clicked
+function resetUrlInputs() {
+    const urlInput = document.getElementById('edit_new_url');
+    const clearUrlBtn = document.getElementById('clearUrlBtn');
+    const urlDisplay = document.getElementById('selectedUrlDisplay');
+    
+    if (urlInput) {
+        urlInput.value = '';
+    }
+    if (clearUrlBtn) {
+        clearUrlBtn.style.display = 'none';
+    }
+    if (urlDisplay) {
+        urlDisplay.style.display = 'none';
+        urlDisplay.innerHTML = '';
+    }
+}
+
 function showEditModal(materialId) {
     const material = allMaterials.find(m => m.id == materialId);
     if (material) {
@@ -936,12 +1297,73 @@ function showEditModal(materialId) {
         document.getElementById('edit_title').value = material.title || '';
         document.getElementById('edit_description').value = material.description || '';
         document.getElementById('edit_material_type').value = material.material_type || '';
+        document.getElementById('edit_proficiency_level').value = material.proficiency_level || 'beginner';
         document.getElementById('edit_feedback').value = material.feedback || '';
+        document.getElementById('edit_current_file_path').value = material.file_path || '';
+        document.getElementById('edit_current_is_url').value = material.is_url || 0;
+        
+        // Show current file/link
+        const currentDisplay = document.getElementById('edit_current_file_display');
+        if (material.is_url == 1) {
+            currentDisplay.innerHTML = `<i class="bi bi-link-45deg"></i> <a href="${material.material_url}" target="_blank">${material.material_url}</a>`;
+        } else if (material.file_name) {
+            currentDisplay.innerHTML = `<i class="bi bi-file-earmark"></i> ${material.file_name} ${material.file_size ? '(' + formatFileSize(material.file_size) + ')' : ''}`;
+        } else {
+            currentDisplay.innerHTML = 'No file attached';
+        }
+        
+               // Store original values for reset on cancel
+        originalFilePath = material.file_path || '';
+        originalIsUrl = material.is_url || 0;
+        originalMaterialUrl = material.material_url || '';
+        
+        // Reset file and URL inputs
+        resetFileInputs();
+        resetUrlInputs();
+        
+        // Reset replace type to "keep"
+        document.getElementById('edit_replace_type').value = 'keep';
+        document.getElementById('edit_file_section').style.display = 'none';
+        document.getElementById('edit_url_section').style.display = 'none';
+
+        // Reset toggle buttons using classList
+        document.querySelectorAll('.edit-toggle-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector('.edit-toggle-btn[data-edit-content="keep"]').classList.add('active');
         document.getElementById('editModal').classList.add('active');
     }
 }
+// Edit content type toggle
+document.querySelectorAll('.edit-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.edit-toggle-btn').forEach(b => {
+            b.classList.remove('active');
+        });
+        this.classList.add('active');
+        
+        const type = this.dataset.editContent;
+        document.getElementById('edit_replace_type').value = type;
+        
+        const fileSection = document.getElementById('edit_file_section');
+        const urlSection = document.getElementById('edit_url_section');
+        
+        if (type === 'file') {
+            fileSection.style.display = 'block';
+            urlSection.style.display = 'none';
+        } else if (type === 'url') {
+            fileSection.style.display = 'none';
+            urlSection.style.display = 'block';
+        } else {
+            fileSection.style.display = 'none';
+            urlSection.style.display = 'none';
+        }
+    });
+});
 
 function closeEditModal() {
+    resetFileInputs();
+    resetUrlInputs();
     document.getElementById('editModal').classList.remove('active');
 }
 
@@ -952,6 +1374,16 @@ function showDeleteModal(materialId) {
 
 function closeDeleteModal() {
     document.getElementById('deleteModal').classList.remove('active');
+}
+function capitalizeLevel(level) {
+    if (!level) return 'Not specified';
+    const levelMap = {
+        'beginner': 'Beginner',
+        'intermediate': 'Intermediate',
+        'advanced': 'Advanced',
+        'master': 'Master'
+    };
+    return levelMap[level.toLowerCase()] || level.charAt(0).toUpperCase() + level.slice(1);
 }
 
 function renderMaterials(materials) {
@@ -966,7 +1398,12 @@ function renderMaterials(materials) {
     
     for (const material of materials) {
         const isUrl = material.is_url == 1;
-        const viewUrl = isUrl ? material.material_url : '../uploads/learning_materials/' + material.file_path;
+        // Remove any double 'uploads/' pattern
+let cleanPath = material.file_path;
+cleanPath = cleanPath.replace('uploads/uploads/', 'uploads/');
+cleanPath = cleanPath.replace('../uploads/uploads/', '../uploads/');
+
+const viewUrl = isUrl ? material.material_url : cleanPath;
         const fileSizeDisplay = !isUrl && material.file_size ? formatFileSize(material.file_size) : '';
         const iconClass = material.icon_class || 'bi-file-earmark';
         
@@ -1026,20 +1463,42 @@ function renderMaterials(materials) {
                         <span class="session-label" style="font-weight: 600; color: #1d3156; width: 70px; flex-shrink: 0;"><i class="bi bi-person"></i> Student:</span>
                         <span class="session-value" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">${studentDisplay}</span>
                     </div>
+                    <div class="session-row" style="display: flex; align-items: center; gap: 12px; font-size: 12px; margin-bottom: 6px;">
+                        <span class="session-label" style="font-weight: 600; color: #1d3156; width: 70px; flex-shrink: 0;"><i class="bi bi-bullseye"></i> Focus:</span>
+                        <span class="session-value" style="color: #475569;">${material.focus ? escapeHtml(material.focus) : 'Not specified'}</span>
+                    </div>
+                    <div class="session-row" style="display: flex; align-items: center; gap: 12px; font-size: 12px; margin-bottom: 6px;">
+                        <span class="session-label" style="font-weight: 600; color: #1d3156; width: 70px; flex-shrink: 0;"><i class="bi bi-graph-up"></i> Level:</span>
+                        <span class="session-value" style="color: #475569;">${material.proficiency_level ? capitalizeLevel(escapeHtml(material.proficiency_level)) : 'Not specified'}</span>
+                    </div>
                     <div class="session-row" style="display: flex; align-items: center; gap: 12px; font-size: 12px;">
                         <span class="session-label" style="font-weight: 600; color: #1d3156; width: 70px; flex-shrink: 0;"><i class="bi bi-calendar-event"></i> Session:</span>
                         <span class="session-value" style="color: #475569;">${escapeHtml(material.session_display || 'No session linked')}</span>
                     </div>
                 </div>
                 
-                ${material.description ? `<div class="material-description" style="font-size: 13px; color: #475569; line-height: 1.5; margin-bottom: 12px;">${escapeHtml(material.description)}</div>` : ''}
+               ${material.description ? 
+    `<div class="material-description">${escapeHtml(material.description)}</div>` : 
+    `<div class="material-description" style="color: #94a3b8; font-style: italic;"><i class="bi bi-info-circle"></i> No description provided</div>`}
                 
-                ${material.feedback ? `
-                    <div class="feedback-section" style="background: #fefce8; border-left: 3px solid #f59e0b; padding: 10px 12px; margin-bottom: 16px; border-radius: 8px;">
-                        <div class="feedback-label" style="font-size: 11px; font-weight: 600; color: #f59e0b; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;"><i class="bi bi-chat-dots"></i> Feedback:</div>
-                        <div class="feedback-text" style="font-size: 12px; color: #475569; line-height: 1.4;">${escapeHtml(material.feedback)}</div>
-                    </div>
-                ` : ''}
+                ${material.feedback ? 
+    `<div class="feedback-section">
+        <div class="feedback-label">
+            <i class="bi bi-chat-dots"></i> Feedback:
+        </div>
+        <div class="feedback-text">
+            ${escapeHtml(material.feedback)}
+        </div>
+     </div>` : 
+    `<div class="feedback-section" style="background: #f8fafc; border-left-color: #cbd5e1;">
+        <div class="feedback-label" style="color: #64748b;">
+            <i class="bi bi-chat-dots"></i> Feedback:
+        </div>
+        <div class="feedback-text" style="color: #94a3b8;">
+            No feedback added yet
+        </div>
+     </div>`
+}
                 
                 <div class="card-footer" style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #eef2f7; padding-top: 14px; margin-top: 4px;">
                     <div class="file-info" style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: #64748b;">
@@ -1047,17 +1506,22 @@ function renderMaterials(materials) {
                         <span>${escapeHtml(displayType)}</span>
                         ${fileSizeDisplay ? `<span>• ${fileSizeDisplay}</span>` : ''}
                     </div>
-                    <div class="action-buttons" style="display: flex; gap: 8px;">
-                        <a href="${viewUrl}" class="btn-view" target="_blank" style="background: #e2e8f0; color: #1d3156; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
-                            <i class="bi ${isUrl ? 'bi-box-arrow-up-right' : 'bi-download'}"></i> ${isUrl ? 'Open Link' : 'Download'}
-                        </a>
-                        <button class="btn-edit" onclick="showEditModal(${material.id})" style="background: #fef3c7; color: #f59e0b; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
-                            <i class="bi bi-pencil"></i> Edit
-                        </button>
-                        <button class="btn-delete" onclick="showDeleteModal(${material.id})" style="background: #fee2e2; color: #dc2626; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
-                            <i class="bi bi-trash3"></i> Delete
-                        </button>
-                    </div>
+                   <div class="action-buttons" style="display: flex; gap: 8px;">
+    ${isUrl ? 
+        `<a href="${material.material_url}" class="btn-view" target="_blank" style="background: #e2e8f0; color: #1d3156; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+            <i class="bi bi-box-arrow-up-right"></i> Open Link
+        </a>` : 
+        `<a href="view_materials.php?id=${material.id}&booking_id=${material.booking_id}" class="btn-view" style="background: #e2e8f0; color: #1d3156; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+            <i class="bi bi-eye"></i> Preview
+        </a>`
+    }
+    <button class="btn-edit" onclick="showEditModal(${material.id})" style="background: #fef3c7; color: #f59e0b; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+        <i class="bi bi-pencil"></i> Edit
+    </button>
+    <button class="btn-delete" onclick="showDeleteModal(${material.id})" style="background: #fee2e2; color: #dc2626; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+        <i class="bi bi-trash3"></i> Delete
+    </button>
+</div>
                 </div>
             </div>
         `;
@@ -1109,15 +1573,17 @@ function applyFilters() {
     const sortBy = document.getElementById('sortBy').value;
     const sessionType = document.getElementById('sessionTypeFilter').value;
     const materialType = document.getElementById('materialTypeFilter').value;
-    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-     const hasActiveFilters = (sessionType !== 'all') || 
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+    
+    const hasActiveFilters = (sessionType !== 'all') || 
                              (materialType !== 'all') || 
                              (searchTerm !== '');
     
     if (!hasActiveFilters) {
-        showToast(' Please select at least one filter (Session Type, Material Type, or Search) before applying.', '#f59e0b');
+        showToast('Please select at least one filter (Session Type, Material Type, or Search) before applying.', '#f59e0b');
         return;
     }
+    
     let filtered = [...allMaterials];
     
     // Filter by session type (pre/post)
@@ -1133,14 +1599,42 @@ function applyFilters() {
         });
     }
     
-    // Filter by search term
+    // Helper function to get material type text for searching
+    function getMaterialTypeSearchText(m) {
+        if (m.is_url == 1) return 'url link external';
+        if (!m.file_name) return 'file';
+        
+        const ext = m.file_name.split('.').pop().toLowerCase();
+        const typeMap = {
+            'pdf': 'pdf document',
+            'doc': 'word document', 'docx': 'word document',
+            'ppt': 'powerpoint presentation', 'pptx': 'powerpoint presentation',
+            'xls': 'excel spreadsheet', 'xlsx': 'excel spreadsheet',
+            'jpg': 'image picture photo', 'jpeg': 'image picture photo',
+            'png': 'image picture photo', 'gif': 'image picture photo',
+            'mp4': 'video movie', 'mov': 'video movie', 'avi': 'video movie',
+            'mp3': 'audio music', 'wav': 'audio music',
+            'zip': 'archive compressed zip', 'rar': 'archive compressed',
+            'txt': 'text file'
+        };
+        return typeMap[ext] || ext;
+    }
+    
+    // Filter by search term (UPDATED to include material type AND student name)
     if (searchTerm) {
         filtered = filtered.filter(m => {
+            const materialTypeText = getMaterialTypeSearchText(m);
+            // Debug: log what we're searching
+            console.log('Searching for:', searchTerm);
+            console.log('Material title:', m.title);
+            console.log('Student name:', m.student_name);
+            
             return (m.title && m.title.toLowerCase().includes(searchTerm)) ||
                    (m.description && m.description.toLowerCase().includes(searchTerm)) ||
                    (m.student_name && m.student_name.toLowerCase().includes(searchTerm)) ||
                    (m.booking_language && m.booking_language.toLowerCase().includes(searchTerm)) ||
-                   (m.feedback && m.feedback.toLowerCase().includes(searchTerm));
+                   (m.feedback && m.feedback.toLowerCase().includes(searchTerm)) ||
+                   (materialTypeText && materialTypeText.toLowerCase().includes(searchTerm));
         });
     }
     
@@ -1155,9 +1649,11 @@ function applyFilters() {
     
     renderMaterials(filtered);
     
+    // Show appropriate toast message
     if (filtered.length === 0) {
-        showToast('No materials match your filters', '#dc2626');
-    } else if (filtered.length !== allMaterials.length) {
+        showToast('No materials match your search/filters', '#dc2626');
+    } else {
+        // Always show how many found when filters are applied
         showToast(`Found ${filtered.length} material${filtered.length !== 1 ? 's' : ''}`, '#28a745');
     }
 }
@@ -1194,6 +1690,179 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Enter') applyFilters();
     });
 });
+
+// Track selected file
+let selectedFile = null;
+
+// Handle file selection change
+// Handle file selection change with client-side validation
+document.getElementById('edit_new_file').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    const clearBtn = document.getElementById('clearFileBtn');
+    const fileNameDisplay = document.getElementById('selectedFileName');
+    
+    if (file) {
+        selectedFile = file;
+        // Check file size (max 50MB)
+        if (file.size > 50 * 1024 * 1024) {
+            showToast('File too large! Maximum size is 50MB', '#dc2626');
+            this.value = '';
+            selectedFile = null;
+            clearBtn.style.display = 'none';
+            fileNameDisplay.style.display = 'none';
+            return;
+        }
+        
+        // Check file type extension
+        const allowedTypes = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'm4a', 'mov', 'zip'];
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        if (!allowedTypes.includes(fileExt)) {
+            showToast('File type not allowed!', '#dc2626');
+            this.value = '';
+            selectedFile = null;
+            clearBtn.style.display = 'none';
+            fileNameDisplay.style.display = 'none';
+            return;
+        }
+        
+        // CLIENT-SIDE PDF VALIDATION - Check PDF magic bytes (%PDF)
+        if (fileExt === 'pdf') {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const buffer = new Uint8Array(e.target.result);
+                // PDF files start with "%PDF" (bytes: 37, 80, 68, 70)
+                if (buffer[0] !== 37 || buffer[1] !== 80 || buffer[2] !== 68 || buffer[3] !== 70) {
+                    showToast('Invalid PDF file! Please upload a valid PDF document.', '#dc2626');
+                    fileInput.value = '';
+                    selectedFile = null;
+                    clearBtn.style.display = 'none';
+                    fileNameDisplay.style.display = 'none';
+                    return;
+                }
+                // Valid PDF - show file info
+                clearBtn.style.display = 'inline-flex';
+                fileNameDisplay.style.display = 'flex';
+                fileNameDisplay.innerHTML = `
+                    <i class="bi bi-file-earmark-check"></i>
+                    <span>${escapeHtml(file.name)} (${formatFileSize(file.size)})</span>
+                    <button type="button" class="remove-file" onclick="removeSelectedFile()">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                `;
+            };
+            reader.readAsArrayBuffer(file.slice(0, 5));
+            return; // Wait for validation
+        }
+        
+        // CLIENT-SIDE IMAGE VALIDATION
+        if (fileExt === 'jpg' || fileExt === 'jpeg' || fileExt === 'png') {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // Valid image
+                    clearBtn.style.display = 'inline-flex';
+                    fileNameDisplay.style.display = 'flex';
+                    fileNameDisplay.innerHTML = `
+                        <i class="bi bi-file-earmark-check"></i>
+                        <span>${escapeHtml(file.name)} (${formatFileSize(file.size)})</span>
+                        <button type="button" class="remove-file" onclick="removeSelectedFile()">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    `;
+                };
+                img.onerror = function() {
+                    showToast('Invalid image file! Please upload a valid image.', '#dc2626');
+                    this.value = '';
+                    selectedFile = null;
+                    clearBtn.style.display = 'none';
+                    fileNameDisplay.style.display = 'none';
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            return; // Wait for validation
+        }
+        
+        // For other file types (doc, docx, mp4, etc.), just show file info
+        clearBtn.style.display = 'inline-flex';
+        fileNameDisplay.style.display = 'flex';
+        fileNameDisplay.innerHTML = `
+            <i class="bi bi-file-earmark-check"></i>
+            <span>${escapeHtml(file.name)} (${formatFileSize(file.size)})</span>
+            <button type="button" class="remove-file" onclick="removeSelectedFile()">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        `;
+    } else {
+        clearSelectedFile();
+    }
+});
+
+function clearSelectedFile() {
+    const fileInput = document.getElementById('edit_new_file');
+    const clearBtn = document.getElementById('clearFileBtn');
+    const fileNameDisplay = document.getElementById('selectedFileName');
+    
+    fileInput.value = '';
+    selectedFile = null;
+    clearBtn.style.display = 'none';
+    fileNameDisplay.style.display = 'none';
+    fileNameDisplay.innerHTML = '';
+
+    showToast('File selection cleared', '#64748b');
+}
+
+function removeSelectedFile() {
+    clearSelectedFile();
+    showToast('File selection cleared', '#64748b');
+}
+
+// Also update the URL section to have a clear button
+function updateUrlSection() {
+    const urlInput = document.getElementById('edit_new_url');
+    if (urlInput && urlInput.value) {
+        // Add a clear button next to URL input if needed
+        const urlWrapper = urlInput.parentElement;
+        if (!document.getElementById('clearUrlBtn') && urlWrapper) {
+            const clearBtn = document.createElement('button');
+            clearBtn.id = 'clearUrlBtn';
+            clearBtn.type = 'button';
+            clearBtn.className = 'btn-clear-file';
+            clearBtn.style.marginLeft = '10px';
+            clearBtn.innerHTML = '<i class="bi bi-x-circle"></i> Clear';
+            clearBtn.onclick = function() {
+                urlInput.value = '';
+                this.style.display = 'none';
+                showToast('URL cleared', '#64748b');
+            };
+            urlWrapper.appendChild(clearBtn);
+        }
+        const clearUrlBtn = document.getElementById('clearUrlBtn');
+        if (clearUrlBtn) {
+            clearUrlBtn.style.display = urlInput.value ? 'inline-flex' : 'none';
+        }
+    }
+}
+
+// Add event listener for URL input
+document.addEventListener('DOMContentLoaded', function() {
+    const urlInput = document.getElementById('edit_new_url');
+    if (urlInput) {
+        urlInput.addEventListener('input', function() {
+            const clearUrlBtn = document.getElementById('clearUrlBtn');
+            if (clearUrlBtn) {
+                clearUrlBtn.style.display = this.value ? 'inline-flex' : 'none';
+            }
+        });
+    }
+});
+
+function clearUrlInput() {
+    document.getElementById('edit_new_url').value = '';
+    document.getElementById('clearUrlBtn').style.display = 'none';
+    showToast('URL cleared', '#64748b');
+}
 
 window.onclick = function(event) {
     const modal = document.getElementById('deleteModal');

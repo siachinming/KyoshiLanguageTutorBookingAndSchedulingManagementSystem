@@ -1,0 +1,1582 @@
+<?php
+session_start();
+include 'config.php';
+
+$assetBase = '../assets/img';
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'tutor') {
+    header("Location: login.php");
+    exit();
+}
+
+$userID = $_SESSION['user_id'];
+
+// Get tutor info
+$stmt = $conn->prepare("SELECT * FROM users WHERE id = ? AND role = 'tutor'");
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$user = $stmt->get_result()->fetch_assoc();
+
+if (!$user) {
+    header("Location: login.php");
+    exit();
+}
+
+$displayName = $user['fullname'];
+$profilePic = !empty($user['profile_pic'])
+    ? '../uploads/profiles/' . $user['profile_pic']
+    : $assetBase . '/profile-tutor.png';
+
+// Handle Delete Assignment
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment'])) {
+    $assignmentId = $_POST['assignment_id'];
+    
+    $stmt = $conn->prepare("SELECT file_path FROM assignment_submissions WHERE assignment_id = ?");
+    $stmt->bind_param("i", $assignmentId);
+    $stmt->execute();
+    $submissions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    
+    foreach ($submissions as $sub) {
+        if (!empty($sub['file_path'])) {
+            $filePath = '../uploads/assignments/' . $sub['file_path'];
+            if (file_exists($filePath)) {
+                unlink($filePath);
+            }
+        }
+    }
+    
+    $stmt = $conn->prepare("DELETE FROM assignment_submissions WHERE assignment_id = ?");
+    $stmt->bind_param("i", $assignmentId);
+    $stmt->execute();
+    
+    $stmt = $conn->prepare("DELETE FROM assignments WHERE id = ? AND tutor_id = ?");
+    $stmt->bind_param("ii", $assignmentId, $userID);
+    if ($stmt->execute()) {
+        $deleteMessage = "Assignment deleted successfully!";
+        $deleteMessageType = "success";
+    } else {
+        $deleteMessage = "Error deleting assignment.";
+        $deleteMessageType = "error";
+    }
+}
+
+// Handle Edit Assignment with file/URL
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_assignment'])) {
+    $assignmentId = $_POST['assignment_id'];
+    $title       = trim($_POST['title']       ?? '');
+    $allowLate = isset($_POST['allow_late_submission']) ? 1 : 0;
+    $description = trim($_POST['description'] ?? '');
+    $due_date = !empty($_POST['due_date']) 
+    ? str_replace('T', ' ', $_POST['due_date']) . ':00'
+    : null;
+    $replace_type = $_POST['replace_type'] ?? 'keep';
+    
+    $stmt = $conn->prepare("SELECT title, description, due_date, file_path, file_name, file_size, is_url, material_url FROM assignments WHERE id = ? AND tutor_id = ?");
+    $stmt->bind_param("ii", $assignmentId, $userID);
+    $stmt->execute();
+    $current = $stmt->get_result()->fetch_assoc();
+    
+    $hasChanges = false;
+    $updateFields = [];
+    $updateValues = [];
+    
+    if ($current && $current['title'] !== $title) {
+        $hasChanges = true;
+        $updateFields[] = "title = ?";
+        $updateValues[] = $title;
+    }
+    
+    if ($current && $current['description'] !== $description) {
+        $hasChanges = true;
+        $updateFields[] = "description = ?";
+        $updateValues[] = $description;
+    }
+    
+    $currentDueDate = $current['due_date'] ?? null;
+    if ($currentDueDate != $due_date) {
+        $hasChanges = true;
+        $updateFields[] = "due_date = ?";
+        $updateValues[] = $due_date;
+    }
+
+    if ($current && $current['allow_late_submission'] != $allowLate) {
+    $hasChanges = true;
+    $updateFields[] = "allow_late_submission = ?";
+    $updateValues[] = $allowLate;
+}
+    
+    if ($replace_type === 'file' && isset($_FILES['new_assignment_file']) && $_FILES['new_assignment_file']['error'] === UPLOAD_ERR_OK) {
+        $hasChanges = true;
+        $file = $_FILES['new_assignment_file'];
+        $fileExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        $allowedExts = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'mp4', 'mp3', 'zip', 'txt'];
+        
+        if (!in_array($fileExt, $allowedExts)) {
+            $editMessage = "File type not allowed. Allowed: " . implode(', ', $allowedExts);
+            $editMessageType = "error";
+            $hasChanges = false;
+        } elseif ($file['size'] > 50 * 1024 * 1024) {
+            $editMessage = "File too large! Maximum size is 50MB";
+            $editMessageType = "error";
+            $hasChanges = false;
+        } elseif ($fileExt === 'pdf') {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mimeType = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+            if ($mimeType !== 'application/pdf') {
+                $editMessage = "Invalid PDF file. Please upload a valid PDF document.";
+                $editMessageType = "error";
+                $hasChanges = false;
+            }
+        } elseif (in_array($fileExt, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+            if (!getimagesize($file['tmp_name'])) {
+                $editMessage = "Invalid image file. Please upload a valid image.";
+                $editMessageType = "error";
+                $hasChanges = false;
+            }
+        }
+        
+        if ($hasChanges) {
+            if ($current && $current['is_url'] == 0 && !empty($current['file_path'])) {
+                $oldFilePath = '../uploads/assignments/' . $current['file_path'];
+                if (file_exists($oldFilePath)) unlink($oldFilePath);
+            }
+            
+            $uploadDir = '../uploads/assignments/';
+            if (!file_exists($uploadDir)) mkdir($uploadDir, 0777, true);
+            $newFileName = time() . '_' . bin2hex(random_bytes(8)) . '.' . $fileExt;
+            $newFilePath = $uploadDir . $newFileName;
+            
+            if (move_uploaded_file($file['tmp_name'], $newFilePath)) {
+                $updateFields[] = "file_name = ?";
+                $updateFields[] = "file_path = ?";
+                $updateFields[] = "file_type = ?";
+                $updateFields[] = "file_size = ?";
+                $updateFields[] = "is_url = ?";
+                $updateFields[] = "material_url = ?";
+                $updateValues[] = $file['name'];
+                $updateValues[] = $newFileName;
+                $updateValues[] = $file['type'];
+                $updateValues[] = $file['size'];
+                $updateValues[] = 0;
+                $updateValues[] = null;
+            } else {
+                $editMessage = "File upload failed.";
+                $editMessageType = "error";
+                $hasChanges = false;
+            }
+        }
+    } elseif ($replace_type === 'url' && !empty($_POST['new_material_url'])) {
+        $hasChanges = true;
+        $newUrl = trim($_POST['new_material_url']);
+        
+        if (!filter_var($newUrl, FILTER_VALIDATE_URL)) {
+            $editMessage = "Invalid URL format. Please enter a valid URL (e.g., https://example.com)";
+            $editMessageType = "error";
+            $hasChanges = false;
+        } else {
+            if ($current && $current['is_url'] == 0 && !empty($current['file_path'])) {
+                $oldFilePath = '../uploads/assignments/' . $current['file_path'];
+                if (file_exists($oldFilePath)) unlink($oldFilePath);
+            }
+            
+            $updateFields[] = "material_url = ?";
+            $updateFields[] = "is_url = ?";
+            $updateFields[] = "file_name = ?";
+            $updateFields[] = "file_path = ?";
+            $updateFields[] = "file_type = ?";
+            $updateFields[] = "file_size = ?";
+            $updateValues[] = $newUrl;
+            $updateValues[] = 1;
+            $updateValues[] = null;
+            $updateValues[] = null;
+            $updateValues[] = null;
+            $updateValues[] = null;
+        }
+    } elseif ($replace_type === 'remove') {
+        $hasChanges = true;
+        if ($current && $current['is_url'] == 0 && !empty($current['file_path'])) {
+            $oldFilePath = '../uploads/assignments/' . $current['file_path'];
+            if (file_exists($oldFilePath)) unlink($oldFilePath);
+        }
+        
+        $updateFields[] = "material_url = ?";
+        $updateFields[] = "is_url = ?";
+        $updateFields[] = "file_name = ?";
+        $updateFields[] = "file_path = ?";
+        $updateFields[] = "file_type = ?";
+        $updateFields[] = "file_size = ?";
+        $updateValues[] = null;
+        $updateValues[] = 0;
+        $updateValues[] = null;
+        $updateValues[] = null;
+        $updateValues[] = null;
+        $updateValues[] = null;
+    }
+    
+    if ($hasChanges && !empty($updateFields)) {
+        $updateFields[] = "updated_at = NOW()";
+        $sql = "UPDATE assignments SET " . implode(", ", $updateFields) . " WHERE id = ? AND tutor_id = ?";
+        $updateValues[] = $assignmentId;
+        $updateValues[] = $userID;
+        
+        $stmt = $conn->prepare($sql);
+        $types = str_repeat("s", count($updateValues) - 2) . "ii";
+        $stmt->bind_param($types, ...$updateValues);
+        
+        if ($stmt->execute()) {
+            $editMessage = "Assignment updated successfully!";
+            $editMessageType = "success";
+        } else {
+            $editMessage = "Error updating assignment: " . $conn->error;
+            $editMessageType = "error";
+        }
+    } elseif (!$hasChanges) {
+        $editMessage = "No changes were made.";
+        $editMessageType = "warning";
+    }
+}
+
+// Fetch all assignments with booking info
+$stmt = $conn->prepare("
+    SELECT 
+        a.*,
+        a.allow_late_submission,
+        b.language,
+        b.booking_date,
+        b.booking_time,
+        u.fullname as student_name,
+        u.id as student_id,
+        (SELECT COUNT(*) FROM assignment_submissions WHERE assignment_id = a.id) as submission_count
+    FROM assignments a
+    LEFT JOIN bookings b ON a.booking_id = b.id
+    LEFT JOIN users u ON b.student_id = u.id
+    WHERE a.tutor_id = ?
+    ORDER BY a.created_at DESC
+");
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$assignments = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Get submissions for each assignment
+$submissionsByAssignment = [];
+foreach ($assignments as $assignment) {
+    $stmt = $conn->prepare("
+    SELECT s.id, s.assignment_id, s.student_id, s.tutor_id, s.booking_id, 
+           s.submission_text, s.file_name, s.file_path, s.file_type, s.file_size, 
+           s.status, s.submitted_at, s.reviewed_at, s.feedback, s.grade, s.graded_at,
+           u.fullname as student_name
+    FROM assignment_submissions s
+    JOIN users u ON s.student_id = u.id
+    WHERE s.assignment_id = ?
+    ORDER BY s.submitted_at DESC
+");
+    $stmt->bind_param("i", $assignment['id']);
+    $stmt->execute();
+    $submissionsByAssignment[$assignment['id']] = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+$stmt = $conn->prepare("SELECT DISTINCT language FROM tutor_languages WHERE user_id = ?");
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$tutorLanguages = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+function e($value) {
+    return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+}
+
+function formatFileSize($bytes) {
+    if (!$bytes) return '';
+    if ($bytes >= 1048576) return round($bytes / 1048576, 1) . ' MB';
+    if ($bytes >= 1024) return round($bytes / 1024, 1) . ' KB';
+    return $bytes . ' bytes';
+}
+
+function getAssignmentAttachmentDisplay($assignment) {
+    if ($assignment['is_url'] == 1 && !empty($assignment['material_url'])) {
+        return '<div class="current-attachment"><i class="bi bi-link-45deg"></i> <a href="' . e($assignment['material_url']) . '" target="_blank">' . e($assignment['material_url']) . '</a></div>';
+    } elseif (!empty($assignment['file_name'])) {
+        return '<div class="current-attachment"><i class="bi bi-file-earmark"></i> ' . e($assignment['file_name']) . ' (' . formatFileSize($assignment['file_size']) . ')</div>';
+    }
+    return '<div class="current-attachment"><i class="bi bi-exclamation-triangle"></i> No attachment</div>';
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assignments - Kyoshi Tutor</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Poppins', sans-serif;
+    background: url('../assets/img/background2.png') no-repeat center top;
+    background-size: cover;
+    min-height: 100vh;
+    position: relative;
+}
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.25);
+    z-index: -1;
+}
+.topbar {
+    width: 100%;
+    background: rgba(254, 214, 206, 0.92);
+    backdrop-filter: blur(12px);
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+.container { width: min(1400px, 94%); margin: auto; }
+.nav { display: flex; justify-content: space-between; align-items: center; gap: 32px; min-height: 70px; }
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+.brand img { width: 42px; height: 42px; object-fit: contain; }
+.brand strong { display: block; color: #1d3156; font-size: 20px; line-height: 1.2; }
+.brand span { color: #496894; font-size: 11px; }
+.nav-links { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+.nav-links a {
+    text-decoration: none;
+    color: #1d3156;
+    font-size: 14px;
+    font-weight: 600;
+    position: relative;
+    transition: 0.25s;
+    padding: 6px 0;
+}
+.nav-links a:hover, .nav-links a.active { color: #496894; }
+.nav-links a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -6px;
+    width: 0%;
+    height: 3px;
+    background: #496894;
+    transition: 0.25s;
+    border-radius: 10px;
+}
+.nav-links a:hover::after, .nav-links .active::after { width: 100%; }
+.profile {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 6px 14px 6px 8px;
+    border-radius: 40px;
+    cursor: pointer;
+    color: black;
+    transition: 0.25s;
+    position: relative;
+}
+.profile:hover { background: rgba(255, 255, 255, 0.2); }
+.profile img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255, 255, 255, 0.3); }
+.profile span { font-size: 13px; font-weight: 500; }
+.dropdown {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    width: 220px;
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    display: none;
+    border: 1px solid #e2edf7;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+}
+.dropdown a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    text-decoration: none;
+    color: #1e293b;
+    font-size: 13px;
+    font-weight: 500;
+}
+.dropdown a:hover { background: #f8fafc; }
+.dropdown hr { border: none; border-top: 1px solid #ecf3f9; }
+.main { width: min(1280px, 92%); margin: 32px auto 48px; }
+.back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    color: #1d3156;
+    padding: 10px 20px;
+    border-radius: 40px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    border: 1px solid #e2e8f0;
+    transition: 0.25s;
+}
+.back-btn:hover { background: #b8d0e9; border-color: #6b9cd7; transform: translateX(-3px); }
+.create-btn {
+    background: #1d3156;
+    color: white;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 40px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: 0.2s;
+    text-decoration: none;
+}
+.create-btn:hover { background: #142544; transform: translateY(-2px); }
+.filter-bar {
+    background: white;
+    border-radius: 16px;
+    padding: 14px 20px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border: 1px solid #eef2f7;
+}
+.filter-row {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+.filter-group { min-width: 170px; }
+.filter-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #1d3156; }
+.filter-group select, .filter-group input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    background: white;
+    font-family: 'Poppins', sans-serif;
+    font-size: 13px;
+}
+.search-group input {
+    padding-left: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 12px center;
+}
+.btn-search, .btn-reset {
+    padding: 10px 24px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+}
+.btn-search { background: #1d3156; color: white; }
+.btn-search:hover { background: #142544; }
+.btn-reset { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+.btn-reset:hover { background: #e2e8f0; }
+.alert {
+    padding: 12px 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    font-weight: 500;
+}
+.alert-success { background: #d4edda; color: #155724; border-left: 4px solid #28a745; }
+.alert-error { background: #f8d7da; color: #721c24; border-left: 4px solid #dc2626; }
+.alert-warning { background: #fff3e0; color: #e67e22; border-left: 4px solid #f59e0b; }
+.assignment-card {
+    background: white;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    border: 1px solid #eef2f7;
+    transition: all 0.3s ease;
+}
+.assignment-card:hover {
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    transform: translateY(-2px);
+}
+.assignment-header {
+    padding: 20px 24px;
+    background: #f8fafc;
+    border-bottom: 1px solid #eef2f7;
+}
+.assignment-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+.assignment-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1d3156;
+}
+.assignment-actions {
+    display: flex;
+    gap: 8px;
+}
+.btn-edit-assignment, .btn-delete-assignment {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.btn-edit-assignment { background: #fef3c7; color: #f59e0b; }
+.btn-edit-assignment:hover { background: #fde68a; transform: translateY(-1px); }
+.btn-delete-assignment { background: #fee2e2; color: #dc2626; }
+.btn-delete-assignment:hover { background: #fecaca; transform: translateY(-1px); }
+.assignment-info {
+    display: flex;
+    gap: 20px;
+    font-size: 12px;
+    color: #64748b;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.assignment-desc {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #fefce8;
+    border-left: 3px solid #f59e0b;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #475569;
+}
+.submission-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    border-bottom: 1px solid #eef2f7;
+    transition: background 0.2s;
+}
+.submission-row:hover { background: #fafcff; }
+.submission-row:last-child { border-bottom: none; }
+.student-col { flex: 2; min-width: 160px; }
+.student-name {
+    font-weight: 600;
+    color: #1d3156;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.submission-time { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.status-col { flex: 1.5; min-width: 130px; }
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+.status-pending { background: #fef3c7; color: #f59e0b; }
+.status-graded { background: #d4edda; color: #28a745; }
+.status-missing { background: #fee2e2; color: #dc2626; }
+.file-col { flex: 2.5; min-width: 200px; }
+.file-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f1f5f9;
+    padding: 5px 12px;
+    border-radius: 20px;
+    text-decoration: none;
+    font-size: 12px;
+    color: #1d3156;
+    transition: 0.2s;
+}
+.file-link:hover { background: #e2e8f0; }
+.file-size { font-size: 10px; color: #94a3b8; margin-left: 6px; }
+.no-file { font-size: 12px; color: #94a3b8; font-style: italic; }
+.actions-col { flex: 1; text-align: right; }
+.btn-grade {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.btn-grade:hover { background: #218838; transform: translateY(-1px); }
+.empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    background: white;
+    border-radius: 24px;
+    color: #94a3b8;
+}
+.empty-state i { font-size: 64px; margin-bottom: 16px; display: block; color: #cbd5e1; }
+.toast-notification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #1d3156;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-size: 13px;
+    z-index: 9999;
+    animation: slideIn 0.3s ease;
+}
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+.modal-overlay.active { display: flex; }
+.modal-container {
+    background: white;
+    border-radius: 24px;
+    width: 550px;
+    max-width: 90%;
+    padding: 28px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.modal-header h3 { font-size: 20px; color: #1d3156; }
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #94a3b8;
+}
+.form-group { margin-bottom: 20px; }
+.form-group label {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: #1d3156;
+}
+.form-group input, .form-group textarea, .form-group select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 13px;
+}
+.form-group textarea { resize: vertical; }
+.current-attachment {
+    background: #f1f5f9;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    word-break: break-all;
+}
+.current-attachment i { margin-right: 8px; }
+.edit-toggle-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.edit-toggle-btn {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    border-radius: 30px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s;
+    color: #1d3156;
+}
+.edit-toggle-btn.active {
+    background: #1d3156;
+    color: white;
+    border-color: #1d3156;
+}
+.edit-toggle-btn:hover { background: #e2e8f0; }
+.edit-toggle-btn.active:hover { background: #142544; }
+.modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+.btn-cancel {
+    background: #e2e8f0;
+    color: #475569;
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: none;
+    cursor: pointer;
+}
+.btn-save {
+    background: #28a745;
+    color: white;
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: none;
+    cursor: pointer;
+}
+.btn-confirm-delete {
+    background: #dc2626;
+    color: white;
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: none;
+    cursor: pointer;
+}
+.file-input-wrapper {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.file-input-wrapper input[type="file"] { flex: 1; }
+.btn-clear-file {
+    background: #fee2e2;
+    color: #dc2626;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 30px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.btn-clear-file:hover {
+    background: #fecaca;
+    transform: translateY(-1px);
+}
+.selected-file-name {
+    font-size: 12px;
+    color: #28a745;
+    margin-top: 5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.selected-file-name i { font-size: 14px; }
+.selected-file-name .remove-file {
+    background: none;
+    border: none;
+    color: #dc2626;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 20px;
+    transition: 0.2s;
+}
+.selected-file-name .remove-file:hover { background: #fee2e2; }
+.url-input-wrapper {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.url-input-wrapper input { flex: 1; }
+
+@media (max-width: 900px) {
+    .submission-row { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .actions-col { text-align: left; width: 100%; }
+    .filter-row { flex-direction: column; align-items: stretch; }
+    .assignment-info { gap: 12px; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+    <div class="container">
+        <nav class="nav">
+            <a href="tutor_dashboard.php" class="brand">
+                <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
+                <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
+            </a>
+            <div class="nav-links">
+                <a href="tutor_dashboard.php">Dashboard</a>
+                <a href="booking_requests.php">My Bookings</a>
+                <a href="material_overview.php">My Materials</a>
+                <a href="assignment_overview.php" class="active">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
+            </div>
+            <div style="position:relative;">
+                <button class="profile" onclick="toggleDropdown()">
+                    <img src="<?= e($profilePic) ?>">
+                    <span><?= e($displayName) ?></span>
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+                <div class="dropdown" id="profileDropdown">
+                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
+                    <hr>
+                    <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+                </div>
+            </div>
+        </nav>
+    </div>
+</header>
+
+<div class="main">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; position: relative;">
+        <a href="tutor_dashboard.php" class="back-btn"><i class="bi bi-arrow-left"></i> Back</a>
+        <div style="position: absolute; left: 50%; transform: translateX(-50%); text-align: center;">
+            <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0;"><i class="bi bi-journal-check"></i> My Assignments</h1>
+            <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px;">Review and grade student submissions</p>
+        </div>
+        <a href="select_booking.php?action=assignment" class="create-btn"><i class="bi bi-plus-lg"></i> Create Assignment</a>
+    </div>
+
+    <?php if (isset($deleteMessage)): ?>
+        <div class="alert alert-<?= $deleteMessageType ?>">
+            <i class="bi bi-<?= $deleteMessageType === 'success' ? 'check-circle' : 'exclamation-circle' ?>"></i>
+            <?= e($deleteMessage) ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (isset($editMessage)): ?>
+        <div class="alert alert-<?= $editMessageType ?>">
+            <i class="bi bi-<?= $editMessageType === 'success' ? 'check-circle' : ($editMessageType === 'warning' ? 'exclamation-triangle' : 'exclamation-circle') ?>"></i>
+            <?= e($editMessage) ?>
+        </div>
+    <?php endif; ?>
+
+    <div class="filter-bar">
+        <div class="filter-row">
+            <div class="filter-group search-group">
+                <label>Search</label>
+                <input type="text" id="searchInput" placeholder="Title or student name...">
+            </div>
+            <div class="filter-group">
+                <label>Language</label>
+                <select id="languageFilter">
+                    <option value="all">All Languages</option>
+                    <?php foreach ($tutorLanguages as $lang): ?>
+                        <option value="<?= e($lang['language']) ?>"><?= e($lang['language']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Status</label>
+                <select id="statusFilter">
+                    <option value="all">All Status</option>
+                    <option value="pending">Pending Grade</option>
+                    <option value="graded">Graded</option>
+                    <option value="no_submission">No Submission</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label><i class="bi bi-sort-alpha-down"></i> Sort By</label>
+                <select id="sortBy">
+                    <option value="latest">Latest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="due_asc">Due Date (Earliest)</option>
+                    <option value="title_az">Title (A-Z)</option>
+                </select>
+            </div>
+            <div><button class="btn-search" onclick="applyFilters()"><i class="bi bi-funnel"></i> Apply</button></div>
+            <div><button class="btn-reset" onclick="resetFilters()"><i class="bi bi-arrow-counterclockwise"></i> Reset</button></div>
+        </div>
+    </div>
+
+    <div id="assignmentsContainer"></div>
+</div>
+
+<!-- Grade Modal -->
+<div id="gradeModal" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <h3><i class="bi bi-star"></i> Grade Submission</h3>
+            <button class="modal-close" onclick="closeGradeModal()">&times;</button>
+        </div>
+        <input type="hidden" id="grade_submission_id">
+        <div class="form-group">
+            <label>Grade / Points</label>
+            <input type="text" id="grade_value" placeholder="e.g., 85/100, A, Pass">
+        </div>
+        <div class="form-group">
+            <label>Private Feedback</label>
+            <textarea id="grade_feedback" rows="4" placeholder="Provide feedback to the student..."></textarea>
+        </div>
+        <div class="modal-buttons">
+            <button class="btn-cancel" onclick="closeGradeModal()">Cancel</button>
+            <button class="btn-save" onclick="submitGrade()">Save Grade</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Assignment Modal -->
+<div id="editAssignmentModal" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <h3><i class="bi bi-pencil-square"></i> Edit Assignment</h3>
+            <button class="modal-close" onclick="closeEditAssignmentModal()">&times;</button>
+        </div>
+        <form method="POST" action="" enctype="multipart/form-data" id="editAssignmentForm">
+            <input type="hidden" name="assignment_id" id="edit_assignment_id">
+            <input type="hidden" name="edit_assignment" value="1">
+            <input type="hidden" name="replace_type" id="edit_replace_type" value="keep">
+            
+            <div class="form-group">
+                <label>Title *</label>
+                <input type="text" name="title" id="edit_title" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" id="edit_description" rows="3"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Due Date & Time</label>
+                <input type="datetime-local" name="due_date" id="edit_due_date">
+                <small style="font-size:11px;color:#94a3b8;margin-top:4px;display:block;">
+                    Leave empty for no due date.
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label>Current Attachment</label>
+                <div id="edit_current_attachment" class="current-attachment"></div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="allow_late_submission" id="edit_allow_late" value="1" style="width: auto; margin-right: 8px;">
+                    Allow late submissions after due date
+                </label>
+                <small style="font-size: 11px; color: #64748b; display: block; margin-top: 4px;">
+                    If enabled, students can still submit after the due date passes
+                </small>
+            </div>
+            <div class="form-group">
+                <label>Update Attachment (Optional)</label>
+                <div class="edit-toggle-row">
+                    <div class="edit-toggle-btn active" data-edit-content="keep">Keep Current</div>
+                    <div class="edit-toggle-btn" data-edit-content="file">Upload New File</div>
+                    <div class="edit-toggle-btn" data-edit-content="url">Add/Update URL</div>
+                </div>
+            </div>
+            
+            <div id="edit_file_section" style="display: none;">
+    <div class="form-group">
+        <label>New File</label>
+        <div class="file-input-wrapper">
+            <input type="file" name="new_assignment_file" id="edit_new_file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.mp3,.zip,.txt">
+            <button type="button" class="btn-clear-file" id="clearFileBtn" onclick="clearSelectedFile()" style="display: none;">
+                <i class="bi bi-x-circle"></i> Clear
+            </button>
+        </div>
+        <div id="selectedFileName" class="selected-file-name" style="display: none;"></div>
+        <small style="font-size: 11px; color: #64748b;">Allowed: PDF, Word, PowerPoint, Excel, Images, Video, Audio, ZIP, TXT</small>
+    </div>
+</div>
+
+<div id="edit_url_section" style="display: none;">
+    <div class="form-group">
+        <label>New URL</label>
+        <div class="url-input-wrapper">
+            <input type="url" name="new_material_url" id="edit_new_url" placeholder="https://...">
+            <button type="button" id="clearUrlBtn" class="btn-clear-file" style="display: none;" onclick="clearUrlInput()">
+                <i class="bi bi-x-circle"></i> Clear
+            </button>
+        </div>
+        <div id="selectedUrlDisplay" class="selected-file-name" style="display: none;"></div>
+        <small style="font-size: 11px; color: #64748b;">Students will be able to access this link</small>
+    </div>
+</div>
+            
+            <div class="modal-buttons">
+                <button type="button" class="btn-cancel" onclick="closeEditAssignmentModal()">Cancel</button>
+                <button type="submit" class="btn-save">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Assignment Modal -->
+<div id="deleteAssignmentModal" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <h3><i class="bi bi-trash3" style="color: #dc2626;"></i> Delete Assignment</h3>
+            <button class="modal-close" onclick="closeDeleteAssignmentModal()">&times;</button>
+        </div>
+        <p>Are you sure you want to delete this assignment? <br>All student submissions will also be deleted.<br> This action cannot be undone.</p>
+        <form method="POST" action="">
+            <input type="hidden" name="assignment_id" id="delete_assignment_id">
+            <input type="hidden" name="delete_assignment" value="1">
+            <div class="modal-buttons">
+                <button type="button" class="btn-cancel" onclick="closeDeleteAssignmentModal()">Cancel</button>
+                <button type="submit" class="btn-confirm-delete">Delete Assignment</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const allAssignments = <?= json_encode($assignments) ?>;
+const submissionsData = <?= json_encode($submissionsByAssignment) ?>;
+let selectedFile = null;
+
+function showToast(message, color) {
+    const existing = document.querySelector('.toast-notification');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.style.backgroundColor = color;
+    toast.innerHTML = `<i class="bi bi-info-circle"></i> ${message}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function toggleDropdown() {
+    const d = document.getElementById('profileDropdown');
+    d.style.display = d.style.display === 'block' ? 'none' : 'block';
+}
+
+window.addEventListener('click', function(e) {
+    const btn = document.querySelector('.profile');
+    const dd = document.getElementById('profileDropdown');
+    if (btn && dd && !btn.contains(e.target) && !dd.contains(e.target)) {
+        dd.style.display = 'none';
+    }
+});
+
+function openGradeModal(submissionId, currentGrade, currentFeedback) {
+    console.log('Opening grade modal for submission ID:', submissionId); // Debug
+    
+    if (!submissionId || submissionId === 'undefined') {
+        showToast('Error: Invalid submission ID', '#dc2626');
+        return;
+    }
+    
+    document.getElementById('grade_submission_id').value = submissionId;
+    document.getElementById('grade_value').value = currentGrade || '';
+    document.getElementById('grade_feedback').value = currentFeedback || '';
+    document.getElementById('gradeModal').classList.add('active');
+}
+
+function closeGradeModal() {
+    document.getElementById('gradeModal').classList.remove('active');
+}
+
+function submitGrade() {
+    const submissionId = document.getElementById('grade_submission_id').value;
+    const grade = document.getElementById('grade_value').value;
+    const feedback = document.getElementById('grade_feedback').value;
+    
+    console.log('Submitting grade for submission ID:', submissionId);
+    console.log('Grade:', grade);
+    
+    if (!submissionId || submissionId === '0') {
+        showToast('Error: No submission selected', '#dc2626');
+        return;
+    }
+    
+    // If grade is empty, show warning but allow
+    if (!grade) {
+        if (!confirm('Grade is empty. Continue anyway?')) {
+            return;
+        }
+    }
+    
+    fetch('save_grade.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            submission_id: parseInt(submissionId), 
+            grade: grade || 'Not graded', 
+            feedback: feedback || '' 
+        })
+    })
+    .then(response => response.text())  // Get as text first to see raw response
+    .then(text => {
+        console.log('Raw response:', text);  // Debug - see what PHP returns
+        try {
+            const data = JSON.parse(text);
+            if (data.success) {
+                showToast('Grade saved!', '#28a745');
+                closeGradeModal();
+                location.reload();
+            } else {
+                showToast('Error: ' + data.message, '#dc2626');
+            }
+        } catch(e) {
+            console.error('JSON parse error:', e);
+            showToast('Server error. Check console for details.', '#dc2626');
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);
+        showToast('Network error', '#dc2626');
+    });
+}
+function resetFileInputs() {
+    const fileInput = document.getElementById('edit_new_file');
+    const clearBtn = document.getElementById('clearFileBtn');
+    const fileNameDisplay = document.getElementById('selectedFileName');
+    
+    if (fileInput) fileInput.value = '';
+    selectedFile = null;
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (fileNameDisplay) {
+        fileNameDisplay.style.display = 'none';
+        fileNameDisplay.innerHTML = '';
+    }
+}
+
+function resetUrlInputs() {
+    const urlInput = document.getElementById('edit_new_url');
+    const clearUrlBtn = document.getElementById('clearUrlBtn');
+    const urlDisplay = document.getElementById('selectedUrlDisplay');
+    
+    if (urlInput) urlInput.value = '';
+    if (clearUrlBtn) clearUrlBtn.style.display = 'none';
+    if (urlDisplay) {
+        urlDisplay.style.display = 'none';
+        urlDisplay.innerHTML = '';
+    }
+}
+
+function openEditAssignmentModal(assignmentId, title, description, dueDate, attachmentHtml, allowLate) {
+    document.getElementById('edit_assignment_id').value = assignmentId;
+    document.getElementById('edit_title').value = title || '';
+    document.getElementById('edit_description').value = description || '';
+    
+    let formattedDueDate = '';
+    if (dueDate && dueDate !== 'null' && dueDate !== 'undefined' && dueDate.trim() !== '') {
+        formattedDueDate = dueDate.trim().substring(0, 16).replace(' ', 'T');
+    }
+    document.getElementById('edit_due_date').value = formattedDueDate;
+    
+    const allowLateCheckbox = document.getElementById('edit_allow_late');
+    if (allowLateCheckbox) {
+        allowLateCheckbox.checked = (allowLate == 1 || allowLate === true || allowLate === '1');
+    }
+    
+    document.getElementById('edit_current_attachment').innerHTML = attachmentHtml || '<i class="bi bi-exclamation-triangle"></i> No attachment';
+    
+    resetFileInputs();
+    resetUrlInputs();
+    
+    document.getElementById('edit_replace_type').value = 'keep';
+    document.getElementById('edit_file_section').style.display = 'none';
+    document.getElementById('edit_url_section').style.display = 'none';
+    
+    document.querySelectorAll('.edit-toggle-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    const keepBtn = document.querySelector('.edit-toggle-btn[data-edit-content="keep"]');
+    if (keepBtn) keepBtn.classList.add('active');
+    
+    document.getElementById('editAssignmentModal').classList.add('active');
+}
+
+function closeEditAssignmentModal() {
+    resetFileInputs();
+    resetUrlInputs();
+    document.getElementById('editAssignmentModal').classList.remove('active');
+}
+
+function openDeleteAssignmentModal(assignmentId) {
+    document.getElementById('delete_assignment_id').value = assignmentId;
+    document.getElementById('deleteAssignmentModal').classList.add('active');
+}
+
+function closeDeleteAssignmentModal() {
+    document.getElementById('deleteAssignmentModal').classList.remove('active');
+}
+
+// Toggle buttons
+document.querySelectorAll('.edit-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.edit-toggle-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        
+        const type = this.dataset.editContent;
+        document.getElementById('edit_replace_type').value = type;
+        
+        const fileSection = document.getElementById('edit_file_section');
+        const urlSection = document.getElementById('edit_url_section');
+        
+        if (type === 'file') {
+            if (fileSection) fileSection.style.display = 'block';
+            if (urlSection) urlSection.style.display = 'none';
+        } else if (type === 'url') {
+            if (fileSection) fileSection.style.display = 'none';
+            if (urlSection) urlSection.style.display = 'block';
+        } else {
+            if (fileSection) fileSection.style.display = 'none';
+            if (urlSection) urlSection.style.display = 'none';
+        }
+    });
+});
+
+function clearSelectedFile() {
+    const fileInput = document.getElementById('edit_new_file');
+    const clearBtn = document.getElementById('clearFileBtn');
+    const fileNameDisplay = document.getElementById('selectedFileName');
+    
+    if (fileInput) fileInput.value = '';
+    selectedFile = null;
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (fileNameDisplay) {
+        fileNameDisplay.style.display = 'none';
+        fileNameDisplay.innerHTML = '';
+    }
+    showToast('File selection cleared', '#64748b');
+}
+
+function clearUrlInput() {
+    const urlInput = document.getElementById('edit_new_url');
+    const clearUrlBtn = document.getElementById('clearUrlBtn');
+    const urlDisplay = document.getElementById('selectedUrlDisplay');
+    
+    if (urlInput) urlInput.value = '';
+    if (clearUrlBtn) clearUrlBtn.style.display = 'none';
+    if (urlDisplay) {
+        urlDisplay.style.display = 'none';
+        urlDisplay.innerHTML = '';
+    }
+    showToast('URL cleared', '#64748b');
+}
+
+function formatFileSize(bytes) {
+    if (!bytes) return '';
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return bytes + ' bytes';
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '';
+    let datePart = dateString;
+    if (dateString.includes(' ')) {
+        datePart = dateString.split(' ')[0];
+    }
+    const date = new Date(datePart);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatTime(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function getAttachmentHtml(assignment) {
+    if (assignment.is_url == 1 && assignment.material_url) {
+        return '<i class="bi bi-link-45deg"></i> <a href="' + escapeHtml(assignment.material_url) + '" target="_blank">' + escapeHtml(assignment.material_url) + '</a>';
+    } else if (assignment.file_name) {
+        return '<i class="bi bi-file-earmark"></i> ' + escapeHtml(assignment.file_name) + ' (' + formatFileSize(assignment.file_size) + ')';
+    }
+    return '<i class="bi bi-exclamation-triangle"></i> No attachment';
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+function renderAssignments(assignments) {
+    const container = document.getElementById('assignmentsContainer');
+    
+    if (!assignments || assignments.length === 0) {
+        container.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p>No assignments found</p><small>Click "Create Assignment" to get started</small></div>';
+        return;
+    }
+    
+    let html = '';
+    for (const assignment of assignments) {
+        const submissions = submissionsData[assignment.id] || [];
+        const attachmentHtml = getAttachmentHtml(assignment);
+        const escapedAttachmentHtml = encodeURIComponent(attachmentHtml);
+        
+        let dueDateDisplay = '';
+        if (assignment.due_date && assignment.due_date !== '0000-00-00 00:00:00') {
+            dueDateDisplay = `<span><i class="bi bi-calendar"></i> Due: ${formatDate(assignment.due_date)}</span>`;
+        } else {
+            dueDateDisplay = '<span><i class="bi bi-calendar"></i> No due date</span>';
+        }
+        
+        html += `
+            <div class="assignment-card">
+                <div class="assignment-header">
+                    <div class="assignment-header-top">
+                        <div class="assignment-title">${escapeHtml(assignment.title)}</div>
+                        <div class="assignment-actions">
+                            <button class="btn-edit-assignment" onclick='openEditAssignmentModal(${assignment.id}, ${JSON.stringify(escapeHtml(assignment.title))}, ${JSON.stringify(escapeHtml(assignment.description || ''))}, ${JSON.stringify(assignment.due_date || '')}, ${JSON.stringify(attachmentHtml)}, ${assignment.allow_late_submission || 0})'>
+                                <i class="bi bi-pencil"></i> Edit
+                            </button>
+                            <button class="btn-delete-assignment" onclick="openDeleteAssignmentModal(${assignment.id})">
+                                <i class="bi bi-trash3"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                    <div class="assignment-info">
+                        <span><i class="bi bi-translate"></i> ${escapeHtml(assignment.language)}</span>
+                        <span><i class="bi bi-person"></i> ${escapeHtml(assignment.student_name)}</span>
+                        ${dueDateDisplay}
+                    </div>
+                    ${assignment.description ? `<div class="assignment-desc">${escapeHtml(assignment.description)}</div>` : ''}
+                </div>`;
+        
+        if (submissions.length === 0) {
+            html += `
+                <div class="submission-row">
+                    <div class="student-col">
+                        <div class="student-name">${escapeHtml(assignment.student_name)}</div>
+                    </div>
+                    <div class="status-col">
+                        <span class="status-badge status-missing"><i class="bi bi-exclamation-triangle"></i> No Submission</span>
+                    </div>
+                    <div class="file-col">
+                        <span class="no-file">— No file uploaded —</span>
+                    </div>
+                    <div class="actions-col"></div>
+                </div>`;
+        } else {
+            for (const sub of submissions) {
+                const hasGrade = sub.grade && sub.grade !== '';
+                const statusClass = hasGrade ? 'status-graded' : 'status-pending';
+                const statusIcon = hasGrade ? '<i class="bi bi-check-circle"></i>' : '<i class="bi bi-clock-history"></i>';
+                const statusText = hasGrade ? `Graded: ${escapeHtml(sub.grade)}` : 'Pending Grade';
+                
+                html += `
+                    <div class="submission-row">
+                        <div class="student-col">
+                            <div class="student-name">${escapeHtml(sub.student_name)}</div>
+                            <div class="submission-time">${formatDate(sub.submitted_at)} at ${formatTime(sub.submitted_at)}</div>
+                        </div>
+                        <div class="status-col">
+                            <span class="status-badge ${statusClass}">${statusIcon} ${statusText}</span>
+                        </div>
+                        <div class="file-col">
+                            ${sub.file_path ? `
+                                <a href="../uploads/assignments/submission/${escapeHtml(sub.file_path)}" class="file-link" target="_blank">
+                                    <i class="bi bi-eye"></i> View Submission
+                                    <span class="file-size">${formatFileSize(sub.file_size)}</span>
+                                </a>
+                            ` : '<span class="no-file">No file attached</span>'}
+                        </div>
+                        <div class="actions-col">
+                           <button class="btn-grade" onclick="openGradeModal(${sub.id}, '${escapeHtml(sub.grade || '')}', '${escapeHtml(sub.feedback || '')}')">
+    <i class="bi bi-pencil"></i> ${hasGrade ? 'Edit Grade' : 'Grade'}
+</button>
+                        </div>
+                    </div>`;
+            }
+        }
+        html += `</div>`;
+    }
+    container.innerHTML = html;
+}
+
+function applyFilters() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+    const languageFilter = document.getElementById('languageFilter').value;
+    const statusFilter = document.getElementById('statusFilter').value;
+    const sortBy = document.getElementById('sortBy').value;
+    
+    let filtered = [...allAssignments];
+    
+    if (searchTerm) {
+        filtered = filtered.filter(a => 
+            (a.title && a.title.toLowerCase().includes(searchTerm)) ||
+            (a.student_name && a.student_name.toLowerCase().includes(searchTerm))
+        );
+    }
+    
+    if (languageFilter !== 'all') {
+        filtered = filtered.filter(a => a.language === languageFilter);
+    }
+    
+    if (statusFilter === 'pending') {
+        filtered = filtered.filter(a => {
+            const subs = submissionsData[a.id] || [];
+            return subs.some(s => !s.grade || s.grade === '');
+        });
+    } else if (statusFilter === 'graded') {
+        filtered = filtered.filter(a => {
+            const subs = submissionsData[a.id] || [];
+            return subs.some(s => s.grade && s.grade !== '');
+        });
+    } else if (statusFilter === 'no_submission') {
+        filtered = filtered.filter(a => parseInt(a.submission_count) === 0);
+    }
+    
+    switch (sortBy) {
+        case 'latest': filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); break;
+        case 'oldest': filtered.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); break;
+        case 'due_asc': filtered.sort((a, b) => {
+            if (!a.due_date) return 1;
+            if (!b.due_date) return -1;
+            return new Date(a.due_date) - new Date(b.due_date);
+        }); break;
+        case 'title_az': filtered.sort((a, b) => (a.title || '').localeCompare(b.title || '')); break;
+        default: filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    
+    renderAssignments(filtered);
+    if (filtered.length === 0) showToast('No assignments match your filters', '#dc2626');
+}
+
+function resetFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('languageFilter').value = 'all';
+    document.getElementById('statusFilter').value = 'all';
+    document.getElementById('sortBy').value = 'latest';
+    renderAssignments(allAssignments);
+    showToast('Filters cleared', '#64748b');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    renderAssignments(allAssignments);
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') applyFilters();
+        });
+    }
+});
+
+window.onclick = function(event) {
+    const gradeModal = document.getElementById('gradeModal');
+    const editModal = document.getElementById('editAssignmentModal');
+    const deleteModal = document.getElementById('deleteAssignmentModal');
+    if (event.target === gradeModal) closeGradeModal();
+    if (event.target === editModal) closeEditAssignmentModal();
+    if (event.target === deleteModal) closeDeleteAssignmentModal();
+}
+
+setTimeout(function() {
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(alert => {
+        alert.style.transition = 'opacity 0.5s';
+        alert.style.opacity = '0';
+        setTimeout(() => alert.remove(), 500);
+    });
+}, 4000);
+
+// File input handler
+const fileInput = document.getElementById('edit_new_file');
+if (fileInput) {
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const clearBtn = document.getElementById('clearFileBtn');
+        const fileNameDisplay = document.getElementById('selectedFileName');
+        
+        if (file) {
+            selectedFile = file;
+            if (file.size > 50 * 1024 * 1024) {
+                showToast('File too large! Maximum size is 50MB', '#dc2626');
+                this.value = '';
+                selectedFile = null;
+                if (clearBtn) clearBtn.style.display = 'none';
+                if (fileNameDisplay) fileNameDisplay.style.display = 'none';
+                return;
+            }
+            
+            if (clearBtn) clearBtn.style.display = 'inline-flex';
+            if (fileNameDisplay) {
+                fileNameDisplay.style.display = 'flex';
+                fileNameDisplay.innerHTML = `
+                    <i class="bi bi-file-earmark-check"></i>
+                    <span>${escapeHtml(file.name)} (${formatFileSize(file.size)})</span>
+                    <button type="button" class="remove-file" onclick="clearSelectedFile()">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                `;
+            }
+        } else {
+            clearSelectedFile();
+        }
+    });
+}
+
+// URL input handler
+const urlInput = document.getElementById('edit_new_url');
+if (urlInput) {
+    urlInput.addEventListener('input', function() {
+        const url = this.value.trim();
+        const clearUrlBtn = document.getElementById('clearUrlBtn');
+        const urlDisplay = document.getElementById('selectedUrlDisplay');
+        
+        if (url && isValidUrl(url)) {
+            if (clearUrlBtn) clearUrlBtn.style.display = 'inline-flex';
+            if (urlDisplay) {
+                urlDisplay.style.display = 'flex';
+                urlDisplay.innerHTML = `
+                    <i class="bi bi-link-45deg"></i>
+                    <span>${escapeHtml(url)}</span>
+                    <button type="button" class="remove-file" onclick="clearUrlInput()">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                `;
+            }
+        } else {
+            if (clearUrlBtn) clearUrlBtn.style.display = 'none';
+            if (urlDisplay) {
+                urlDisplay.style.display = 'none';
+                urlDisplay.innerHTML = '';
+            }
+        }
+    });
+}
+
+function isValidUrl(string) {
+    try { new URL(string); return true; } catch(_) { return false; }
+}
+</script>
+</body>
+</html>

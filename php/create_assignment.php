@@ -29,12 +29,13 @@ $user = $stmtUser->get_result()->fetch_assoc();
 $displayName = $user['fullname'] ?? '';
 $profilePic = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-tutor.png';
 
-// Get booking + student info
 $stmt = $conn->prepare("
     SELECT b.*, 
            u.fullname AS student_name,
            u.email    AS student_email,
-           u.id       AS student_id
+           u.id       AS student_id,
+           b.focus,
+           b.proficiency_level
     FROM bookings b
     JOIN users u ON b.student_id = u.id
     WHERE b.id = ? AND b.tutor_id = ?
@@ -62,13 +63,12 @@ function sendAssignmentEmail($booking, $title, $description, $due_date, $tutorNa
         $mail->Port       = 587;
         $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
         $mail->addAddress($booking['student_email'], $booking['student_name']);
-        $mail->Subject = "📝 New Assignment from {$tutorName}";
+        $mail->Subject = "New Assignment from {$tutorName}";
         $mail->isHTML(true);
         $mail->Body = "
         <div style='font-family:Segoe UI,sans-serif;max-width:560px;margin:auto;
                     border:1px solid #e0e0e0;border-radius:16px;padding:28px;background:#fff;'>
             <div style='text-align:center;margin-bottom:20px;'>
-                <img src='http://localhost/kyoshi/assets/img/logo.png' alt='Kyoshi' style='height:50px;'>
                 <h2 style='color:#1d3156;margin-top:12px;'>📝 New Assignment</h2>
             </div>
             <p>Dear <strong>{$booking['student_name']}</strong>,</p>
@@ -101,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $description   = trim($_POST['description'] ?? '');
     $due_date      = $_POST['due_date'] ?? '';
     $total_points  = intval($_POST['total_points'] ?? 100);
+    $allowLate = isset($_POST['allow_late_submission']) ? 1 : 0;
     $attachment_type = $_POST['attachment_type'] ?? 'none';
     
     if (empty($title)) {
@@ -143,28 +144,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         if (empty($message)) {
+
+            
             $stmt = $conn->prepare("
-                INSERT INTO assignments (booking_id, tutor_id, title, description, due_date, total_points, 
-                                        material_url, file_name, file_path, file_size, file_type, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            ");
-            $due_date_sql = !empty($due_date) ? $due_date : null;
-            $stmt->bind_param("iisssisssis", 
-                $booking_id, $userID, $title, $description, $due_date_sql, $total_points,
-                $material_url, $file_name, $file_path, $file_size, $file_type
-            );
+    INSERT INTO assignments (booking_id, tutor_id, student_id, title, description, due_date, total_points, allow_late_submission, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+");
+ $due_date_sql = !empty($due_date) ? $due_date : null;
+$stmt->bind_param("iiissiii", $booking_id, $userID, $booking['student_id'], $title, $description, $due_date_sql, $total_points, $allowLate);
+        
             
             if ($stmt->execute()) {
                 // Insert notification for student
                 $due_text = !empty($due_date) ? " (Due: " . date('d M Y, g:i A', strtotime($due_date)) . ")" : "";
                 $notification_title = "New Assignment: " . $title;
                 $notification_message = "You have a new assignment: " . $title . $due_text;
-                $notification_link = "assignments.php?booking_id=" . $booking_id;
+                $notification_link = "my_assignments.php?booking_id=" . $booking_id;
                 
                 insertNotification($conn, $booking['student_id'], $notification_title, $notification_message, 'assignment', $notification_link);
                 sendAssignmentEmail($booking, $title, $description, $due_date, $displayName);
                 
-                header("Location: assignments.php?booking_id=" . $booking_id . "&success=" . urlencode("Assignment created! Student notified."));
+                header("Location: " . $backUrl . (strpos($backUrl, '?') !== false ? '&' : '?') . "success=Assignment created!");
                 exit();
             } else {
                 $message = "Error: " . $conn->error;
@@ -371,12 +371,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </a>
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
-                <a href="availability.php">Availability</a>
-                <a href="booking_requests.php">Requests</a>
-                <a href="learning_materials.php?booking_id=<?= $booking_id ?>">Materials</a>
-                <a href="assignments.php?booking_id=<?= $booking_id ?>" class="active">Homework</a>
-                <a href="earnings.php">Earnings</a>
-                <a href="meeting_links.php">Meeting Links</a>
+                <a href="booking_requests.php">My Bookings</a>
+                <a href="material_overview.php">My Materials</a>
+                <a href="assignment_overview.php" class="active">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
@@ -385,7 +383,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -396,11 +394,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </header>
 
 <div class="main">
-    <a href="assignments.php?booking_id=<?= $booking_id ?>" class="btn-back">
-        <i class="bi bi-arrow-left"></i> Back to Assignments
-    </a>
+    
+    <?php
+// Determine where to go back
+$referer = $_SERVER['HTTP_REFERER'] ?? '';
+if (strpos($referer, 'select_booking.php') !== false) {
+    $backUrl = 'select_booking.php?action=assignment';
+} else {
+    $backUrl = 'assignments_overview.php';
+}
+?>
 
     <div class="card">
+                <a href="<?= $backUrl ?>" class="btn-back">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
         <h1><i class="bi bi-pencil-square"></i> Create Assignment</h1>
         <p class="subtitle">Give homework or pre-work for your student</p>
 
@@ -409,6 +417,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div>
                 <strong><?= e($booking['student_name']) ?></strong>
                 <span><?= e($booking['language']) ?> · <?= date('d M Y', strtotime($booking['booking_date'])) ?></span>
+                <?php if (!empty($booking['focus'])): ?>
+                    <br><span>Focus: <?= e($booking['focus']) ?></span>
+                <?php endif; ?>
+                <?php if (!empty($booking['proficiency_level'])): ?>
+                    <span> · Level: <?= ucfirst(e($booking['proficiency_level'])) ?></span>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -443,7 +457,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="form-group">
-                <label>Attach Material (Optional)</label>
+                <label>
+                    <input type="checkbox" name="allow_late_submission" value="1" style="width: auto; margin-right: 8px;">
+                    Allow late submissions
+                </label>
+                <div class="form-hint">If checked, students can submit after the due date</div>
+            </div>
+
+            <div class="form-group">
+                <label>Attach Work(Optional)</label>
                 <div class="toggle-row">
                     <div class="toggle-btn active" data-attach="none">No attachment</div>
                     <div class="toggle-btn" data-attach="file">📁 Upload File</div>

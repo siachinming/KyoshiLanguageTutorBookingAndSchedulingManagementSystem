@@ -43,47 +43,31 @@ $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['accept_booking'])) {
-        $booking_id = $_POST['booking_id'];
+    $booking_id = $_POST['booking_id'];
+    
+    $stmt = $conn->prepare("UPDATE bookings SET status = 'accepted' WHERE id = ? AND tutor_id = ?");
+    $stmt->bind_param("ii", $booking_id, $userID);
+    
+    if ($stmt->execute()) {
+        $stmt2 = $conn->prepare("
+            SELECT b.*, u.fullname as student_name, u.email as student_email, u.id as student_id
+            FROM bookings b
+            JOIN users u ON b.student_id = u.id
+            WHERE b.id = ?
+        ");
+        $stmt2->bind_param("i", $booking_id);
+        $stmt2->execute();
+        $booking = $stmt2->get_result()->fetch_assoc();
         
-        $stmt = $conn->prepare("UPDATE bookings SET status = 'accepted' WHERE id = ? AND tutor_id = ?");
-        $stmt->bind_param("ii", $booking_id, $userID);
-        
-        if ($stmt->execute()) {
-            $stmt2 = $conn->prepare("
-                SELECT b.*, u.fullname as student_name, u.email as student_email, u.id as student_id
-                FROM bookings b
-                JOIN users u ON b.student_id = u.id
-                WHERE b.id = ?
-            ");
-            $stmt2->bind_param("i", $booking_id);
-            $stmt2->execute();
-            $booking = $stmt2->get_result()->fetch_assoc();
-            
-            $bookingDate = date('l, F j, Y', strtotime($booking['booking_date']));
-            $bookingTime = date('g:i A', strtotime($booking['booking_time']));
-            
-                    // Check if notification already sent for this reschedule request
-            $checkNotif = $conn->prepare("
-                SELECT id FROM notifications 
-                WHERE user_id = ? 
-                AND type = 'reschedule' 
-                AND message LIKE ? 
-                AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-            ");
-            $likeMessage = "%approved your reschedule request%";
-            $checkNotif->bind_param("is", $booking['student_id'], $likeMessage);
-            $checkNotif->execute();
-            $existingNotif = $checkNotif->get_result()->fetch_assoc();
+        $bookingDate = date('l, F j, Y', strtotime($booking['booking_date']));
+        $bookingTime = date('g:i A', strtotime($booking['booking_time']));
+        $notifTitle = "Booking Accepted!";
+        $notifMessage = "Your booking for {$booking['language']} on " . date('d M Y', strtotime($booking['booking_date'])) . " at " . date('g:i A', strtotime($booking['booking_time'])) . " has been accepted by tutor {$displayName}. Please proceed to payment.";
 
-            if (!$existingNotif) {
-                // Notification for student (in-app)
-                $notifTitle = "Reschedule Request Approved";
-                $notifMessage = "Your tutor has approved your reschedule request. New date: " . date('d M Y', strtotime($newDate)) . " at " . date('g:i A', strtotime($newTime));
-                
-                $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, 'reschedule', 0, NOW())");
-                $notif->bind_param("iss", $booking['student_id'], $notifTitle, $notifMessage);
-                $notif->execute();
-            }
+       $link = 'payment_form.php?booking_id=' . $booking_id;
+$notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, is_read, created_at) VALUES (?, ?, ?, 'booking', ?, 0, NOW())");
+$notif->bind_param("isss", $booking['student_id'], $notifTitle, $notifMessage, $link);
+        $notif->execute();
             
             // Send email
             $mail = new PHPMailer(true);
@@ -169,23 +153,13 @@ $stmt->bind_param("sii", $reject_reason, $booking_id, $userID);
             $booking = $stmt2->get_result()->fetch_assoc();
             
            // Check if notification already sent
-            $checkNotif = $conn->prepare("
-                SELECT id FROM notifications 
-                WHERE user_id = ? 
-                AND type = 'reschedule' 
-                AND message LIKE ? 
-                AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-            ");
-            $likeMessage = "%declined your reschedule request%";
-            $checkNotif->bind_param("is", $booking['student_id'], $likeMessage);
-            $checkNotif->execute();
-            $existingNotif = $checkNotif->get_result()->fetch_assoc();
-
-            if (!$existingNotif) {
-                $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, 'reschedule', 0, NOW())");
-                $notif->bind_param("iss", $booking['student_id'], $notifTitle, $notifMessage);
-                $notif->execute();
-            }
+            // Send notification to student about booking rejection
+            $notifTitle = "Booking Declined";
+            $notifMessage = "Your booking for {$booking['language']} on " . date('d M Y', strtotime($booking['booking_date'])) . " at " . date('g:i A', strtotime($booking['booking_time'])) . " has been declined by tutor {$displayName}. Reason: {$reject_reason}";
+            
+            $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, 'booking', 0, NOW())");
+            $notif->bind_param("iss", $booking['student_id'], $notifTitle, $notifMessage);
+            $notif->execute();
             
             $mail = new PHPMailer(true);
             try {
@@ -290,6 +264,50 @@ $stmt->bind_param("i", $userID);
 $stmt->execute();
 $rescheduleRequests = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+// Completed/Cancelled bookings
+$stmt = $conn->prepare("
+    SELECT b.*, b.meeting_location, b.learning_mode, 
+           u.fullname as student_name, u.email as student_email, u.id as student_id,
+           p.status as payment_status
+    FROM bookings b
+    JOIN users u ON b.student_id = u.id
+    LEFT JOIN payments p ON b.id = p.booking_id
+    WHERE b.tutor_id = ? 
+    AND (b.status = 'completed' OR b.status = 'cancelled')
+    ORDER BY b.booking_date DESC, b.booking_time DESC
+    LIMIT 50
+");
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$completedBookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Fetch disputed bookings (where student reported an issue that is pending)
+$stmt = $conn->prepare("
+    SELECT 
+        d.id as dispute_id,
+        d.issue_type,
+        d.message,
+        d.created_at as dispute_date,
+        d.status as dispute_status,
+        d.resolution_type,
+        b.id as booking_id,
+        b.language,
+        b.booking_date,
+        b.booking_time,
+        b.learning_mode,
+        b.total_amount,
+        u.fullname as student_name,
+        u.email as student_email,
+        u.id as student_id
+    FROM disputes d
+    JOIN bookings b ON d.booking_id = b.id
+    JOIN users u ON b.student_id = u.id
+    WHERE b.tutor_id = ? AND d.status = 'pending'
+    ORDER BY d.created_at DESC
+");
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$disputes = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 function e($value) {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
@@ -823,8 +841,9 @@ body::before {
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
                 <a href="booking_requests.php" class="active">My Bookings</a>
-                <a href="learning_materials.php">My Materials</a>
-                <a href="assignments.php">My Assignments</a>
+                <a href="material_overview.php">My Materials</a>
+                <a href="assignment_overview.php">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
@@ -833,7 +852,7 @@ body::before {
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -862,6 +881,56 @@ body::before {
         
         <!-- Empty spacer for balance -->
         <div style="width: 200px;"></div>
+        <?php
+// Fetch dispute urgency statistics
+$urgentCount = 0;
+$totalPending = 0;
+
+$urgentStmt = $conn->prepare("
+    SELECT COUNT(*) as count 
+    FROM disputes d
+    JOIN bookings b ON d.booking_id = b.id
+    WHERE b.tutor_id = ? 
+    AND d.status = 'pending' 
+    AND d.resolution_type = 'student_tutor'
+    AND d.created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+");
+$urgentStmt->bind_param("i", $userID);
+$urgentStmt->execute();
+$urgentCount = $urgentStmt->get_result()->fetch_assoc()['count'];
+
+$totalStmt = $conn->prepare("
+    SELECT COUNT(*) as count 
+    FROM disputes d
+    JOIN bookings b ON d.booking_id = b.id
+    WHERE b.tutor_id = ? 
+    AND d.status = 'pending' 
+    AND d.resolution_type = 'student_tutor'
+");
+$totalStmt->bind_param("i", $userID);
+$totalStmt->execute();
+$totalPending = $totalStmt->get_result()->fetch_assoc()['count'];
+?>
+
+<?php if ($totalPending > 0): ?>
+<div class="alert alert-warning" style="background: #fff3cd; border-left: 4px solid #f59e0b; margin-bottom: 20px; padding: 15px 20px; border-radius: 12px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+        <div>
+            <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b;"></i>
+            <strong style="color: #856404;">Disputes Needing Resolution</strong>
+            <p style="margin: 5px 0 0; color: #856404; font-size: 13px;">
+                You have <strong><?= $totalPending ?></strong> pending dispute<?= $totalPending > 1 ? 's' : '' ?>.
+                <?php if ($urgentCount > 0): ?>
+                    <span style="color: #dc2626;"><strong><?= $urgentCount ?></strong> require<?= $urgentCount > 1 ? '' : 's' ?> immediate attention (over 24 hours).</span>
+                <?php endif; ?>
+            </p>
+        </div>
+        <a href="#disputes-tab" onclick="switchTab('disputes', this)" class="btn-pink" style="background: #f59e0b; color: white; padding: 8px 20px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 13px;">
+            <i class="bi bi-eye"></i> Resolve Now
+        </a>
+    </div>
+</div>
+<?php endif; ?>
     </div><br>
 
     <?php if ($message): ?>
@@ -881,10 +950,18 @@ body::before {
         Reschedule Requests
         <span style="background:#f59e0b; color:white; padding:2px 8px; border-radius:20px; margin-left:8px; font-size:12px;"><?= count($rescheduleRequests) ?></span>
     </button>
+    <button class="tab-btn" onclick="switchTab('disputes', this)">
+        Disputes
+        <span style="background:#dc3545; color:white; padding:2px 8px; border-radius:20px; margin-left:8px; font-size:12px;"><?= count($disputes) ?></span>
+    </button>
         <button class="tab-btn" onclick="switchTab('upcoming', this)">
             Upcoming Classes
             <span style="background:rgba(254, 214, 206, 0.92);; color:black; padding:2px 8px; border-radius:20px; margin-left:8px; font-size:12px;"><?= count($upcomingBookings) ?></span>
         </button>
+        <button class="tab-btn" onclick="switchTab('completed', this)">
+    Completed Sessions
+    <span style="background:#28a745; color:white; padding:2px 8px; border-radius:20px; margin-left:8px; font-size:12px;"><?= count($completedBookings) ?></span>
+</button>
     </div>
     <!-- FILTER SECTION - WHITE BACKGROUND, NO HEADER -->
 <div style="background: white; border-radius: 16px; padding: 10px 14px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #eef2f7;">
@@ -1129,16 +1206,13 @@ body::before {
                         <td data-label="Requested">
                             <?= date('d M Y', strtotime($rr['new_date'])) ?> @ <?= date('g:i A', strtotime($rr['new_time'])) ?>
                         </td>
-                        <td data-label="Actions">
-                            <div class="action-buttons">
-                                <button class="btn-accept" onclick="processReschedule(<?= $rr['id'] ?>, <?= $rr['booking_id'] ?>, 'accept', '<?= $rr['new_date'] ?>', '<?= $rr['new_time'] ?>')">
-                                    <i class="bi bi-check-lg"></i> Accept
-                                </button>
-                                <button class="btn-reject" onclick="showRejectRescheduleModal(<?= $rr['id'] ?>, <?= $rr['booking_id'] ?>)">
-                                    <i class="bi bi-x-lg"></i> Reject
-                                </button>
-                            </div>
-                        </td>
+                            <td data-label="Actions">
+                                <td data-label="Actions">
+                                    <div class="action-buttons">
+                                        <button class="btn-accept" onclick="processReschedule(<?= $rr['id'] ?>, <?= $rr['booking_id'] ?>, 'accept', '<?= $rr['new_date'] ?>', '<?= $rr['new_time'] ?>', event)"><i class="bi bi-check-lg"></i> Accept</button>
+                                        <button class="btn-reject" onclick="showRejectRescheduleModal(<?= $rr['id'] ?>, <?= $rr['booking_id'] ?>)"><i class="bi bi-x-lg"></i> Reject</button>
+                                    </div>
+                                </td>
                     </tr>
                 <?php 
                     $prevStudent = $currentStudent;
@@ -1147,6 +1221,85 @@ body::before {
                     $prevOriginal = $currentOriginal;
                 endforeach; 
                 ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
+</div>
+<!-- Disputes Tab -->
+<div id="disputes-tab" class="tab-content">
+    <?php if (empty($disputes)): ?>
+        <div class="empty-state">
+            <i class="bi bi-chat-dots"></i>
+            <p>No pending disputes</p>
+            <p style="font-size: 13px;">When students report issues, they'll appear here.</p>
+        </div>
+    <?php else: ?>
+        <table class="bookings-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Language</th>
+                    <th>Issue Type</th>
+                    <th>Message</th>
+                    <th>Reported On</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($disputes as $dispute): 
+                    $issue_labels = [
+                        'tutor_no_show' => 'Tutor Did Not Attend',
+                        'student_no_show' => 'Student Did Not Attend',
+                        'technical_issues' => 'Technical Issues',
+                        'wrong_materials' => 'Wrong Materials Provided',
+                        'payment_failed_but_deducted' => 'Payment Issue',
+                        'other' => 'Other Issue'
+                    ];
+                    $issueLabel = $issue_labels[$dispute['issue_type']] ?? ucfirst(str_replace('_', ' ', $dispute['issue_type']));
+                ?>
+                    <tr>
+                        <td data-label="Student" class="student-cell">
+                            <?= e($dispute['student_name']) ?>
+                        </td>
+                        <td data-label="Language">
+                            <?= e($dispute['language']) ?>
+                        </td>
+                        <td data-label="Issue Type">
+                            <span style="background:#fee2e2; color:#dc2626; padding:4px 10px; border-radius:20px; font-size:11px; display:inline-block;">
+                                <?= e($issueLabel) ?>
+                            </span>
+                        </td>
+                        <td data-label="Message" style="max-width: 250px;">
+                            <?php if (!empty($dispute['message'])): ?>
+                                <?= e(substr($dispute['message'], 0, 100)) ?><?= strlen($dispute['message']) > 100 ? '...' : '' ?>
+                            <?php else: ?>
+                                <span style="color:#999;">No message provided</span>
+                            <?php endif; ?>
+                        </td>
+                        <td data-label="Reported On" style="white-space: nowrap;">
+    <?= date('d M Y', strtotime($dispute['dispute_date'])) ?>
+    <?php 
+    $hoursOld = (time() - strtotime($dispute['dispute_date'])) / 3600;
+    if ($hoursOld > 24): 
+    ?>
+        <span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">
+            URGENT
+        </span>
+    <?php elseif ($hoursOld > 12): ?>
+        <span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">
+            Due Soon
+        </span>
+    <?php endif; ?>
+</td>
+                        <td data-label="Actions">
+    <div class="action-buttons">
+        <a href="tutor_booking_detail.php?id=<?= $dispute['booking_id'] ?>" class="btn-view">
+            <i class="bi bi-eye"></i> View Details
+        </a>
+    </div>
+</td>
+                    </tr>
+                <?php endforeach; ?>
             </tbody>
         </table>
     <?php endif; ?>
@@ -1214,11 +1367,7 @@ body::before {
                             <?php endif; ?>
                         </td>
                         <td data-label="Mode & Location">
-                            <?php if ($showMode): ?>
-                                <?= $modeDisplayUpcoming ?>
-                            <?php else: ?>
-                                <span style="display: inline-block; width: 1px;">&nbsp;</span>
-                            <?php endif; ?>
+                            <?= $modeDisplayUpcoming ?> 
                         </td>
                         <td data-label="Day">
                             <?php if ($showDate): ?>
@@ -1239,20 +1388,24 @@ body::before {
                         </td>
                         <td data-label="Actions">
                             <div class="action-buttons" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                
                                 <?php if ($booking['learning_mode'] === 'online'): ?>
                                     <?php if (!empty($booking['meeting_link'])): ?>
-                                        <a href="<?= e($booking['meeting_link']) ?>" target="_blank" class="btn-attend" style="background: #28a745; color: white; padding: 6px 14px; border-radius: 20px; text-decoration: none; font-size: 12px; font-weight: 600;">
+                                        <a href="join_meeting.php?booking_id=<?= $booking['id'] ?>&link=<?= urlencode($booking['meeting_link']) ?>" 
+                                           target="_blank" class="btn-attend" 
+                                           style="background: #28a745; color: white; padding: 6px 14px; border-radius: 20px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
                                             <i class="bi bi-camera-video-fill"></i> Attend Class
                                         </a>
                                     <?php else: ?>
-                                        <button class="btn-add-link" onclick="showAddLinkModal(<?= $booking['id'] ?>)" style="background: #f59e0b; color: white; padding: 6px 14px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer;">
+                                        <button class="btn-add-link" onclick="showAddLinkModal(<?= $booking['id'] ?>)" 
+                                                style="background: #f59e0b; color: white; padding: 6px 14px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
                                             <i class="bi bi-link"></i> Add Link
                                         </button>
                                     <?php endif; ?>
                                 <?php endif; ?>
                                 
-                                <a href="tutor_booking_detail.php?id=<?= $booking['id'] ?>" class="btn-view" style="background: #e2e8f0; color: #1d3156; padding: 6px 12px; border-radius: 20px; text-decoration: none; font-size: 12px;">
+                                <a href="tutor_booking_detail.php?id=<?= $booking['id'] ?>" 
+                                   class="btn-view" 
+                                   style="background: #e2e8f0; color: #1d3156; padding: 6px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 5px;">
                                     <i class="bi bi-eye"></i> Details
                                 </a>
                             </div>
@@ -1265,6 +1418,67 @@ body::before {
                     $prevDate = $currentDate;
                 endforeach; 
                 ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
+</div>
+
+<!-- Completed Sessions Tab -->
+<div id="completed-tab" class="tab-content">
+    <?php if (empty($completedBookings)): ?>
+        <div class="empty-state">
+            <i class="bi bi-check2-circle"></i>
+            <p>No completed or cancelled sessions</p>
+            <p style="font-size: 13px;">Past sessions will appear here.</p>
+        </div>
+    <?php else: ?>
+        <table class="bookings-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Language</th>
+                    <th>Mode & Location</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($completedBookings as $booking): 
+                    $statusColor = $booking['status'] === 'completed' ? '#28a745' : '#dc2626';
+                    $statusIcon = $booking['status'] === 'completed' ? 'bi-check2-circle' : 'bi-x-circle';
+                    $statusText = $booking['status'] === 'completed' ? 'Completed' : 'Cancelled';
+                ?>
+                    <tr>
+                        <td data-label="Student" class="student-cell"><?= e($booking['student_name']) ?></td>
+                        <td data-label="Language"><?= e($booking['language']) ?></td>
+                        <td data-label="Mode & Location">
+                            <?php if ($booking['learning_mode'] === 'online'): ?>
+                                <span style="color:#80A1BA;">Online</span>
+                            <?php else: ?>
+                                <span style="color:#B4DEBD;">Face to Face</span>
+                                <?php if (!empty($booking['meeting_location'])): ?>
+                                    <br><small>📍 <?= e($booking['meeting_location']) ?></small>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </td>
+                        <td data-label="Date"><?= date('d M Y', strtotime($booking['booking_date'])) ?></td>
+                        <td data-label="Time"><?= date('g:i A', strtotime($booking['booking_time'])) ?></td>
+                        <td data-label="Status">
+                            <span style="background: <?= $statusColor ?>20; color: <?= $statusColor ?>; padding: 4px 12px; border-radius: 20px; font-size: 12px;">
+                                <i class="bi <?= $statusIcon ?>"></i> <?= $statusText ?>
+                            </span>
+                        </td>
+                        <td data-label="Actions">
+                            <div class="action-buttons">
+                                <a href="tutor_booking_detail.php?id=<?= $booking['id'] ?>" class="btn-view">
+                                    <i class="bi bi-eye"></i> Details
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
             </tbody>
         </table>
     <?php endif; ?>
@@ -1348,7 +1562,9 @@ function switchTab(tab, btnElement) {
     document.getElementById('pending-tab').classList.remove('active');
     document.getElementById('upcoming-tab').classList.remove('active');
     document.getElementById('reschedule-tab').classList.remove('active');
-    
+    document.getElementById('completed-tab').classList.remove('active');
+    document.getElementById('disputes-tab').classList.remove('active');  // ADD THIS
+
     const titleEl = document.getElementById('pageTitle');
     const descEl = document.getElementById('pageDescription');
     
@@ -1360,10 +1576,18 @@ function switchTab(tab, btnElement) {
         document.getElementById('reschedule-tab').classList.add('active');
         titleEl.innerHTML = '<i class="bi bi-calendar-plus"></i> Reschedule Requests';
         descEl.innerHTML = 'Auto reject at 12 AM on booking date if you not response.';
-    } else {
+    } else if (tab === 'disputes') {  // ADD THIS
+        document.getElementById('disputes-tab').classList.add('active');
+        titleEl.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Disputes';
+        descEl.innerHTML = 'Student-reported issues requiring attention.';
+    } else if (tab === 'upcoming') {
         document.getElementById('upcoming-tab').classList.add('active');
         titleEl.innerHTML = '<i class="bi bi-calendar-check"></i> Upcoming Sessions';
         descEl.innerHTML = 'View your confirmed and upcoming teaching sessions';
+    } else if (tab === 'completed') {  
+        document.getElementById('completed-tab').classList.add('active');
+        titleEl.innerHTML = '<i class="bi bi-check2-circle"></i> Completed Sessions';
+        descEl.innerHTML = 'Past sessions where you can review and contact students.';
     }
 }
 
@@ -1414,21 +1638,42 @@ setTimeout(function() {
     });
 }, 4000);
 
+function contactStudent(studentName, studentEmail, language) {
+    // Get tutor's WhatsApp number from your user data
+    const tutorPhone = "<?= e($user['phone'] ?? '') ?>";
+    
+    if (!tutorPhone) {
+        showToast('Please add your WhatsApp number in your profile first', '#f59e0b');
+        return;
+    }
+    
+    const message = `Hi ${studentName}! I'm your ${language} tutor. I wanted to follow up on our completed session. Do you have any questions or feedback for me?`;
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/${studentEmail}?text=${encodedMessage}`;
+    
+    // Since we don't have student's phone, open email or use the email
+    if (confirm(`Contact ${studentName} via email? Click OK to open email client.`)) {
+        window.location.href = `mailto:${studentEmail}?subject=Follow up on ${language} session&body=${encodedMessage}`;
+    }
+}
+
 // ============================================
-// PENDING REQUESTS FILTER SYSTEM (WORKING VERSION)
+// FILTER SYSTEM FOR ALL TABS (CLIENT-SIDE)
 // ============================================
 
-// Store all pending requests as JavaScript array
+// Store all data as JavaScript arrays
 const allPendingRequests = <?= json_encode($pendingRequests) ?>;
+const allRescheduleRequests = <?= json_encode($rescheduleRequests) ?>;
+const allUpcomingBookings = <?= json_encode($upcomingBookings) ?>;
+const allCompletedBookings = <?= json_encode($completedBookings) ?>;
+const allDisputes = <?= json_encode($disputes) ?>;
 
-// Helper function to format time
 function formatTime(timeString) {
     if (!timeString) return '--:--';
     const date = new Date(`2000-01-01T${timeString}`);
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-// Helper function to escape HTML
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, function(m) {
@@ -1438,119 +1683,8 @@ function escapeHtml(str) {
         return m;
     });
 }
-// Reset all filters - clear and show all
-function resetFilters() {
-    console.log('Reset filters called');
-    document.getElementById('languageFilter').value = 'all';
-    document.getElementById('sessionTypeFilter').value = 'all';
-    document.getElementById('dateFrom').value = '';
-    document.getElementById('dateTo').value = '';
-    // Show all requests
-    renderFilteredTable(allPendingRequests);
-    
-    // Show toast message
-    showToast(`Filters cleared. Showing all result.`, '#64748b');
-}
 
-// Meeting Link Functions
-function showAddLinkModal(bookingId) {
-    document.getElementById('link_booking_id').value = bookingId;
-    document.getElementById('meeting_link_input').value = '';
-    document.getElementById('meetingLinkModal').classList.add('active');
-}
-
-function closeLinkModal() {
-    document.getElementById('meetingLinkModal').classList.remove('active');
-}
-
-function saveMeetingLink() {
-    const bookingId = document.getElementById('link_booking_id').value;
-    const meetingLink = document.getElementById('meeting_link_input').value;
-    
-    if (!meetingLink) {
-        showToast('Please enter a meeting link', '#f59e0b');
-        return;
-    }
-    
-    fetch('save_meeting_link.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ booking_id: bookingId, meeting_link: meetingLink })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showToast('Meeting link saved!', '#28a745');
-            closeLinkModal();
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showToast('Error saving link', '#dc2626');
-        }
-    })
-    .catch(error => {
-        showToast('Error: ' + error, '#dc2626');
-    });
-}
-
-function applyFilters() {
-    console.log('Apply filters called');
-    const language = document.getElementById('languageFilter').value;
-    const sessionType = document.getElementById('sessionTypeFilter').value;
-    const dateFrom = document.getElementById('dateFrom').value;
-    const dateTo = document.getElementById('dateTo').value;
-    
-    console.log('Language:', language);
-    console.log('Session Type:', sessionType);
-    console.log('Date From:', dateFrom);
-    console.log('Date To:', dateTo);
-    
-    // Check if any filter is actually selected
-    const hasActiveFilters = (language !== 'all' || sessionType !== 'all' || dateFrom || dateTo);
-    
-    // If no filters selected, show message and do nothing
-    if (!hasActiveFilters) {
-        showToast(' Please select at least one filter (Language, Session Mode, or Date Range) before searching.', '#f59e0b');
-        return;  // Exit the function without filtering
-    }
-    
-    const filtered = allPendingRequests.filter(request => {
-        // Filter by language
-        if (language !== 'all' && request.language !== language) {
-            return false;
-        }
-        
-        // Filter by session type (learning_mode)
-        if (sessionType !== 'all' && request.learning_mode !== sessionType) {
-            return false;
-        }
-        
-        // Filter by date range
-        if (dateFrom && request.booking_date < dateFrom) {
-            return false;
-        }
-        if (dateTo && request.booking_date > dateTo) {
-            return false;
-        }
-        
-        return true;
-    });
-    
-    console.log('Filtered count:', filtered.length);
-    renderFilteredTable(filtered);
-    
-    // Show result toast
-    if (filtered.length === 0) {
-        showToast(' No requests match your filters.', '#dc2626');
-    } else if (filtered.length !== allPendingRequests.length) {
-        showToast(` Found ${filtered.length} request${filtered.length !== 1 ? 's' : ''} matching your filters.`, '#0369a1');
-    } else {
-        showToast(` ${filtered.length} requests match your filters.`, '#28a745');
-    }
-}
-
-// Show toast notification
 function showToast(message, color) {
-    // Remove existing toast
     const existingToast = document.querySelector('.filter-toast');
     if (existingToast) existingToast.remove();
     
@@ -1566,27 +1700,24 @@ function showToast(message, color) {
     }, 3000);
 }
 
-// Render the filtered table
-function renderFilteredTable(requests) {
-    const pendingTab = document.getElementById('pending-tab');
-    if (!pendingTab) {
-        console.error('pending-tab not found');
+// ========== PENDING REQUESTS RENDER ==========
+function renderPendingTable(requests) {
+    const container = document.getElementById('pending-tab');
+    if (!container) return;
+    
+    if (requests.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <p>No pending booking requests</p>
+                <p style="font-size: 13px;">When students book sessions, they'll appear here.</p>
+            </div>
+        `;
         return;
     }
     
-    // Check if table exists, if not, create it
-    let table = pendingTab.querySelector('.bookings-table');
-    let tbody;
-    
-    if (!table) {
-        // Remove empty state if exists
-        const emptyState = pendingTab.querySelector('.empty-state');
-        if (emptyState) emptyState.remove();
-        
-        // Create new table
-        table = document.createElement('table');
-        table.className = 'bookings-table';
-        table.innerHTML = `
+    let html = `
+        <table class="bookings-table">
             <thead>
                 <tr>
                     <th>Student</th>
@@ -1598,53 +1729,17 @@ function renderFilteredTable(requests) {
                     <th>Actions</th>
                 </tr>
             </thead>
-            <tbody></tbody>
-        `;
-        pendingTab.appendChild(table);
-        tbody = table.querySelector('tbody');
-    } else {
-        tbody = table.querySelector('tbody');
-    }
+            <tbody>
+    `;
     
-    if (!tbody) {
-        console.error('tbody not found');
-        return;
-    }
-    
-    if (requests.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" style="text-align: center; padding: 60px; color: #94a3b8;">
-                    <i class="bi bi-inbox" style="font-size: 48px; display: block; margin-bottom: 16px;"></i>
-                    No pending requests match your filters
-                    <br>
-                    <button onclick="resetFilters()" style="margin-top: 12px; background: #1d3156; color: white; border: none; padding: 8px 20px; border-radius: 20px; cursor: pointer;">
-                        <i class="bi bi-arrow-counterclockwise"></i> Reset Filters
-                    </button>
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    let prevStudent = '';
-    let prevLanguage = '';
-    let prevMode = '';
-    let prevDate = '';
-    let html = '';
+    let prevStudent = '', prevLanguage = '', prevMode = '', prevDate = '';
     
     for (const request of requests) {
-        const currentStudent = request.student_name;
-        const currentLanguage = request.language;
-        const currentMode = request.learning_mode;
-        const currentDate = request.booking_date;
+        const showStudent = (request.student_name !== prevStudent);
+        const showLanguage = (request.language !== prevLanguage || showStudent);
+        const showMode = (request.learning_mode !== prevMode || showStudent);
+        const showDate = (request.booking_date !== prevDate || showStudent);
         
-        const showStudent = (currentStudent !== prevStudent);
-        const showLanguage = (currentLanguage !== prevLanguage || showStudent);
-        const showMode = (currentMode !== prevMode || showStudent);
-        const showDate = (currentDate !== prevDate || showStudent);
-        
-        // Build mode & location display
         let modeDisplay = '';
         if (request.learning_mode === 'online') {
             modeDisplay = '<span style="color:#80A1BA;">Online</span>';
@@ -1657,51 +1752,492 @@ function renderFilteredTable(requests) {
         
         html += `
             <tr>
-                <td data-label="Student" class="student-cell">
-                    ${showStudent ? escapeHtml(request.student_name) : '<span style="visibility: hidden;">—</span>'}
-                 </td>
-                <td data-label="Language">
-                    ${showLanguage ? escapeHtml(request.language) : '<span style="visibility: hidden;">—</span>'}
-                 </td>
-                <td data-label="Mode & Location">
-                    ${showMode ? modeDisplay : '<span style="visibility: hidden;">—</span>'}
-                 </td>
-                <td data-label="Day">
-                    ${showDate ? new Date(request.booking_date).toLocaleDateString('en-US', { weekday: 'long' }) : '<span style="visibility: hidden;">—</span>'}
-                 </td>
-                <td data-label="Date">
-                    ${showDate ? new Date(request.booking_date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '<span style="visibility: hidden;">—</span>'}
-                 </td>
-                <td data-label="Time" style="white-space: nowrap;">
-                    ${formatTime(request.booking_time)}
-                 </td>
+                <td data-label="Student" class="student-cell">${showStudent ? escapeHtml(request.student_name) : '<span style="visibility: hidden;">—</span>'}</td>
+                <td data-label="Language">${showLanguage ? escapeHtml(request.language) : '<span style="visibility: hidden;">—</span>'}</td>
+                <td data-label="Mode & Location">${showMode ? modeDisplay : '<span style="visibility: hidden;">—</span>'}</td>
+                <td data-label="Day">${showDate ? new Date(request.booking_date).toLocaleDateString('en-US', { weekday: 'long' }) : '<span style="visibility: hidden;">—</span>'}</td>
+                <td data-label="Date">${showDate ? new Date(request.booking_date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '<span style="visibility: hidden;">—</span>'}</td>
+                <td data-label="Time" style="white-space: nowrap;">${formatTime(request.booking_time)}</td>
                 <td data-label="Actions">
                     <div class="action-buttons">
-                        <button class="btn-accept" onclick="acceptBooking(${request.id})">
-                            <i class="bi bi-check-lg"></i> Accept
-                        </button>
-                        <button class="btn-reject" onclick="showRejectModal(${request.id})">
-                            <i class="bi bi-x-lg"></i> Reject
-                        </button>
+                        <button class="btn-accept" onclick="acceptBooking(${request.id})"><i class="bi bi-check-lg"></i> Accept</button>
+                        <button class="btn-reject" onclick="showRejectModal(${request.id})"><i class="bi bi-x-lg"></i> Reject</button>
                     </div>
-                 </td>
+                </td>
+            </tr>
+        `;
+        
+        prevStudent = request.student_name;
+        prevLanguage = request.language;
+        prevMode = request.learning_mode;
+        prevDate = request.booking_date;
+    }
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// ========== DISPUTES RENDER ==========
+function renderDisputesTable(disputes) {
+    const container = document.getElementById('disputes-tab');
+    if (!container) return;
+    
+    if (disputes.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-chat-dots"></i>
+                <p>No pending disputes</p>
+                <p style="font-size: 13px;">When students report issues, they'll appear here.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const issue_labels = {
+        'tutor_no_show': 'Tutor Did Not Attend',
+        'student_no_show': 'Student Did Not Attend',
+        'technical_issues': 'Technical Issues',
+        'wrong_materials': 'Wrong Materials Provided',
+        'payment_failed_but_deducted': 'Payment Issue',
+        'other': 'Other Issue'
+    };
+    
+    let html = `
+        <table class="bookings-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Language</th>
+                    <th>Issue Type</th>
+                    <th>Message</th>
+                    <th>Reported On</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    for (const dispute of disputes) {
+        const issueLabel = issue_labels[dispute.issue_type] || dispute.issue_type.replace(/_/g, ' ');
+        const shortMessage = dispute.message ? (dispute.message.length > 100 ? dispute.message.substring(0, 100) + '...' : dispute.message) : '<span style="color:#999;">No message provided</span>';
+        
+        html += `
+            <tr>
+                <td data-label="Student" class="student-cell">${escapeHtml(dispute.student_name)}</td>
+                <td data-label="Language">${escapeHtml(dispute.language)}</td>
+                <td data-label="Issue Type">
+                    <span style="background:#fee2e2; color:#dc2626; padding:4px 10px; border-radius:20px; font-size:11px; display:inline-block;">
+                        ${escapeHtml(issueLabel)}
+                    </span>
+                </td>
+                <td data-label="Message" style="max-width: 250px;">${shortMessage}</td>
+                <td data-label="Reported On" style="white-space: nowrap;">
+    <?= date('d M Y', strtotime($dispute['dispute_date'])) ?>
+    <?php 
+    $hoursOld = (time() - strtotime($dispute['dispute_date'])) / 3600;
+    if ($hoursOld > 24): 
+    ?>
+        <span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">
+            URGENT
+        </span>
+    <?php elseif ($hoursOld > 12): ?>
+        <span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">
+            Due Soon
+        </span>
+    <?php endif; ?>
+</td>
+                                        <td data-label="Actions">
+    <div class="action-buttons">
+        <a href="tutor_booking_detail.php?id=<?= $dispute['booking_id'] ?>" class="btn-view">
+            <i class="bi bi-eye"></i> View Details
+        </a>
+    </div>
+</td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody><tr>';
+    container.innerHTML = html;
+}
+
+// ========== COMPLETED BOOKINGS RENDER ==========
+function renderCompletedTable(bookings) {
+    const container = document.getElementById('completed-tab');
+    if (!container) return;
+    
+    if (bookings.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-check2-circle"></i>
+                <p>No completed or cancelled sessions</p>
+                <p style="font-size: 13px;">Past sessions will appear here.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <table class="bookings-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Language</th>
+                    <th>Mode & Location</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    for (const booking of bookings) {
+        const statusColor = booking.status === 'completed' ? '#28a745' : '#dc2626';
+        const statusIcon = booking.status === 'completed' ? 'bi-check2-circle' : 'bi-x-circle';
+        const statusText = booking.status === 'completed' ? 'Completed' : 'Cancelled';
+        
+        html += `
+            <tr>
+                <td data-label="Student" class="student-cell">${escapeHtml(booking.student_name)}</td>
+                <td data-label="Language">${escapeHtml(booking.language)}</td>
+                <td data-label="Mode & Location">
+                    ${booking.learning_mode === 'online' ? 
+                        '<span style="color:#80A1BA;">Online</span>' : 
+                        '<span style="color:#B4DEBD;">Face to Face</span>' +
+                        (booking.meeting_location ? '<br><small>📍 ' + escapeHtml(booking.meeting_location) + '</small>' : '')
+                    }
+                </td>
+                <td data-label="Date">${new Date(booking.booking_date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                <td data-label="Time">${formatTime(booking.booking_time)}</td>
+                <td data-label="Status">
+                    <span style="background: ${statusColor}20; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 12px;">
+                        <i class="bi ${statusIcon}"></i> ${statusText}
+                    </span>
+                </td>
+                <td data-label="Actions">
+                    <div class="action-buttons">
+                        <a href="tutor_booking_detail.php?id=${booking.id}" class="btn-view">
+                            <i class="bi bi-eye"></i> Details
+                        </a>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+// ========== RESCHEDULE REQUESTS RENDER ==========
+function renderRescheduleTable(requests) {
+    const container = document.getElementById('reschedule-tab');
+    if (!container) return;
+    
+    if (requests.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-calendar-x"></i>
+                <p>No pending reschedule requests</p>
+                <p style="font-size: 13px;">When students request to reschedule, they'll appear here.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <table class="bookings-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Language</th>
+                    <th>Mode & Location</th>
+                    <th>Original Date/Time</th>
+                    <th>Requested Date/Time</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    let prevStudent = '', prevLanguage = '', prevMode = '', prevOriginal = '';
+    
+    for (const rr of requests) {
+        const showStudent = (rr.student_name !== prevStudent);
+        const showLanguage = (rr.language !== prevLanguage || showStudent);
+        const showMode = (rr.learning_mode !== prevMode || showStudent);
+        const showOriginal = ((rr.old_date + '|' + rr.old_time) !== prevOriginal || showStudent);
+        
+        let modeDisplay = '';
+        if (rr.learning_mode === 'online') {
+            modeDisplay = '<span style="color:#80A1BA;">Online</span>';
+        } else {
+            const location = (rr.meeting_location && rr.meeting_location !== '') ? rr.meeting_location : 'Location to be confirmed';
+            modeDisplay = '<span style="color:#B4DEBD;">Face to Face</span><br><small style="font-size:11px; color:#64748b;">📍 ' + escapeHtml(location) + '</small>';
+        }
+        
+        html += `
+            <tr>
+                <td data-label="Student" class="student-cell">${showStudent ? escapeHtml(rr.student_name) : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Language">${showLanguage ? escapeHtml(rr.language) : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Mode & Location">${showMode ? modeDisplay : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Original">${showOriginal ? new Date(rr.old_date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) + ' @ ' + formatTime(rr.old_time) : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Requested">${new Date(rr.new_date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })} @ ${formatTime(rr.new_time)}</td>
+                <td data-label="Actions">
+                    <div class="action-buttons">
+                        <button class="btn-accept" onclick="processReschedule(${rr.id}, ${rr.booking_id}, 'accept', '${rr.new_date}', '${rr.new_time}', event)"><i class="bi bi-check-lg"></i> Accept</button>
+                        <button class="btn-reject" onclick="showRejectRescheduleModal(${rr.id}, ${rr.booking_id})"><i class="bi bi-x-lg"></i> Reject</button>
+                    </div>
+                </td>
              </tr>
         `;
         
-        prevStudent = currentStudent;
-        prevLanguage = currentLanguage;
-        prevMode = currentMode;
-        prevDate = currentDate;
+        prevStudent = rr.student_name;
+        prevLanguage = rr.language;
+        prevMode = rr.learning_mode;
+        prevOriginal = rr.old_date + '|' + rr.old_time;
     }
     
-    tbody.innerHTML = html;
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+// ========== UPCOMING BOOKINGS RENDER ==========
+function renderUpcomingTable(bookings) {
+    const container = document.getElementById('upcoming-tab');
+    if (!container) return;
+    
+    if (bookings.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-calendar-check"></i>
+                <p>No upcoming confirmed sessions</p>
+                <p style="font-size: 13px;">Accepted bookings will appear here.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <table class="bookings-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Language</th>
+                    <th>Mode & Location</th>
+                    <th>Day</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    let prevStudent = '', prevLanguage = '', prevDate = '';
+    
+    for (const booking of bookings) {
+        const showStudent = (booking.student_name !== prevStudent);
+        const showLanguage = (booking.language !== prevLanguage || showStudent);
+        const showDate = (booking.booking_date !== prevDate || showStudent);
+        
+        // Mode & Location - ALWAYS SHOW (no condition)
+        let modeDisplay = '';
+        if (booking.learning_mode === 'online') {
+            modeDisplay = '<span style="color:#80A1BA;">Online</span>';
+        } else {
+            const location = (booking.meeting_location && booking.meeting_location !== '') 
+                ? booking.meeting_location 
+                : 'Location to be confirmed';
+            modeDisplay = '<span style="color:#B4DEBD;">Face to Face</span><br><small style="font-size:11px; color:#64748b;">📍 ' + escapeHtml(location) + '</small>';
+        }
+        
+        html += `
+            <tr>
+                <td data-label="Student" class="student-cell">${showStudent ? escapeHtml(booking.student_name) : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Language">${showLanguage ? escapeHtml(booking.language) : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Mode & Location">${modeDisplay}</td>
+                <td data-label="Day">${showDate ? new Date(booking.booking_date).toLocaleDateString('en-US', { weekday: 'long' }) : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Date">${showDate ? new Date(booking.booking_date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '<span style="display: inline-block; width: 1px;">&nbsp;</span>'}</td>
+                <td data-label="Time" style="white-space: nowrap;">${formatTime(booking.booking_time)}</td>
+                <td data-label="Actions">
+                    <div class="action-buttons" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        ${booking.learning_mode === 'online' ? 
+                            (booking.meeting_link ? 
+                                `<a href="join_meeting.php?booking_id=${booking.id}&link=${encodeURIComponent(booking.meeting_link)}" target="_blank" class="btn-attend" style="background: #28a745; color: white; padding: 6px 14px; border-radius: 20px; text-decoration: none; font-size: 12px; font-weight: 600;"><i class="bi bi-camera-video-fill"></i> Attend Class</a>` :
+                                `<button class="btn-add-link" onclick="showAddLinkModal(${booking.id})" style="background: #f59e0b; color: white; padding: 6px 14px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer;"><i class="bi bi-link"></i> Add Link</button>`
+                            ) : ''
+                        }
+                        <a href="tutor_booking_detail.php?id=${booking.id}" class="btn-view" style="background: #e2e8f0; color: #1d3156; padding: 6px 12px; border-radius: 20px; text-decoration: none; font-size: 12px;"><i class="bi bi-eye"></i> Details</a>
+                    </div>
+                </td>
+            </tr>
+        `;
+        
+        prevStudent = booking.student_name;
+        prevLanguage = booking.language;
+        prevDate = booking.booking_date;
+    }
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
 }
 
-// On page load - show ALL pending requests (no filter applied)
+// ========== MEETING LINK FUNCTIONS ==========
+function showAddLinkModal(bookingId) {
+    document.getElementById('link_booking_id').value = bookingId;
+    document.getElementById('meeting_link_input').value = '';
+    document.getElementById('meetingLinkModal').classList.add('active');
+}
+
+function showEditLinkModal(bookingId, currentLink) {
+    document.getElementById('link_booking_id').value = bookingId;
+    document.getElementById('meeting_link_input').value = currentLink;
+    document.getElementById('meetingLinkModal').classList.add('active');
+}
+
+function closeLinkModal() {
+    document.getElementById('meetingLinkModal').classList.remove('active');
+    document.getElementById('meeting_link_input').value = '';
+}
+
+function saveMeetingLink() {
+    const bookingId = document.getElementById('link_booking_id').value;
+    const meetingLink = document.getElementById('meeting_link_input').value.trim();
+    
+    if (!meetingLink) {
+        showToast('Please enter a meeting link', '#f59e0b');
+        return;
+    }
+    
+    if (!meetingLink.startsWith('http://') && !meetingLink.startsWith('https://')) {
+        showToast('Please enter a valid URL starting with http:// or https://', '#f59e0b');
+        return;
+    }
+    
+    const saveBtn = document.querySelector('#meetingLinkModal .btn-accept');
+    const originalText = saveBtn.innerHTML;
+    saveBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+    saveBtn.disabled = true;
+    
+    fetch('save_meeting_link.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_id: bookingId, meeting_link: meetingLink })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message || 'Meeting link saved!', '#28a745');
+            closeLinkModal();
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('Error: ' + data.message, '#dc2626');
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error saving meeting link', '#dc2626');
+        saveBtn.innerHTML = originalText;
+        saveBtn.disabled = false;
+    });
+}
+
+// ========== APPLY FILTERS (CLIENT-SIDE, NO PAGE RELOAD) ==========
+function applyFilters() {
+    const language = document.getElementById('languageFilter').value;
+    const sessionType = document.getElementById('sessionTypeFilter').value;
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    
+    const hasActiveFilters = (language !== 'all' || sessionType !== 'all' || dateFrom || dateTo);
+    
+    if (!hasActiveFilters) {
+        showToast('Please select at least one filter before searching.', '#f59e0b');
+        return;
+    }
+    
+    // Filter based on which tab is active
+    if (document.getElementById('pending-tab').classList.contains('active')) {
+        const filtered = allPendingRequests.filter(request => {
+            if (language !== 'all' && request.language !== language) return false;
+            if (sessionType !== 'all' && request.learning_mode !== sessionType) return false;
+            if (dateFrom && request.booking_date < dateFrom) return false;
+            if (dateTo && request.booking_date > dateTo) return false;
+            return true;
+        });
+        renderPendingTable(filtered);
+        showToast(`Found ${filtered.length} pending request${filtered.length !== 1 ? 's' : ''}`, filtered.length === 0 ? '#dc2626' : '#28a745');
+    } 
+    else if (document.getElementById('reschedule-tab').classList.contains('active')) {
+        const filtered = allRescheduleRequests.filter(rr => {
+            if (language !== 'all' && rr.language !== language) return false;
+            if (sessionType !== 'all' && rr.learning_mode !== sessionType) return false;
+            if (dateFrom && rr.new_date < dateFrom) return false;
+            if (dateTo && rr.new_date > dateTo) return false;
+            return true;
+        });
+        renderRescheduleTable(filtered);
+        showToast(`Found ${filtered.length} reschedule request${filtered.length !== 1 ? 's' : ''}`, filtered.length === 0 ? '#dc2626' : '#28a745');
+    }
+    else if (document.getElementById('disputes-tab').classList.contains('active')) {
+    const filtered = allDisputes.filter(dispute => {
+        if (language !== 'all' && dispute.language !== language) return false;
+        if (sessionType !== 'all' && dispute.learning_mode !== sessionType) return false;
+        if (dateFrom && dispute.booking_date < dateFrom) return false;
+        if (dateTo && dispute.booking_date > dateTo) return false;
+        return true;
+    });
+    renderDisputesTable(filtered);
+    showToast(`Found ${filtered.length} dispute${filtered.length !== 1 ? 's' : ''}`, filtered.length === 0 ? '#dc2626' : '#f59e0b');
+}
+    else if (document.getElementById('upcoming-tab').classList.contains('active')) {
+        const filtered = allUpcomingBookings.filter(booking => {
+            if (language !== 'all' && booking.language !== language) return false;
+            if (sessionType !== 'all' && booking.learning_mode !== sessionType) return false;
+            if (dateFrom && booking.booking_date < dateFrom) return false;
+            if (dateTo && booking.booking_date > dateTo) return false;
+            return true;
+        });
+        renderUpcomingTable(filtered);
+        showToast(`Found ${filtered.length} upcoming session${filtered.length !== 1 ? 's' : ''}`, filtered.length === 0 ? '#dc2626' : '#28a745');
+    }else if (document.getElementById('completed-tab').classList.contains('active')) {
+    const filtered = allCompletedBookings.filter(booking => {
+        if (language !== 'all' && booking.language !== language) return false;
+        if (sessionType !== 'all' && booking.learning_mode !== sessionType) return false;
+        if (dateFrom && booking.booking_date < dateFrom) return false;
+        if (dateTo && booking.booking_date > dateTo) return false;
+        return true;
+    });
+    renderCompletedTable(filtered);
+    showToast(`Found ${filtered.length} completed session${filtered.length !== 1 ? 's' : ''}`, filtered.length === 0 ? '#dc2626' : '#28a745');
+}
+}
+
+// ========== RESET FILTERS ==========
+function resetFilters() {
+    document.getElementById('languageFilter').value = 'all';
+    document.getElementById('sessionTypeFilter').value = 'all';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    
+    // Reset all tables to original data
+    renderPendingTable(allPendingRequests);
+    renderRescheduleTable(allRescheduleRequests);
+    renderUpcomingTable(allUpcomingBookings);
+    renderCompletedTable(allCompletedBookings); 
+    showToast('Filters cleared. Showing all results.', '#64748b');
+}
+
+// ========== INITIAL RENDER ON PAGE LOAD ==========
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded, rendering all requests...');
-    console.log('Total pending requests:', allPendingRequests.length);
-    renderFilteredTable(allPendingRequests);
+    console.log('DOM loaded, rendering all tables...');
+    renderPendingTable(allPendingRequests);
+    renderRescheduleTable(allRescheduleRequests);
+    renderUpcomingTable(allUpcomingBookings);
+    renderDisputesTable(allDisputes);
 });
 
 // Add animation style for toast
@@ -1729,36 +2265,116 @@ function checkExpiringRequests() {
             const daysUntil = Math.ceil((bookingDate - today) / (1000 * 60 * 60 * 24));
             
             if (daysUntil === 0) {
-                // Today - expires at midnight
                 row.style.background = '#fef2f2';
                 const warningSpan = document.createElement('span');
                 warningSpan.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; background: #dc2626; color: white; padding: 2px 8px; border-radius: 20px; font-size: 10px;';
                 warningSpan.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Expires tonight!';
                 const actionsCell = row.querySelector('td:last-child');
                 if (actionsCell && !row.querySelector('.expiry-warning')) {
-                    const existing = row.querySelector('.expiry-warning');
-                    if (!existing) {
-                        warningSpan.className = 'expiry-warning';
-                        actionsCell.appendChild(warningSpan);
-                    }
+                    warningSpan.className = 'expiry-warning';
+                    actionsCell.appendChild(warningSpan);
                 }
             } else if (daysUntil === 1) {
-                // Tomorrow
                 row.style.background = '#fffbeb';
             }
         }
     });
 }
 
-// Reject Reschedule Modal Functions
+let isSubmittingReschedule = false;
+let isSubmittingRejectReschedule = false;
 let currentRejectRequestId = null;
 let currentRejectBookingId = null;
 
+// ─── RESCHEDULE: ACCEPT ───────────────────────────────────────────────────
+function processReschedule(requestId, bookingId, action, newDate, newTime, clickEvent) {
+    if (isSubmittingReschedule) { showToast('Please wait…', '#f59e0b'); return; }
+
+    const clickedBtn = clickEvent ? clickEvent.target.closest('button') : null;
+    const row = clickedBtn ? clickedBtn.closest('tr') : null;
+    const rowBtns = row ? row.querySelectorAll('button') : [];
+    const originalHtml = clickedBtn ? clickedBtn.innerHTML : '';
+
+    if (!confirm('Accept this reschedule request? The booking will be updated to the new date/time.')) return;
+
+    // Lock
+    isSubmittingReschedule = true;
+    rowBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+    if (clickedBtn) clickedBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing…';
+
+    fetch('process_reschedule.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: requestId, booking_id: bookingId, action: 'accept', new_date: newDate, new_time: newTime })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Reschedule accepted! Refreshing…', '#28a745');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Error: ' + data.message, '#dc2626');
+            unlock();
+        }
+    })
+    .catch(() => { showToast('Network error. Please try again.', '#dc2626'); unlock(); });
+
+    function unlock() {
+        isSubmittingReschedule = false;
+        rowBtns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+        if (clickedBtn) clickedBtn.innerHTML = originalHtml;
+    }
+}
+
+// ─── RESCHEDULE: REJECT MODAL ─────────────────────────────────────────────
 function showRejectRescheduleModal(requestId, bookingId) {
     currentRejectRequestId = requestId;
     currentRejectBookingId = bookingId;
+    isSubmittingRejectReschedule = false;
     document.getElementById('reject_reason_input').value = '';
+    const submitBtn = document.querySelector('#rejectRescheduleModal .btn-reject');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="bi bi-x-lg"></i> Submit Rejection'; submitBtn.style.opacity = '1'; }
     document.getElementById('rejectRescheduleModal').classList.add('active');
+}
+
+
+
+function submitRejectReschedule() {
+    if (isSubmittingRejectReschedule) { showToast('Already submitting…', '#f59e0b'); return; }
+
+    const reason = document.getElementById('reject_reason_input').value.trim();
+    if (!reason) { showToast('Please provide a reason for rejection', '#f59e0b'); return; }
+
+    const submitBtn = document.querySelector('#rejectRescheduleModal .btn-reject');
+    const cancelBtn = document.querySelector('#rejectRescheduleModal .btn-view');
+
+    isSubmittingRejectReschedule = true;
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Submitting…'; submitBtn.style.opacity = '0.5'; }
+    if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.style.opacity = '0.5'; }
+
+    fetch('process_reschedule.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: currentRejectRequestId, booking_id: currentRejectBookingId, action: 'reject', reject_reason: reason })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Reschedule rejected. Refreshing…', '#64748b');
+            closeRejectRescheduleModal();
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Error: ' + data.message, '#dc2626');
+            unlock();
+        }
+    })
+    .catch(() => { showToast('Network error. Please try again.', '#dc2626'); unlock(); });
+
+    function unlock() {
+        isSubmittingRejectReschedule = false;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="bi bi-x-lg"></i> Submit Rejection'; submitBtn.style.opacity = '1'; }
+        if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = '1'; }
+    }
 }
 
 function closeRejectRescheduleModal() {
@@ -1767,89 +2383,7 @@ function closeRejectRescheduleModal() {
     currentRejectBookingId = null;
 }
 
-function submitRejectReschedule() {
-    const rejectReason = document.getElementById('reject_reason_input').value.trim();
-    
-    if (!rejectReason) {
-        showToast('Please provide a reason for rejection', '#f59e0b');
-        return;
-    }
-    
-    fetch('process_reschedule.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            request_id: currentRejectRequestId, 
-            booking_id: currentRejectBookingId, 
-            action: 'reject',
-            reject_reason: rejectReason
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showToast('Reschedule rejected.', '#64748b');
-            closeRejectRescheduleModal();
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            showToast('Error: ' + data.message, '#dc2626');
-        }
-    });
-}
-// Process reschedule request (Accept/Reject)
-function processReschedule(requestId, bookingId, action, newDate = null, newTime = null) {
-    if (action === 'accept') {
-        if (confirm('Accept this reschedule request? The booking will be updated to the new date/time.')) {
-            fetch('process_reschedule.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    request_id: requestId, 
-                    booking_id: bookingId, 
-                    action: 'accept',
-                    new_date: newDate,
-                    new_time: newTime
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showToast('Reschedule accepted! Booking updated.', '#28a745');
-                    setTimeout(() => location.reload(), 1500);
-                } else {
-                    showToast('Error: ' + data.message, '#dc2626');
-                }
-            });
-        }
-    } else {
-        if (confirm('Reject this reschedule request? The original booking will remain.')) {
-            fetch('process_reschedule.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    request_id: requestId, 
-                    booking_id: bookingId, 
-                    action: 'reject'
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showToast('Reschedule rejected.', '#64748b');
-                    setTimeout(() => location.reload(), 1500);
-                } else {
-                    showToast('Error: ' + data.message, '#dc2626');
-                }
-            });
-        }
-    }
-}
-// Call after table loads
-const originalRenderFilteredTable = renderFilteredTable;
-window.renderFilteredTable = function(requests) {
-    originalRenderFilteredTable(requests);
-    setTimeout(checkExpiringRequests, 100);
-};
+setTimeout(checkExpiringRequests, 500);
 </script>
 
 </body>

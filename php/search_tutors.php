@@ -143,7 +143,7 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
 
     /* LANG TABS */
     .lang-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
-    .lang-tab{font-size:8px;padding:10px 75px;border-radius:999px;border:1px solid rgba(46,42,59,.10);background:rgba(255,255,255,.78);color:#7A5570;font-size:13px;font-weight:900;cursor:pointer;transition:.18s ease;text-decoration:none}
+    .lang-tab{font-size:8px;padding:10px 92px;border-radius:999px;border:1px solid rgba(46,42,59,.10);background:rgba(255,255,255,.78);color:#7A5570;font-size:13px;font-weight:900;cursor:pointer;transition:.18s ease;text-decoration:none}
     .lang-tab:hover{transform:translateY(-1px)}
     .lang-tab.active{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;border-color:var(--pink);box-shadow:0 8px 18px rgba(231,90,155,.28)}
 
@@ -419,12 +419,13 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
         </a>
 
         <div class="nav-links">
-          <a href="student_dashboard.php">Home</a>
-          <a class="active" href="find_language.php">Find Language</a>
-          <a href="booking_status.php">My Bookings</a>
-          <a href="my_payments.php">My Payments</a>
-          <a href="my_materials.php">My Materials</a>
-        </div>
+                <a href="student_dashboard.php">Home</a>
+                <a href="find_language.php" class="active">Find Language</a>
+                <a href="booking_status.php">My Bookings</a>
+                <a href="my_payments.php">My Payments</a>
+                <a href="my_materials.php">My Materials</a>
+                <a href="my_assignments.php">My Assignments</a>
+            </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">

@@ -26,7 +26,7 @@ if (!$tutor) {
     header("Location: login.php");
     exit();
 }
-
+            
 $displayName = $tutor['fullname'];
 $profilePic = !empty($tutor['profile_pic'])
     ? '../uploads/profiles/' . $tutor['profile_pic']
@@ -53,6 +53,10 @@ if (!$booking) {
     exit();
 }
 
+$isCancelled = ($booking['status'] === 'cancelled');
+$isCompleted = ($booking['status'] === 'completed');
+$isConfirmed = ($booking['status'] === 'confirmed');
+$isActive = ($isConfirmed && !$isCancelled && !$isCompleted);
 $stmt = $conn->prepare("
     SELECT * FROM reschedule_requests 
     WHERE booking_id = ? AND status = 'pending'
@@ -71,7 +75,44 @@ $stmt = $conn->prepare("
 $stmt->bind_param("i", $booking_id);
 $stmt->execute();
 $payment = $stmt->get_result()->fetch_assoc();
+$completionStmt = $conn->prepare("SELECT * FROM session_completion WHERE booking_id = ?");
+$completionStmt->bind_param("i", $booking_id);
+$completionStmt->execute();
+$completion = $completionStmt->get_result()->fetch_assoc();
 
+$disputeCheck = $conn->prepare("
+    SELECT id, issue_type, status, message 
+    FROM disputes 
+    WHERE booking_id = ? AND status = 'pending'
+    LIMIT 1
+");
+
+$disputeCheck->bind_param("i", $booking_id);
+$disputeCheck->execute();
+$pendingReport = $disputeCheck->get_result()->fetch_assoc();
+
+$is_disputed = ($completion['status'] ?? '') === 'disputed';
+$has_pending_report = ($pendingReport !== null);
+$show_proof_upload = ($is_disputed || $has_pending_report);
+
+$tutor_confirmed = $completion['tutor_confirmed'] ?? 0;
+$student_confirmed = $completion['student_confirmed'] ?? 0;
+$both_confirmed = ($tutor_confirmed && $student_confirmed);
+$no_show_type = $completion['no_show_type'] ?? null;
+
+$class_time = strtotime($booking['booking_date'] . ' ' . $booking['booking_time']);
+$current_time = time();
+$is_past_class = $class_time < $current_time;
+$hours_passed = round(($current_time - $class_time) / 3600, 1);
+
+$show_completion_section = (
+    $isActive && 
+    $booking['status'] === 'confirmed' && 
+    !$both_confirmed &&
+    !$isCompleted &&
+    !$isCancelled &&
+    $is_past_class  // Only show if session time has passed, regardless of dispute
+);
 function e($value) {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
@@ -617,10 +658,40 @@ body::before {
         text-align: center;
     }
 }
+
+.toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #8E3F70;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.toast.show {
+    opacity: 1;
+}
+
+.toast.success {
+    background: #28a745;
+}
+
+.toast.error {
+    background: #dc2626;
+}
 </style>
 </head>
 
 <body>
+
 
 <header class="topbar">
     <div class="container">
@@ -634,11 +705,10 @@ body::before {
             </a>
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
-                <a href="availability.php">Availability</a>
-                <a href="booking_requests.php" class="active">Requests</a>
-                <a href="learning_materials.php">Materials</a>
-                <a href="earnings.php">Earnings</a>
-                <a href="meeting_links.php">Meeting Links</a>
+                <a href="booking_requests.php" class="active">My Bookings</a>
+                <a href="material_overview.php">My Materials</a>
+                <a href="assignment_overview.php">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
@@ -647,7 +717,7 @@ body::before {
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -675,6 +745,29 @@ body::before {
         Please go to <a href="booking_requests.php" style="color:#f59e0b;">Reschedule Requests tab</a> to accept or reject.</p>
     </div>
     <?php endif; ?>
+
+    <!-- Show Cancel Reason if cancelled -->
+<?php if ($isCancelled && !empty($booking['cancel_reason'])): ?>
+    <div style="background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 12px; margin-bottom: 20px;">
+        <h4 style="color: #dc2626; margin: 0 0 8px 0;">
+            <i class="bi bi-exclamation-triangle-fill"></i> Booking Cancelled
+        </h4>
+        <p style="margin: 0;"><strong>Reason: </strong> <?= e($booking['cancel_reason']) ?></p>
+        <?php if (!empty($booking['cancelled_by'])): ?>
+            <p style="margin: 5px 0 0; font-size: 12px;">Cancelled by <?= e($booking['cancelled_by']) === 'tutor' ? 'You' : 'Student' ?></p>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+
+<!-- Show Completed badge if completed -->
+<?php if ($isCompleted): ?>
+    <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 15px; border-radius: 12px; margin-bottom: 20px;">
+        <h4 style="color: #28a745; margin: 0;">
+            <i class="bi bi-check2-circle"></i> Session Completed
+        </h4>
+        <p style="margin: 5px 0 0;">This session has been marked as completed.</p>
+    </div>
+<?php endif; ?>
 
     <div class="main-container">
         <div class="main-content">
@@ -771,7 +864,12 @@ body::before {
                     <div class="info-row">
                         <span class="info-label">Payment Status</span>
                         <span class="info-value">
-                            <?php if ($payment && $payment['status'] === 'verified'): ?>
+
+                            <?php if ($isCancelled): ?>
+            <span class="payment-badge" style="background:#fee2e2; color:#dc2626;">
+                <i class="bi bi-x-circle"></i> Cancelled - No Payment
+            </span>
+        <?php elseif ($payment && $payment['status'] === 'verified'): ?>
                                 <span class="payment-badge payment-verified"><i class="bi bi-check-circle"></i> Paid</span>
                             <?php elseif ($payment && $payment['status'] === 'pending'): ?>
                                 <span class="payment-badge payment-pending"><i class="bi bi-clock"></i> Pending Verification</span>
@@ -800,49 +898,205 @@ body::before {
                 </div>
 
                 <!-- Status -->
-                <div class="info-box">
-                    <div class="info-row">
-                        <span class="info-label">Current Status</span>
-                        <span class="info-value">
-                            <span class="status-badge status-<?= e($booking['status']) ?>">
-                                <?php 
-                                $statusDisplay = $booking['status'];
-                                if ($statusDisplay === 'accepted') $statusDisplay = 'Awaiting Payment';
-                                echo ucfirst($statusDisplay);
-                                ?>
-                            </span>
-                        </span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Booked On</span>
-                        <span class="info-value"><?= date('d M Y, g:i A', strtotime($booking['created_at'])) ?></span>
-                    </div>
-                </div>
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Current Status</span>
+        <span class="info-value">
+            <span class="status-badge status-<?= e($booking['status']) ?>">
+                <?php 
+                $statusDisplay = $booking['status'];
+                if ($statusDisplay === 'accepted') $statusDisplay = 'Awaiting Payment';
+                echo ucfirst($statusDisplay);
+                ?>
+            </span>
+        </span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Booked On</span>
+        <span class="info-value"><?= date('d M Y, g:i A', strtotime($booking['created_at'])) ?></span>
+    </div>
+</div>
 
+<!-- DISPUTE WARNING BOX -->
+<?php if ($has_pending_report): ?>
+<div class="warning-box" style="background: #fff3cd; border-left: 4px solid #f59e0b; margin-bottom: 20px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b;"></i>
+        <strong style="color: #856404;">Student Reported an Issue</strong>
+    </div>
+    <p style="font-size: 13px; margin: 0; color: #856404;">
+        <strong>Issue Type:</strong> 
+        <?php 
+        $issue_labels = [
+            'tutor_no_show' => 'Tutor Did Not Attend',
+            'student_no_show' => 'Student Did Not Attend',
+            'technical_issues' => 'Technical Issues',
+            'wrong_materials' => 'Wrong Materials Provided',
+            'other' => 'Other Issue'
+        ];
+        echo $issue_labels[$pendingReport['issue_type']] ?? ucfirst(str_replace('_', ' ', $pendingReport['issue_type']));
+        ?>
+    </p>
+    <?php if (!empty($pendingReport['message'])): ?>
+        <p style="font-size: 12px; margin: 5px 0 0; color: #856404;">
+            <strong>Student's message:</strong> <?= e($pendingReport['message']) ?>
+        </p>
+    <?php endif; ?>
+    <p style="font-size: 12px; margin: 8px 0 0; color: #856404;">
+        <?php if ($is_past_class): ?>
+            Please confirm attendance and upload proof if necessary to resolve this dispute.
+        <?php else: ?>
+            The session will end on <?= date('d M Y, g:i A', $class_time) ?>. After the session ends, you can confirm attendance to resolve this dispute.
+        <?php endif; ?>
+    </p>
+    
+    <!-- RESOLVE BUTTON FOR ALL MINOR ISSUES (wrong_materials, technical_issues, other) -->
+    <?php if (!in_array($pendingReport['issue_type'], ['tutor_no_show', 'student_no_show', 'harassment', 'fraud']) && !$is_past_class): ?>
+    <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(245, 158, 11, 0.3);">
+        <p style="font-size: 12px; margin-bottom: 8px; color: #856404;">
+            <i class="bi bi-info-circle"></i> 
+            <?php if ($pendingReport['issue_type'] === 'wrong_materials'): ?>
+                <strong>Solution:</strong> Upload the correct materials below, then click "Mark as Resolved" to close this dispute.
+            <?php elseif ($pendingReport['issue_type'] === 'technical_issues'): ?>
+                <strong>Solution:</strong> Help the student resolve the technical issue, then click "Mark as Resolved".
+            <?php else: ?>
+                <strong>Solution:</strong> Discuss with the student to resolve the issue, then click "Mark as Resolved".
+            <?php endif; ?>
+        </p>
+        <button onclick="markDisputeResolved(<?= $pendingReport['id'] ?>, <?= $booking_id ?>)" 
+        class="btn-pink" style="background: #28a745; margin-top: 5px;"
+        id="resolveBtn-<?= $pendingReport['id'] ?>">
+    <i class="bi bi-check-circle"></i> Mark as Resolved
+</button>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+                <?php if ($isActive): ?>
                 <!-- Meeting Link or Location -->
+                                <!-- Meeting Link or Location -->
                 <?php if ($booking['learning_mode'] === 'online'): ?>
+                    <!-- ONLINE SESSION SECTION -->
                     <div class="info-box">
                         <div class="section-subtitle">
-                            <i class="bi bi-camera-video"></i> Meeting Link
+                            <i class="bi bi-camera-video"></i> Online Session
                         </div>
+                        
                         <?php if (!empty($booking['meeting_link'])): ?>
-                            <div class="light-bg">
+                            <div class="light-bg" style="margin-bottom: 12px;">
                                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                     <i class="bi bi-link-45deg"></i>
-                                    <span style="font-size: 13px; font-weight: 600;">Current Link:</span>
+                                    <span style="font-size: 13px; font-weight: 600;">Meeting Link:</span>
                                 </div>
                                 <a href="<?= e($booking['meeting_link']) ?>" target="_blank" style="color: #E75A9B; word-break: break-all; font-size: 13px;">
                                     <?= e($booking['meeting_link']) ?>
                                 </a>
                             </div>
+                            
                             <div class="button-group">
-                                <a href="<?= e($booking['meeting_link']) ?>" target="_blank" class="btn-pink">
+                                <a href="join_meeting.php?booking_id=<?= $booking_id ?>&link=<?= urlencode($booking['meeting_link']) ?>" target="_blank" class="btn-pink">
                                     <i class="bi bi-camera-video-fill"></i> Join Meeting
                                 </a>
                                 <button onclick="showEditLinkModal(<?= $booking['id'] ?>, '<?= e($booking['meeting_link']) ?>')" class="btn-outline">
                                     <i class="bi bi-pencil"></i> Edit Link
                                 </button>
                             </div>
+                            
+                           <!-- Meeting Activity -->
+<div style="margin-top: 16px;">
+    <strong style="font-size: 13px;"><i class="bi bi-clock-history"></i> Meeting Activity</strong>
+    <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+        <?php
+        $logsStmt = $conn->prepare("SELECT * FROM meeting_logs WHERE booking_id = ? ORDER BY join_time DESC");
+        $logsStmt->bind_param("i", $booking_id);
+        $logsStmt->execute();
+        $logs = $logsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        
+        if (!empty($logs)):
+        ?>
+            <?php foreach ($logs as $log): ?>
+            <div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid #eef2f7;">
+                <i class="bi bi-person-circle"></i> <strong><?= ucfirst(e($log['participant_role'])) ?></strong>
+                joined: <?= date('d M Y, g:i A', strtotime($log['join_time'])) ?>
+                <?php if ($log['leave_time']): ?>
+                    - left: <?= date('g:i A', strtotime($log['leave_time'])) ?>
+                    <span style="color: #28a745;">(<?= $log['duration_minutes'] ?> min)</span>
+                <?php else: ?>
+                    <span style="color: #f59e0b;">(Active)</span>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <p style="font-size: 12px; color: #64748b; margin: 0; text-align: center;">
+                <i class="bi bi-info-circle"></i> No meeting activity recorded yet.
+                <?php if (!$is_session_past): ?>
+                    <br><small>Activity will appear after the session starts.</small>
+                <?php endif; ?>
+            </p>
+        <?php endif; ?>
+    </div>
+</div>
+                            
+                            <!-- End Session Button -->
+<div style="margin-top: 16px;">
+    <strong style="font-size: 13px;"><i class="bi bi-door-closed"></i> End Session</strong>
+    <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+        <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">
+            After finishing your session, click below to record your leave time.
+        </p>
+        
+        <?php
+        // Check if session time has passed (using the actual booking time)
+        $session_time = strtotime($booking['booking_date'] . ' ' . $booking['booking_time']);
+        $is_session_past = (time() > $session_time);
+        
+        // Check if session is completed
+        $is_session_completed = ($booking['status'] === 'completed');
+        
+        if ($is_session_past && !$is_session_completed):
+        ?>
+        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px;">
+            <i class="bi bi-exclamation-triangle-fill" style="color: #856404;"></i>
+            <span style="font-size: 11px; color: #856404;">
+                This session has ended. Please record your leave time.
+            </span>
+        </div>
+        <?php endif; ?>
+        
+        <?php
+        // ONLY show the End Session button if:
+        // 1. Session time has passed
+        // 2. AND there's an active session (someone joined)
+        // 3. AND session is not already completed
+        $hasActiveSession = false;
+        if ($is_session_past && !$is_session_completed) {
+            $activeCheck = $conn->prepare("SELECT id FROM meeting_logs WHERE booking_id = ? AND leave_time IS NULL LIMIT 1");
+            $activeCheck->bind_param("i", $booking_id);
+            $activeCheck->execute();
+            $hasActiveSession = $activeCheck->get_result()->num_rows > 0;
+        }
+        
+        if ($is_session_past && $hasActiveSession && !$is_session_completed):
+        ?>
+        <button onclick="recordMeetingLeave(<?= $booking_id ?>)" class="btn-outline" style="width: auto; padding: 8px 20px; background: #dc3545; color: white; border: none; border-radius: 30px; cursor: pointer;">
+            <i class="bi bi-box-arrow-right"></i> End Session & Record Leave
+        </button>
+        <?php elseif ($is_session_past && !$is_session_completed): ?>
+        <button disabled style="width: auto; padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 30px; opacity: 0.6;">
+            <i class="bi bi-clock"></i> Waiting for meeting activity...
+        </button>
+        <?php elseif (!$is_session_past): ?>
+        <button disabled style="width: auto; padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 30px; opacity: 0.6;">
+            <i class="bi bi-calendar-clock"></i> Available after session ends (<?= date('d M Y, g:i A', $session_time) ?>)
+        </button>
+        <?php else: ?>
+        <button disabled style="width: auto; padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 30px; opacity: 0.6;">
+            <i class="bi bi-check-circle"></i> Session already completed
+        </button>
+        <?php endif; ?>
+    </div>
+</div>
+                            
                         <?php else: ?>
                             <div class="warning-box">
                                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -856,92 +1110,187 @@ body::before {
                             </button>
                         <?php endif; ?>
                     </div>
+                    
                 <?php else: ?>
+                    <!-- FACE-TO-FACE SESSION SECTION -->
                     <div class="info-box">
                         <div class="section-subtitle">
-                            <i class="bi bi-geo-alt"></i> Meeting Location
+                            <i class="bi bi-geo-alt"></i> Face-to-Face Session
                         </div>
-                        <?php if (!empty($booking['meeting_location'])): ?>
-                            <div class="light-bg">
-
-                                <p style="margin: 0 0 12px 0; font-size: 14px;"><?= nl2br(e($booking['meeting_location'])) ?></p>
-                                <a href="https://www.google.com/maps/search/?api=1&query=<?= urlencode($booking['meeting_location']) ?>" 
-                                   target="_blank" class="btn-outline">
-                                    <i class="bi bi-map"></i> Open in Google Maps
-                                </a>
+                        
+                        <!-- Meeting Location -->
+                        <div style="margin-bottom: 16px;">
+                            <strong style="font-size: 13px;"><i class="bi bi-geo-alt"></i> Meeting Location</strong>
+                            <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+                                <?php if (!empty($booking['meeting_location'])): ?>
+                                    <p style="margin: 0 0 10px 0;"><?= nl2br(e($booking['meeting_location'])) ?></p>
+                                    <a href="https://www.google.com/maps/search/?api=1&query=<?= urlencode($booking['meeting_location']) ?>" 
+                                       target="_blank" class="btn-outline" style="width: auto; padding: 6px 16px;">
+                                        <i class="bi bi-map"></i> Open in Maps
+                                    </a>
+                                <?php else: ?>
+                                    <p style="color: #f59e0b; margin: 0;">No location provided. Please contact the student.</p>
+                                <?php endif; ?>
                             </div>
-                        <?php else: ?>
-                            <div class="warning-box">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <i class="bi bi-exclamation-triangle"></i>
-                                    <span>No location provided</span>
-                                </div>
-                                <p style="font-size: 12px; margin-top: 8px;">Please contact the student to confirm meeting location.</p>
+                        </div>
+                        
+                        <!-- Attendance Proof Upload -->
+                        <div>
+                            <strong style="font-size: 13px;"><i class="bi bi-camera"></i> Attendance Proof</strong>
+                            <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+                                <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">
+                                    Take a photo at the meeting location as proof of attendance. This helps resolve any disputes.
+                                </p>
+                                
+                                <?php
+                                // Check existing proofs
+                                $proofStmt = $conn->prepare("SELECT * FROM attendance_proofs WHERE booking_id = ? AND user_id = ? ORDER BY uploaded_at DESC");
+                                $proofStmt->bind_param("ii", $booking_id, $userID);
+                                $proofStmt->execute();
+                                $proofs = $proofStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                                ?>
+                                
+                                <form id="proofUploadForm" enctype="multipart/form-data" style="margin-bottom: 12px;">
+                                    <input type="hidden" name="booking_id" value="<?= $booking_id ?>">
+                                    <input type="hidden" name="action" value="upload_proof">
+                                    <input type="hidden" name="proof_type" value="photo">
+                                    <input type="file" name="proof" accept="image/*" required style="margin-bottom: 10px; width: 100%;">
+                                    <button type="submit" class="btn-outline" style="width: auto; padding: 8px 20px;">
+                                        <i class="bi bi-upload"></i> Upload Proof Photo
+                                    </button>
+                                </form>
+                                
+                                <?php if (!empty($proofs)): ?>
+                                    <div style="margin-top: 12px;">
+                                        <strong style="font-size: 12px;">Uploaded Proofs:</strong>
+                                        <?php foreach ($proofs as $proof): ?>
+                                        <div style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 8px;">
+                                            <a href="../uploads/proofs/<?= e($proof['file_path']) ?>" target="_blank" style="color: #E75A9B; font-size: 12px;">
+                                                <i class="bi bi-image"></i> View Proof (<?= date('d M Y, g:i A', strtotime($proof['uploaded_at'])) ?>)
+                                            </a>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
-                        <?php endif; ?>
+                        </div>
                     </div>
                 <?php endif; ?>
-                <!-- Session Completion (for confirmed sessions that have ended) -->
-                <?php
-                $completionStmt = $conn->prepare("SELECT * FROM session_completion WHERE booking_id = ?");
-                $completionStmt->bind_param("i", $booking_id);
-                $completionStmt->execute();
-                $completion = $completionStmt->get_result()->fetch_assoc();
-
-                $tutor_confirmed = $completion['tutor_confirmed'] ?? 0;
-                $student_confirmed = $completion['student_confirmed'] ?? 0;
-                $both_confirmed = ($tutor_confirmed && $student_confirmed);
-
-                $class_time = strtotime($booking['booking_date'] . ' ' . $booking['booking_time']);
-                $current_time = time();
-                $is_past_class = $class_time < $current_time;
-                $hours_passed = round(($current_time - $class_time) / 3600, 1);
-                ?>
-
-                <?php if ($booking['status'] === 'confirmed' && $is_past_class && !$both_confirmed): ?>
+                
+                <?php elseif ($isCancelled): ?>
                 <div class="info-box">
                     <div class="section-subtitle">
-                        <i class="bi bi-check2-circle"></i> Session Completion
+                        <i class="bi bi-info-circle"></i> Note
                     </div>
-                    
-                    <div class="light-bg" style="margin-bottom: 12px;">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                            <?php if ($tutor_confirmed): ?>
-                                <i class="bi bi-check-circle-fill" style="color: #28a745;"></i>
-                                <span>You have confirmed this session</span>
-                            <?php else: ?>
-                                <i class="bi bi-clock-history" style="color: #f59e0b;"></i>
-                                <span>Waiting for your confirmation</span>
-                            <?php endif; ?>
-                        </div>
-                        <?php if (!$tutor_confirmed): ?>
-                            <button onclick="confirmSession(<?= $booking_id ?>, 'tutor')" class="btn-pink" style="margin-top: 8px;">
-                                <i class="bi bi-check-lg"></i> Confirm I Attended
-                            </button>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <div class="light-bg">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <?php if ($student_confirmed): ?>
-                                <i class="bi bi-check-circle-fill" style="color: #28a745;"></i>
-                                <span>Student has confirmed attendance</span>
-                            <?php else: ?>
-                                <i class="bi bi-hourglass-split" style="color: #64748b;"></i>
-                                <span>Waiting for student confirmation</span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    
-                    <?php if ($tutor_confirmed && $student_confirmed): ?>
-                    <div class="warning-box" style="background: #d4edda; border-color: #28a745; margin-top: 12px;">
-                        <i class="bi bi-check-circle-fill"></i>
-                        <span>Both confirmed! Session will be marked as completed.</span>
-                    </div>
-                    <?php endif; ?>
+                    <p style="color: #64748b; font-size: 13px;">This booking has been cancelled. <br>No further actions available.</p>
                 </div>
-                <?php endif; ?>
+            <?php endif; ?>
+<?php if ($show_completion_section): ?>
+<div class="info-box">
+    <div class="section-subtitle">
+        <i class="bi bi-check2-circle"></i> Session Completion
+    </div>
+    
+    <?php if ($booking['learning_mode'] === 'online'): ?>
+    <!-- ONLINE SESSION -->
+    <div class="light-bg" style="margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <?php if ($tutor_confirmed): ?>
+                <i class="bi bi-check-circle-fill" style="color: #28a745;"></i>
+                <span>You have confirmed this session</span>
+            <?php else: ?>
+                <i class="bi bi-clock-history" style="color: #f59e0b;"></i>
+                <span>Confirm if the session took place</span>
+            <?php endif; ?>
+            
+            <?php if ($is_disputed || $has_pending_report): ?>
+                <span style="background: #fef3c7; color: #f59e0b; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 8px;">
+                    <i class="bi bi-exclamation-triangle-fill"></i> Disputed
+                </span>
+            <?php endif; ?>
+        </div>
+        
+        <?php if (!$tutor_confirmed): ?>
+            <!-- Show proof upload ONLY if disputed or has pending report -->
+            <?php if ($show_proof_upload): ?>
+                <div style="margin-bottom: 12px; background: #fff3cd; padding: 12px; border-radius: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <i class="bi bi-info-circle-fill" style="color: #f59e0b;"></i>
+                        <span style="font-size: 12px; font-weight: bold;">Student has reported an issue. Please provide proof to support your confirmation.</span>
+                    </div>
+                    <label style="font-size: 12px; display: block; margin-bottom: 5px;">Upload Screenshot as Proof:</label>
+                    <input type="file" id="onlineProof_<?= $booking_id ?>" accept="image/*" style="margin-bottom: 8px; width: 100%;">
+                    <small style="font-size: 11px; color: #666;">Upload a screenshot showing you were present (e.g., meeting room, chat, shared screen)</small>
+                </div>
+            <?php endif; ?>
+            
+            <button onclick="confirmOnlineSession(<?= $booking_id ?>, 'attended')" class="btn-pink" style="margin-top: 8px;">
+                <i class="bi bi-check-lg"></i> Confirm Session Happened
+            </button>
+        <?php endif; ?>
+    </div>
+    
+    <?php else: ?>
+    <!-- FACE-TO-FACE SESSION -->
+    <div class="light-bg" style="margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <i class="bi bi-geo-alt-fill" style="color: #E75A9B;"></i>
+            <span><strong>Face-to-Face Session</strong> - Please confirm attendance</span>
+        </div>
+        
+        <?php if (!$tutor_confirmed): ?>
+            <div style="display: flex; gap: 10px; flex-direction: column;">
+                <button onclick="confirmFaceToFace(<?= $booking_id ?>, 'attended')" class="btn-pink">
+                    <i class="bi bi-check-circle-fill"></i> Student Attended (Mark as Completed)
+                </button>
+                <button onclick="confirmFaceToFace(<?= $booking_id ?>, 'student_no_show')" class="btn-secondary" style="background: #f59e0b;">
+                    <i class="bi bi-x-circle-fill"></i> Student Did NOT Attend (No Refund)
+                </button>
+                <button onclick="confirmFaceToFace(<?= $booking_id ?>, 'tutor_no_show')" class="btn-secondary" style="background: #dc2626;">
+                    <i class="bi bi-cash-stack"></i> I Did NOT Attend (Refund Student)
+                </button>
+            </div>
+        <?php else: ?>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <i class="bi bi-check-circle-fill" style="color: #28a745;"></i>
+                <span>
+                    You confirmed: 
+                    <?php if ($no_show_type == 'student_no_show'): ?>
+                        Student did NOT attend
+                    <?php elseif ($no_show_type == 'tutor_no_show'): ?>
+                        You did NOT attend - Refund processing
+                    <?php else: ?>
+                        Student attended
+                    <?php endif; ?>
+                </span>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    
+    <div class="light-bg">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <?php if ($student_confirmed): ?>
+                <i class="bi bi-check-circle-fill" style="color: #28a745;"></i>
+                <span>Student has confirmed attendance</span>
+            <?php else: ?>
+                <i class="bi bi-hourglass-split" style="color: #64748b;"></i>
+                <span>Waiting for student confirmation</span>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <?php if ($tutor_confirmed && $student_confirmed): ?>
+    <div class="warning-box" style="background: #d4edda; border-color: #28a745; margin-top: 12px;">
+        <i class="bi bi-check-circle-fill" style="color: #28a745;"></i>
+        <span>Both confirmed! Session will be marked as completed.</span>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
                 <!-- Contact -->
+                 
                 <div class="info-box">
                     <div class="section-subtitle">
                         <i class="bi bi-chat-dots"></i> Contact Student
@@ -965,7 +1314,7 @@ body::before {
                         <i class="bi bi-envelope"></i> Send Email
                     </a>
                 </div>
-
+<?php if ($isActive): ?>
                 <!-- Materials -->
                 <div class="info-box">
                     <div class="section-subtitle">
@@ -980,8 +1329,10 @@ body::before {
 </a>
                     </div>
                 </div>
-                
+                <?php endif; ?>
 
+                
+                <?php if ($isActive): ?>
                 <div class="info-box">
         <div class="section-subtitle">
             <i class="bi bi-journal-bookmark-fill"></i> Homework & Assignments
@@ -990,6 +1341,7 @@ body::before {
             <a href="create_assignment.php?booking_id=<?= $booking['id'] ?>" class="btn-pink">
                 <i class="bi bi-plus-circle"></i> Create Assignment
             </a>
+            <?php endif; ?>
 <?php
 // Check if there are any SUBMITTED assignments
 $checkSubmissions = $conn->prepare("
@@ -1009,6 +1361,35 @@ $submissionCount = $checkSubmissions->get_result()->fetch_assoc()['count'];
 <?php endif; ?>
         </div>
     </div>
+              <!-- Session Report (for completed bookings) -->
+<?php if ($booking['status'] === 'completed'): ?>
+    <div class="info-box">
+        <div class="section-subtitle">
+            <i class="bi bi-journal-bookmark-fill"></i> Session Report
+        </div>
+        <div class="button-group">
+            <?php
+            // Check if a report already exists
+            $checkReport = $conn->prepare("SELECT id, report_status FROM session_reports WHERE booking_id = ? ORDER BY created_at DESC LIMIT 1");
+            $checkReport->bind_param("i", $booking_id);
+            $checkReport->execute();
+            $existingReport = $checkReport->get_result()->fetch_assoc();
+            ?>
+            <?php if ($existingReport && $existingReport['report_status'] === 'submitted'): ?>
+                <a href="view_session_reports.php" class="btn-outline">
+                    <i class="bi bi-eye"></i> View All Reports
+                </a>
+                <a href="submit_session_report.php?booking_id=<?= $booking['id'] ?>" class="btn-pink">
+                    <i class="bi bi-pencil-square"></i> Edit Report
+                </a>
+            <?php else: ?>
+                <a href="submit_session_report.php?booking_id=<?= $booking['id'] ?>" class="btn-pink">
+                    <i class="bi bi-pencil-square"></i> Submit Session Report
+                </a>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php endif; ?>
                 <!-- Actions (only for pending) -->
                 <?php if ($booking['status'] === 'pending'): ?>
                     <div class="info-box">
@@ -1073,6 +1454,56 @@ function toggleDropdown() {
     dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
 }
 
+function recordMeetingLeave(bookingId) {
+    if (confirm('Record that you have left the session? Your attendance duration will be calculated.')) {
+        fetch('record_meeting_leave.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ booking_id: bookingId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) {
+                setTimeout(() => location.reload(), 1500);
+            }
+        });
+    }
+}
+
+// Proof upload handler for face-to-face sessions
+const proofForm = document.getElementById('proofUploadForm');
+if (proofForm) {
+    proofForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        let formData = new FormData(this);
+        
+        let submitBtn = this.querySelector('button[type="submit"]');
+        let originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading...';
+        submitBtn.disabled = true;
+        
+        fetch('upload_proof.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) {
+                setTimeout(() => location.reload(), 1500);
+            }
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        })
+        .catch(error => {
+            showToast('Upload failed', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        });
+    });
+}
+
 window.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
     const button = document.querySelector('.profile');
@@ -1113,29 +1544,51 @@ function saveMeetingLinkFromModal() {
     const meetingLink = document.getElementById('meeting_link_input').value.trim();
     
     if (!meetingLink) {
-        alert('Please enter a meeting link');
+        showToast('Please enter a meeting link', 'error');
         return;
     }
     
     if (!meetingLink.startsWith('http://') && !meetingLink.startsWith('https://')) {
-        alert('Please enter a valid URL starting with http:// or https://');
+        showToast('Please enter a valid URL starting with http:// or https://', 'error');
         return;
     }
+    
+    const saveBtn = document.querySelector('#meetingLinkModal .btn-pink');
+    const originalText = saveBtn.innerHTML;
+    saveBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+    saveBtn.disabled = true;
     
     fetch('save_meeting_link.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ booking_id: bookingId, meeting_link: meetingLink })
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Meeting link saved! Student has been notified.');
-            closeMeetingLinkModal();
-            location.reload();
-        } else {
-            alert('Error: ' + data.message);
+    .then(response => response.text())  // Get as text first to debug
+    .then(text => {
+        console.log("Raw response:", text);  // See what the server returns
+        try {
+            const data = JSON.parse(text);
+            if (data.success) {
+                showToast(data.message || 'Meeting link saved!', 'success');
+                closeMeetingLinkModal();
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showToast('Error: ' + data.message, 'error');
+                saveBtn.innerHTML = originalText;
+                saveBtn.disabled = false;
+            }
+        } catch (e) {
+            console.error("JSON parse error:", e);
+            showToast('Server error. Please try again.', 'error');
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
         }
+    })
+    .catch(error => {
+        console.error("Fetch error:", error);
+        showToast('Network error. Please try again.', 'error');
+        saveBtn.innerHTML = originalText;
+        saveBtn.disabled = false;
     });
 }
 
@@ -1160,6 +1613,195 @@ function confirmSession(bookingId, role) {
     });
 }
 
+function confirmOnlineSession(bookingId, action) {
+    // First check if session time has passed
+    fetch('check_session_time.php?booking_id=' + bookingId)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.can_complete) {
+                showToast('Session time has not passed yet. Please wait until after the session time to confirm.', 'error');
+                return;
+            }
+            
+            // Check if we need to upload proof (if dispute exists)
+            const proofInput = document.getElementById('onlineProof_' + bookingId);
+            const hasProof = proofInput && proofInput.files && proofInput.files.length > 0;
+            
+            if (hasProof) {
+                // Upload proof first, then confirm
+                const formData = new FormData();
+                formData.append('booking_id', bookingId);
+                formData.append('proof', proofInput.files[0]);
+                formData.append('action', 'upload_proof');
+                
+                fetch('upload_online_proof.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // After proof uploaded, confirm the session
+                        submitOnlineConfirmation(bookingId, action);
+                    } else {
+                        showToast('Failed to upload proof. Please try again.', 'error');
+                    }
+                })
+                .catch(error => {
+                    showToast('Error uploading proof', 'error');
+                });
+            } else {
+                // No proof, just confirm
+                submitOnlineConfirmation(bookingId, action);
+            }
+        })
+        .catch(error => {
+            showToast('Error checking session time', 'error');
+        });
+}
+
+function confirmFaceToFace(bookingId, action) {
+    // First check if session time has passed
+    fetch('check_session_time.php?booking_id=' + bookingId)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.can_complete) {
+                showToast('Session time has not passed yet. Please wait until after the session time to confirm attendance.', 'error');
+                return;
+            }
+            
+            let confirmMessage = '';
+            let actionText = '';
+            
+            if (action === 'attended') {
+                confirmMessage = 'Confirm that the student ATTENDED this face-to-face session?';
+                actionText = 'face_to_face_attended';
+            } else if (action === 'student_no_show') {
+                confirmMessage = 'Confirm that the student did NOT attend? No refund will be issued.';
+                actionText = 'student_no_show';
+            } else if (action === 'tutor_no_show') {
+                confirmMessage = 'Confirm that YOU did NOT attend? Student will receive a full refund.';
+                actionText = 'tutor_no_show';
+            }
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+            
+            fetch('confirm_attendance_api.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ booking_id: bookingId, action: actionText })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showToast(data.message, data.success ? 'success' : 'error');
+                if (data.success) {
+                    setTimeout(() => location.reload(), 1500);
+                }
+            })
+            .catch(error => {
+                showToast('Network error. Please try again.', 'error');
+            });
+        })
+        .catch(error => {
+            showToast('Error checking session time', 'error');
+        });
+}
+function markDisputeResolved(disputeId, bookingId) {
+    // Get the button that was clicked
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'not-allowed';
+    
+    if (confirm('Have you resolved this issue? The student will be notified that this issue is resolved.')) {
+        fetch('resolve_dispute.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                dispute_id: disputeId, 
+                booking_id: bookingId,
+                action: 'resolve'
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Dispute resolved! Student has been notified.', 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showToast('Error: ' + data.message, 'error');
+                // Re-enable button on error
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Network error. Please try again.', 'error');
+            // Re-enable button on error
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+        });
+    } else {
+        // User cancelled - re-enable button
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+    }
+}
+
+function submitOnlineConfirmation(bookingId, action) {
+    if (!confirm('Confirm that this ONLINE session took place? The student will be notified.')) {
+        return;
+    }
+    
+    fetch('confirm_attendance_api.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_id: bookingId, action: 'confirm' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        showToast(data.message, data.success ? 'success' : 'error');
+        if (data.success) {
+            setTimeout(() => location.reload(), 1500);
+        }
+    })
+    .catch(error => {
+        showToast('Network error. Please try again.', 'error');
+    });
+}
+
+function showToast(message, type = 'success') {
+    // Create toast element if it doesn't exist
+    let toast = document.getElementById('customToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'customToast';
+        toast.className = 'toast';
+        document.body.appendChild(toast);
+    }
+    
+    toast.textContent = message;
+    toast.className = `toast ${type}`;
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+
 window.onclick = function(event) {
     const modal = document.getElementById('rejectModal');
     if (event.target === modal) closeRejectModal();
@@ -1167,6 +1809,7 @@ window.onclick = function(event) {
     if (event.target === meetingModal) closeMeetingLinkModal();
 }
 </script>
+<div id="customToast" class="toast"></div>
 
 </body>
 </html>

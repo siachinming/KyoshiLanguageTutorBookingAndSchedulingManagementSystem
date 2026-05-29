@@ -45,6 +45,7 @@ $query = "
     JOIN users u ON b.student_id = u.id
     WHERE b.tutor_id = ?
     AND b.status IN $statusFilter
+    AND TIMESTAMP(b.booking_date, b.booking_time) > NOW()  -- Only future sessions
     ORDER BY $orderBy
 ";
 
@@ -308,11 +309,16 @@ if ($action === 'upload') {
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
             </a>
+            <?php
+            $materialsActive = ($action === 'upload') ? 'active' : '';
+            $assignmentsActive = ($action === 'assignment') ? 'active' : '';
+            ?>
             <div class="nav-links">
-                <a href="tutor_dashboard.php">Dashboard</a>
+              <a href="tutor_dashboard.php">Dashboard</a>
                 <a href="booking_requests.php">My Bookings</a>
-                <a href="learning_materials.php" class="<?= $activeNav === 'materials' ? 'active' : '' ?>">My Materials</a>
-                <a href="assignments.php" class="<?= $activeNav === 'assignments' ? 'active' : '' ?>">My Assignments</a>
+                <a href="material_overview.php" class="<?= $materialsActive ?>">My Materials</a>
+                <a href="assignment_overview.php" class="<?= $assignmentsActive ?>">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
@@ -321,7 +327,7 @@ if ($action === 'upload') {
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>

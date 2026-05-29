@@ -32,13 +32,13 @@ if (!$tutorID) { header("Location: find_language.php"); exit(); }
 $stmt = $conn->prepare("
     SELECT u.id, u.fullname, u.profile_pic, u.phone,
            tp.experience, tp.rate, tp.bio, tp.language_certificate,
-           ul.location, tp.qualification, tp.availability,
+           tp.qualification,
            ul.location,
            ROUND(AVG(r.rating), 1) as avg_rating,
            COUNT(DISTINCT r.id) as review_count
     FROM users u
     JOIN tutor_profiles tp ON u.id = tp.user_id
-    LEFT JOIN user_locations ul ON u.id = ul.user_id
+    LEFT JOIN user_locations ul ON u.id = ul.user_id AND ul.location_type = 'teaching'
     LEFT JOIN ratings r ON u.id = r.tutor_id
     WHERE u.id = ? AND u.role = 'tutor' AND u.status = 'approved'
     GROUP BY u.id
@@ -49,12 +49,14 @@ $tutor = $stmt->get_result()->fetch_assoc();
 if (!$tutor) { header("Location: find_language.php"); exit(); }
 
 // Get tutor languages
-$stmt = $conn->prepare("SELECT language FROM tutor_languages WHERE user_id = ?");
+$stmt = $conn->prepare("SELECT language, proficiency_level FROM tutor_languages WHERE user_id = ?");
 $stmt->bind_param("i", $tutorID);
 $stmt->execute();
 $langResult = $stmt->get_result();
 $languages = [];
-while ($row = $langResult->fetch_assoc()) $languages[] = $row['language'];
+while ($row = $langResult->fetch_assoc()) {
+    $languages[] = $row['language'];
+}
 
 // Get tutor teaching modes
 $stmt = $conn->prepare("SELECT mode FROM tutor_teaching_modes WHERE user_id = ?");
@@ -62,7 +64,20 @@ $stmt->bind_param("i", $tutorID);
 $stmt->execute();
 $modeResult = $stmt->get_result();
 $modes = [];
-while ($row = $modeResult->fetch_assoc()) $modes[] = $row['mode'];
+while ($row = $modeResult->fetch_assoc()) {
+    $modes[] = $row['mode'];
+}
+
+// Get tutor availability from structured table
+$availStmt = $conn->prepare("
+    SELECT day_of_week, start_time, end_time 
+    FROM tutor_availability 
+    WHERE tutor_id = ? 
+    ORDER BY FIELD(day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+");
+$availStmt->bind_param("i", $tutorID);
+$availStmt->execute();
+$availability = $availStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // Get reviews
 $stmt = $conn->prepare("
@@ -88,6 +103,31 @@ $tutorPic = !empty($tutor['profile_pic'])
     : $assetBase . '/profile-tutor.png';
 
 $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
+
+// Format availability for display
+$availabilityText = '';
+if (!empty($availability)) {
+    $days = [];
+    foreach ($availability as $slot) {
+        $days[] = $slot['day_of_week'] . ': ' . date('g:i A', strtotime($slot['start_time'])) . ' - ' . date('g:i A', strtotime($slot['end_time']));
+    }
+    $availabilityText = implode(', ', array_slice($days, 0, 3));
+    if (count($days) > 3) {
+        $availabilityText .= ' +' . (count($days) - 3) . ' more';
+    }
+}
+
+// Format phone for display
+$displayPhone = !empty($tutor['phone']) ? $tutor['phone'] : 'No phone number';
+$whatsappNumber = '';
+if (!empty($tutor['phone'])) {
+    $phone_raw = preg_replace('/[^0-9]/', '', $tutor['phone']);
+    if (substr($phone_raw, 0, 1) == '0') {
+        $whatsappNumber = '60' . substr($phone_raw, 1);
+    } else {
+        $whatsappNumber = $phone_raw;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -145,7 +185,7 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
     /* MAIN CARD */
     .main-card{background:var(--paper);border:1px solid rgba(255,255,255,.55);box-shadow:var(--shadow);border-radius:var(--radius-xl);overflow:hidden}
     .tutor-hero{display:flex;gap:24px;padding:28px;align-items:flex-start}
-    .tutor-hero img{width:120px;height:120px;object-fit:cover;border-radius:24px;flex:0 0 auto;background:#eee;box-shadow:var(--shadow-soft)}
+    .tutor-hero img{width:100px;height:100px;object-fit:cover;border-radius:24px;flex:0 0 auto;background:#eee;box-shadow:var(--shadow-soft)}
     .tutor-hero-info{flex:1;min-width:0}
     .tutor-hero-info h1{margin:0 0 6px;font-size:28px;letter-spacing:-.6px}
     .tutor-rating{display:flex;align-items:center;gap:6px;margin-bottom:12px}
@@ -156,7 +196,7 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
     .tag-blue{background:rgba(216,236,255,.80);color:#2E5D8E}
     .tag-green{background:rgba(221,244,227,.80);color:#2E7042}
     .tag-purple{background:rgba(221,211,255,.80);color:#5B3E9B}
-    .tutor-meta-row{display:flex;gap:20px;flex-wrap:wrap}
+    .tutor-meta-row{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px}
     .meta-item{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);font-weight:700}
     .meta-item i{color:var(--pink-dark);font-size:15px}
 
@@ -177,18 +217,21 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
 
     /* SIDEBAR */
     .sidebar-card{background:var(--paper);border:1px solid rgba(255,255,255,.55);box-shadow:var(--shadow);border-radius:var(--radius-xl);padding:24px;margin-bottom:20px}
-    .price-display{font-size:36px;font-weight:900;letter-spacing:-1px;color:var(--ink);margin-bottom:4px}
+    .price-display{font-size:32px;font-weight:900;letter-spacing:-1px;color:var(--ink);margin-bottom:4px}
     .price-label{font-size:13px;color:var(--muted);font-weight:700;margin-bottom:20px}
-    .btn-book{width:100%;padding:16px;border-radius:999px;background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;font-size:15px;font-weight:900;border:none;cursor:pointer;box-shadow:0 12px 24px rgba(231,90,155,.28);transition:.18s ease;margin-bottom:20px}
-    .btn-book:hover{transform:translateY(-2px);box-shadow:0 16px 30px rgba(231,90,155,.35)}
-    .btn-fav{width:100%;padding:14px;border-radius:999px;background:rgba(255,255,255,.78);color:var(--pink-dark);font-size:14px;font-weight:900;border:1.5px solid rgba(242,138,178,.40);cursor:pointer;transition:.18s ease;display:flex;align-items:center;justify-content:center;gap:8px}
-    .btn-fav:hover{transform:translateY(-1px)}
+    .action-row{display:flex;gap:12px;margin-bottom:20px;align-items:center}
+    .btn-book{flex:1;padding:14px 20px;border-radius:999px;background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;font-size:14px;font-weight:900;border:none;cursor:pointer;box-shadow:0 8px 20px rgba(231,90,155,.28);transition:.18s ease;text-align:center}
+    .btn-book:hover{transform:translateY(-2px);box-shadow:0 12px 25px rgba(231,90,155,.35)}
+    .btn-fav{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.88);color:var(--pink-dark);font-size:18px;border:1.5px solid rgba(242,138,178,.40);cursor:pointer;transition:.18s ease;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .btn-fav:hover{transform:translateY(-2px);background:rgba(255,241,246,.9)}
     .btn-fav.active{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;border-color:var(--pink)}
+    .btn-wa{width:48px;height:48px;border-radius:50%;background:#25D366;color:#fff;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:18px;transition:.2s;flex-shrink:0}
+    .btn-wa:hover{transform:translateY(-2px);opacity:0.9}
     .divider{height:1px;background:rgba(46,42,59,.08);margin:20px 0}
     .info-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(46,42,59,.06);font-size:14px}
     .info-row:last-child{border-bottom:none}
     .info-row span:first-child{color:var(--muted);font-weight:700}
-    .info-row span:last-child{font-weight:900;color:var(--ink)}
+    .info-row span:last-child{font-weight:900;color:var(--ink);text-align:right;max-width:60%}
 
     /* TOAST */
     .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,18px);opacity:0;pointer-events:none;z-index:99;background:#8E3F70;color:#fff;border-radius:999px;padding:12px 18px;font-size:13px;font-weight:900;transition:.2s ease}
@@ -200,6 +243,9 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
       .nav-links{display:none}
       .tutor-hero{flex-direction:column}
       .tutor-hero img{width:90px;height:90px}
+      .action-row{gap:8px}
+      .btn-fav,.btn-wa{width:42px;height:42px;font-size:16px}
+      .btn-book{padding:12px 16px;font-size:13px}
     }
   </style>
 </head>
@@ -217,12 +263,13 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
         </a>
 
         <div class="nav-links">
-          <a href="student_dashboard.php">Home</a>
-          <a class="active" href="find_language.php">Find Language</a>
-          <a href="booking_status.php">My Bookings</a>
-          <a href="my_payments.php">My Payments</a>
-          <a href="my_materials.php">My Materials</a>
-        </div>
+                <a href="student_dashboard.php">Home</a>
+                <a href="find_language.php" class="active">Find Language</a>
+                <a href="booking_status.php">My Bookings</a>
+                <a href="my_payments.php">My Payments</a>
+                <a href="my_materials.php">My Materials</a>
+                <a href="my_assignments.php">My Assignments</a>
+            </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">
@@ -281,26 +328,14 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
                 </span>
               </div>
 
-              <!-- Language Tags -->
-              <div class="tags">
-                <?php foreach($languages as $lang): ?>
-                  <span class="tag tag-pink"><?= e($lang) ?></span>
-                <?php endforeach; ?>
-                <?php foreach($modes as $mode): ?>
-                  <span class="tag tag-blue"><?= e(str_replace('_', ' ', ucfirst($mode))) ?></span>
-                <?php endforeach; ?>
-                <?php if($tutor['location']): ?>
-                  <span class="tag tag-green"><i class="bi bi-geo-alt-fill"></i> <?= e($tutor['location']) ?></span>
-                <?php endif; ?>
-              </div>
 
-              <!-- Meta -->
+              <!-- Meta Row with Experience and Phone -->
               <div class="tutor-meta-row">
                 <?php if($tutor['experience']): ?>
                   <div class="meta-item"><i class="bi bi-briefcase"></i> <?= e($tutor['experience']) ?> years experience</div>
                 <?php endif; ?>
-                <?php if($tutor['phone']): ?>
-                  <div class="meta-item"><i class="bi bi-telephone"></i> <?= e($tutor['phone']) ?></div>
+                <?php if(!empty($tutor['phone'])): ?>
+                  <div class="meta-item"><i class="bi bi-telephone-fill"></i> <?= e($tutor['phone']) ?></div>
                 <?php endif; ?>
               </div>
             </div>
@@ -314,6 +349,7 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
           </div>
           <?php endif; ?>
 
+          <!-- QUALIFICATION -->
           <?php if($tutor['qualification']): ?>
             <div class="section">
                 <p class="section-title">Qualification</p>
@@ -322,17 +358,26 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
                     <span style="font-weight:700;color:#2E7042;font-size:14px;"><?= e($tutor['qualification']) ?></span>
                 </div>
             </div>
-            <?php endif; ?>
+          <?php endif; ?>
 
-            <?php if($tutor['availability']): ?>
+          <!-- AVAILABILITY (from structured table) -->
+          <?php if(!empty($availability)): ?>
             <div class="section">
-                <p class="section-title">Availability</p>
-                <div style="display:flex;align-items:center;gap:10px;padding:14px;border-radius:16px;background:rgba(216,236,255,.60);border:1px solid rgba(46,93,160,.18);">
-                    <i class="bi bi-clock-fill" style="color:#2E5D8E;font-size:22px;flex:0 0 auto;"></i>
-                    <span style="font-weight:700;color:#2E5D8E;font-size:14px;"><?= e($tutor['availability']) ?></span>
+                <p class="section-title">Availability Schedule</p>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <?php foreach($availability as $slot): ?>
+                    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:16px;background:rgba(216,236,255,.60);border:1px solid rgba(46,93,160,.18);">
+                        <i class="bi bi-calendar-check" style="color:#2E5D8E;font-size:18px;"></i>
+                        <span style="font-weight:700;color:#2E5D8E;font-size:13px;">
+                            <?= e($slot['day_of_week']) ?>: 
+                            <?= date('g:i A', strtotime($slot['start_time'])) ?> - 
+                            <?= date('g:i A', strtotime($slot['end_time'])) ?>
+                        </span>
+                    </div>
+                    <?php endforeach; ?>
                 </div>
             </div>
-            <?php endif; ?>
+          <?php endif; ?>
 
           <!-- REVIEWS -->
           <div class="section">
@@ -349,16 +394,14 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
               <div class="review-item">
                 <div class="review-header">
                   <?php $isAnon = ($review['is_anonymous'] ?? 0); ?>
-<img src="<?= $isAnon ? e($assetBase).'/profile-student.png' : e($studentPic) ?>" 
-     alt="<?= $isAnon ? 'Anonymous' : e($review['student_name']) ?>">
-<div>
-  <div class="review-name">
-    <?= $isAnon ? 'Anonymous Student' : e($review['student_name']) ?>
-    <?php if ($isAnon): ?>
-    <?php endif; ?>
-  </div>
-  <div class="review-date"><?= date('d M Y', strtotime($review['created_at'])) ?></div>
-</div>
+                  <img src="<?= $isAnon ? e($assetBase).'/profile-student.png' : e($studentPic) ?>" 
+                       alt="<?= $isAnon ? 'Anonymous' : e($review['student_name']) ?>">
+                  <div>
+                    <div class="review-name">
+                      <?= $isAnon ? 'Anonymous Student' : e($review['student_name']) ?>
+                    </div>
+                    <div class="review-date"><?= date('d M Y', strtotime($review['created_at'])) ?></div>
+                  </div>
                   <div class="review-stars">
                     <?php for($i=1;$i<=5;$i++): ?>
                       <i class="bi bi-star<?= $i<=$rStars?'-fill':'' ?>" style="color:<?= $i<=$rStars?'#FFB800':'#ddd' ?>;font-size:13px;"></i>
@@ -382,31 +425,18 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
           <div class="price-display">RM <?= e($tutor['rate']) ?></div>
           <div class="price-label">per hour</div>
 
-         <div style="display:flex; gap:12px; align-items:center; margin-bottom:20px;">
-            <a href="booking_form.php?tutor_id=<?= $tutor['id'] ?>" class="btn-book" style="flex:1; margin-bottom:0; text-align:center;">
-                Book Now
-            </a>
-                <button class="btn-fav <?= $isFav ? 'active' : '' ?>" id="favBtn" onclick="toggleFav()" style="width:48px; height:48px; border-radius:50%; padding:0; flex:0 0 auto;">
-    <i class="bi <?= $isFav ? 'bi-heart-fill' : 'bi-heart' ?>"></i>
-</button>
-            <?php if($tutor['phone']): 
-                $phone = preg_replace('/[^0-9]/', '', $tutor['phone']);
-                $message = urlencode("Hi {$tutor['fullname']}, I’m interested in your tutoring service!");
-            ?>
-            <a href="https://wa.me/<?= $phone ?>?text=<?= $message ?>" 
-            target="_blank"
-            style="width:48px; height:48px; border-radius:50%; 
-                    background:#25D366; color:#fff; 
-                    display:flex; align-items:center; justify-content:center;
-                    text-decoration:none; font-size:20px;
-                    transition:.2s;">
-
+          <div class="action-row">
+            <a href="booking_form.php?tutor_id=<?= $tutor['id'] ?>" class="btn-book">Book Now</a>
+            <button class="btn-fav <?= $isFav ? 'active' : '' ?>" id="favBtn" onclick="toggleFav()">
+              <i class="bi <?= $isFav ? 'bi-heart-fill' : 'bi-heart' ?>"></i>
+            </button>
+            <?php if($whatsappNumber): ?>
+              <a href="https://wa.me/<?= $whatsappNumber ?>?text=<?= urlencode("Hi {$tutor['fullname']}, I'm interested in your tutoring service!") ?>" 
+                 target="_blank" class="btn-wa">
                 <i class="bi bi-whatsapp"></i>
-            </a>
+              </a>
             <?php endif; ?>
-
-
-        </div>
+          </div>
 
           <div class="divider"></div>
 
@@ -433,17 +463,17 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
             <span><?= $tutor['avg_rating'] ? e($tutor['avg_rating']).' / 5.0' : 'No reviews yet' ?></span>
           </div>
           <?php if($tutor['qualification']): ?>
-        <div class="info-row">
+          <div class="info-row">
             <span>Qualification</span>
             <span><?= e($tutor['qualification']) ?></span>
-        </div>
-        <?php endif; ?>
-        <?php if($tutor['availability']): ?>
-        <div class="info-row">
+          </div>
+          <?php endif; ?>
+          <?php if(!empty($availability)): ?>
+          <div class="info-row">
             <span>Availability</span>
-            <span><?= e($tutor['availability']) ?></span>
-        </div>
-        <?php endif; ?>
+            <span><?= e($availabilityText) ?></span>
+          </div>
+          <?php endif; ?>
         </div>
       </div>
 
@@ -481,7 +511,7 @@ $stars = $tutor['avg_rating'] ? round($tutor['avg_rating']) : 0;
     .catch(error => {
         showToast('Error: ' + error);
     });
-}
+  }
 
   function showToast(msg) {
     const t = document.getElementById('toast');

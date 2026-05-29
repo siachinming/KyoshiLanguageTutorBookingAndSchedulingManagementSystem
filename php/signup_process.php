@@ -93,6 +93,7 @@ if (!empty($_FILES['profile_pic']['name'])) {
 $hashed = password_hash($password, PASSWORD_DEFAULT);
 $verify_token = bin2hex(random_bytes(32));
 $is_verified = 0;
+
 $stmt = $conn->prepare("
     INSERT INTO users (fullname, email, password, phone, role, profile_pic, status, verification_token, is_verified)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -114,16 +115,6 @@ if ($role === 'tutor') {
     $bio        = trim($_POST['bio']          ?? '');
     $certificate = '';
 
-    if (!empty($_POST['languages'])) {
-    $langStmt = $conn->prepare("INSERT INTO tutor_languages (user_id, language) VALUES (?, ?)");
-    foreach ($_POST['languages'] as $lang) {
-        $lang = trim($lang);
-        $langStmt->bind_param("is", $newUserId, $lang);
-        $langStmt->execute();
-    }
-    $langStmt->close();
-}
-
     // Certificate upload
     if (!empty($_FILES['certificate']['name'])) {
         $uploadDir = '../uploads/certificates/';
@@ -136,10 +127,32 @@ if ($role === 'tutor') {
             $certificate = $filename;
         }
     }
+
+    // Insert tutor languages with proficiency
+    $tutor_languages = $_POST['tutor_languages'] ?? [];
+    $langStmt = $conn->prepare("INSERT INTO tutor_languages (user_id, language, proficiency_level) VALUES (?, ?, ?)");
     
-    if (!empty($_POST['teaching_mode'])) {
+    $proficiency_map = [
+        'English' => $_POST['tutor_proficiency_english'] ?? 'intermediate',
+        'Japanese' => $_POST['tutor_proficiency_japanese'] ?? 'intermediate',
+        'Mandarin' => $_POST['tutor_proficiency_mandarin'] ?? 'intermediate',
+        'Malay' => $_POST['tutor_proficiency_malay'] ?? 'intermediate',
+        'Korean' => $_POST['tutor_proficiency_korean'] ?? 'intermediate'
+    ];
+    
+    foreach ($tutor_languages as $lang) {
+        $lang = trim($lang);
+        $proficiency = $proficiency_map[$lang] ?? 'intermediate';
+        $langStmt->bind_param("iss", $newUserId, $lang, $proficiency);
+        $langStmt->execute();
+    }
+    $langStmt->close();
+
+    // Insert tutor teaching modes
+    $teaching_modes = $_POST['tutor_teaching_mode'] ?? [];
+    if (!empty($teaching_modes)) {
         $modeStmt = $conn->prepare("INSERT INTO tutor_teaching_modes (user_id, mode) VALUES (?, ?)");
-        foreach ($_POST['teaching_mode'] as $mode) {
+        foreach ($teaching_modes as $mode) {
             $mode = trim($mode);
             $modeStmt->bind_param("is", $newUserId, $mode);
             $modeStmt->execute();
@@ -148,9 +161,9 @@ if ($role === 'tutor') {
     }
 
     // Insert tutor location if face to face selected
-    if ($role === 'tutor' && !empty($_POST['tutor_location'])) {
+    if (in_array('face_to_face', $teaching_modes) && !empty($_POST['tutor_location'])) {
         $loc = trim($_POST['tutor_location']);
-        $locStmt = $conn->prepare("INSERT INTO user_locations (user_id, location) VALUES (?, ?)");
+        $locStmt = $conn->prepare("INSERT INTO user_locations (user_id, location, location_type) VALUES (?, ?, 'teaching')");
         $locStmt->bind_param("is", $newUserId, $loc);
         $locStmt->execute();
         $locStmt->close();
@@ -158,41 +171,55 @@ if ($role === 'tutor') {
 
     $stmt2 = $conn->prepare("
         INSERT INTO tutor_profiles (user_id, experience, rate, bio, language_certificate)
-        VALUES (?, ?, ?, ?, ?)");
+        VALUES (?, ?, ?, ?, ?)
+    ");
     $stmt2->bind_param("idsss", $newUserId, $experience, $rate, $bio, $certificate);
     $stmt2->execute();
     $stmt2->close();
 }
 
-// ── If student, insert preferred languages ────────────────────────
-if ($role === 'student' && !empty($_POST['preferred_languages'])) {
-    $langStmt = $conn->prepare("INSERT INTO student_preferences (user_id, language) VALUES (?, ?)");
-    foreach ($_POST['preferred_languages'] as $lang) {
+// ── If student, insert languages with proficiency ────────────────
+if ($role === 'student') {
+    $student_languages = $_POST['student_languages'] ?? [];
+    
+    $langStmt = $conn->prepare("INSERT INTO student_preferences (user_id, language, proficiency_level) VALUES (?, ?, ?)");
+    
+    $proficiency_map = [
+        'English' => $_POST['student_proficiency_english'] ?? 'beginner',
+        'Japanese' => $_POST['student_proficiency_japanese'] ?? 'beginner',
+        'Mandarin' => $_POST['student_proficiency_mandarin'] ?? 'beginner',
+        'Malay' => $_POST['student_proficiency_malay'] ?? 'beginner',
+        'Korean' => $_POST['student_proficiency_korean'] ?? 'beginner'
+    ];
+    
+    foreach ($student_languages as $lang) {
         $lang = trim($lang);
-        $langStmt->bind_param("is", $newUserId, $lang);
+        $proficiency = $proficiency_map[$lang] ?? 'beginner';
+        $langStmt->bind_param("iss", $newUserId, $lang, $proficiency);
         $langStmt->execute();
     }
     $langStmt->close();
-}
 
-// ── If student, insert learning modes ────────────────────────────
-if ($role === 'student' && !empty($_POST['learning_mode'])) {
-    $modeStmt = $conn->prepare("INSERT INTO student_learning_modes (user_id, mode) VALUES (?, ?)");
-    foreach ($_POST['learning_mode'] as $mode) {
-        $mode = trim($mode);
-        $modeStmt->bind_param("is", $newUserId, $mode);
-        $modeStmt->execute();
+    // Insert student learning modes
+    $learning_modes = $_POST['student_learning_mode'] ?? [];
+    if (!empty($learning_modes)) {
+        $modeStmt = $conn->prepare("INSERT INTO student_learning_modes (user_id, mode) VALUES (?, ?)");
+        foreach ($learning_modes as $mode) {
+            $mode = trim($mode);
+            $modeStmt->bind_param("is", $newUserId, $mode);
+            $modeStmt->execute();
+        }
+        $modeStmt->close();
     }
-    $modeStmt->close();
-}
 
-// Insert student location if face to face selected
-if ($role === 'student' && !empty($_POST['student_location'])) {
-    $loc = trim($_POST['student_location']);
-    $locStmt = $conn->prepare("INSERT INTO user_locations (user_id, location) VALUES (?, ?)");
-    $locStmt->bind_param("is", $newUserId, $loc);
-    $locStmt->execute();
-    $locStmt->close();
+    // Insert student location if face to face selected
+    if (in_array('face_to_face', $learning_modes) && !empty($_POST['student_location'])) {
+        $loc = trim($_POST['student_location']);
+        $locStmt = $conn->prepare("INSERT INTO user_locations (user_id, location, location_type) VALUES (?, ?, 'learning')");
+        $locStmt->bind_param("is", $newUserId, $loc);
+        $locStmt->execute();
+        $locStmt->close();
+    }
 }
 
 // ── Success ──────────────────────────────────────────────────────

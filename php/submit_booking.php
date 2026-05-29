@@ -16,6 +16,7 @@ $tutorID  = intval($_POST['tutor_id'] ?? 0);
 $language = trim($_POST['language'] ?? '');
 $mode     = trim($_POST['mode'] ?? '');
 $focus    = trim($_POST['focus'] ?? '');
+$proficiency_level = $_POST['proficiency_level'] ?? 'beginner';
 $notes    = trim($_POST['notes'] ?? '');
 $location = trim($_POST['location'] ?? '');
 $dates    = $_POST['booking_date'] ?? [];
@@ -110,28 +111,28 @@ $conn->begin_transaction();
 
 try {
     $stmt = $conn->prepare("
-        INSERT INTO bookings
-            (student_id, tutor_id, language, learning_mode, booking_date, booking_time,
-             status, meeting_location, notes, focus, total_amount, created_at)
-        VALUES
-            (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NOW())
-    ");
+    INSERT INTO bookings (student_id, tutor_id, language, learning_mode, booking_date, booking_time, 
+                          focus, proficiency_level, notes, meeting_location, status, total_amount, created_at) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW())
+");
+
 
     $meetingLoc = $mode === 'face_to_face' ? $location : null;
 
     foreach ($checkSlots as $slot) {
-        $stmt->bind_param("iisssssssd",
-            $userID,
-            $tutorID,
-            $language,
-            $mode,
-            $slot['date'],
-            $slot['time'],
-            $meetingLoc,
-            $notes,
-            $focus,
-            $hourlyRate
-        );
+       $stmt->bind_param("iissssssssd",  // ← 11 characters (ii + sssssssss + d)
+    $userID,           // i
+    $tutorID,          // i
+    $language,         // s
+    $mode,             // s
+    $slot['date'],     // s
+    $slot['time'],     // s
+    $focus,            // s
+    $proficiency_level,// s
+    $notes,            // s
+    $meetingLoc,       // s (this is 9th s)
+    $hourlyRate        // d
+);
         $stmt->execute();
         $lastID = $conn->insert_id;
     }
@@ -189,6 +190,7 @@ $emailBody = '<!DOCTYPE html>
             ' . $focusLine . '
             ' . $notesLine . '
         </div>
+        <p style="margin:6px 0;font-size:14px;color:#342635;"><strong>Proficiency Level:</strong> ' . ucfirst($proficiency_level) . '</p>
         <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#C94F86;">Requested Time Slot(s)</p>
         <table style="width:100%;border-collapse:collapse;border-radius:12px;overflow:hidden;border:1px solid #fce7f3;margin-bottom:24px;">
             <thead>

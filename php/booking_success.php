@@ -100,16 +100,47 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       background:radial-gradient(circle at 7% 10%,rgba(231,90,155,.32),transparent 24%),
         radial-gradient(circle at 90% 8%,rgba(255,195,216,.42),transparent 26%)}
     a{text-decoration:none;color:inherit}
-    .container{width:min(700px,calc(100% - 40px));margin:0 auto}
+    .container{width:min(1440px, calc(100% - 40px)); margin:0 auto}
 
-    /* TOPBAR */
-    .topbar{position:sticky;top:0;z-index:50;background:rgba(255,241,246,.86);backdrop-filter:blur(20px);border-bottom:1px solid rgba(231,90,155,.18);box-shadow:0 10px 30px rgba(201,79,134,.10)}
-    .nav{min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:16px;width:min(1100px,calc(100% - 40px));margin:0 auto;}
-    .brand{display:flex;align-items:center;gap:10px}
-    .brand img{width:40px;height:40px;object-fit:contain;border-radius:12px}
-    .brand strong{font-size:17px}
-    .profile{display:flex;align-items:center;gap:9px;border-radius:999px;padding:6px 12px 6px 6px;font-weight:900;color:#7A3D65;border:1px solid rgba(46,42,59,.08);background:rgba(255,255,255,.88);cursor:pointer}
-    .profile img{width:32px;height:32px;object-fit:cover;border-radius:50%}
+    .topbar{
+      position:sticky; top:0; z-index:50;
+      background:rgba(255,241,246,.86);
+      backdrop-filter:blur(20px);
+      border-bottom:1px solid rgba(231,90,155,.18);
+      box-shadow:0 10px 30px rgba(201,79,134,.10);
+    }
+    .nav{
+      min-height:78px;
+      display:grid;
+      grid-template-columns:160px 1fr 320px;
+      gap:16px;
+      align-items:center;
+    }
+    .brand{display:flex; align-items:center; gap:10px; min-width:0}
+    .brand img{width:44px; height:44px; object-fit:contain; border-radius:14px}
+    .brand strong{display:block; font-size:18px; line-height:1.05}
+    .brand span{display:block; margin-top:3px; font-size:11px; color:var(--muted); white-space:nowrap}
+
+    .nav-links{
+      display:flex; align-items:center; justify-content:center; gap:6px;
+      overflow:auto; scrollbar-width:none;
+      
+    }
+    .nav-links::-webkit-scrollbar{display:none}
+    .nav-links a{flex:0 0 auto; padding:9px 12px; border-radius:999px; font-size:13px; font-weight:900; color:#6D4964; white-space:nowrap; transition:.18s ease}
+    .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg, var(--hot-pink), var(--pink)); color:#fff; box-shadow:0 8px 18px rgba(231,90,155,.28)}
+
+    .nav-actions{display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:0}
+    .search{position:relative; flex:1 1 auto; min-width:150px;}
+    .search i{position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#91899F}
+    .search input{width:100%; border:1px solid rgba(46,42,59,.10); background:rgba(255,255,255,.88); outline:none; border-radius:999px; padding:12px 14px 12px 38px; box-shadow:var(--shadow-soft)}
+    .icon-btn,.profile{border:1px solid rgba(46,42,59,.08); background:rgba(255,255,255,.88); box-shadow:var(--shadow-soft); cursor:pointer}
+    .icon-btn{width:44px; height:44px; border-radius:16px; color:#7A4A68; position:relative; flex:0 0 auto}
+    .dot{position:absolute; top:10px; right:10px; width:8px; height:8px; border-radius:50%; background:#E17C91}
+    .profile{display:flex; align-items:center; gap:9px; border-radius:999px; padding:6px 12px 6px 6px; font-weight:900; color:#7A3D65; flex:0 0 auto; max-width:150px}
+    .profile img{width:34px; height:34px; object-fit:cover; border-radius:50%}
+    .profile span{max-width:86px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
 
     /* SUCCESS CARD */
     .success-wrap{padding:40px 0 60px}
@@ -155,15 +186,24 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <body>
 
 <header class="topbar">
-  <div class="container" style="width:min(1100px,calc(100% - 40px));max-width:unset">
+  <div class="container">
     <nav class="nav">
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
             <strong>Kyoshi</strong>
+            <span>Student Learning Space</span>
           </div>
         </a>
 
+        <div class="nav-links">
+          <a href="student_dashboard.php">Home</a>
+          <a  href="find_language.php">Find Language</a>
+          <a class="active" href="booking_status.php">My Bookings</a>
+          <a href="my_payments.php">My Payments</a>
+          <a href="my_materials.php">My Materials</a>
+          <a href="my_assignments.php">My Assignments</a>
+        </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">
@@ -189,7 +229,6 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
           </div>
         </div>
       </nav>
-    </nav>
   </div>
 </header>
 
@@ -230,6 +269,12 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         <div class="detail-item">
           <div class="label">Focus</div>
           <div class="val"><?= e($booking['focus'] ?: '—') ?></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Proficiency Level</div>
+          <div class="val">
+            <?= e($booking['proficiency_level'] ?: '—') ?>
+          </div>
         </div>
         <?php if ($booking['meeting_location']): ?>
         <div class="detail-item">

@@ -55,26 +55,9 @@ if ($action === 'accept') {
         // Notification for student (in-app)
         $notifTitle = "Reschedule Request Approved";
         $notifMessage = "Your tutor has approved your reschedule request. New date: " . date('d M Y', strtotime($newDate)) . " at " . date('g:i A', strtotime($newTime));
-        
-       // Check if notification already sent for this reschedule request
-        $checkNotif = $conn->prepare("
-            SELECT id FROM notifications 
-            WHERE user_id = ? 
-            AND type = 'reschedule' 
-            AND message LIKE ? 
-            AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-        ");
-        $likeMessage = "%approved your reschedule request%";
-        $checkNotif->bind_param("is", $booking['student_id'], $likeMessage);
-        $checkNotif->execute();
-        $existingNotif = $checkNotif->get_result()->fetch_assoc();
-
-        if (!$existingNotif) {
-            // Only insert if not sent in last hour
-            $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, 'reschedule', 0, NOW())");
-            $notif->bind_param("iss", $booking['student_id'], $notifTitle, $notifMessage);
-            $notif->execute();
-        }
+$notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, 'reschedule', 0, NOW())");
+$notif->bind_param("iss", $booking['student_id'], $notifTitle, $notifMessage);
+$notif->execute();
             
         
         // Send EMAIL to STUDENT
@@ -147,7 +130,7 @@ if ($action === 'accept') {
     $updateReq->bind_param("sii", $rejectReason, $requestId, $userID);
 
     if ($updateReq->execute()) {
-        $updateBooking = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ? AND tutor_id = ? AND status = 'rescheduled'");
+        $updateBooking = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ? AND tutor_id = ?");
         $updateBooking->bind_param("ii", $bookingId, $userID);
         $updateBooking->execute();
         $formattedOriginalDate = date('l, F j, Y', strtotime($booking['booking_date']));

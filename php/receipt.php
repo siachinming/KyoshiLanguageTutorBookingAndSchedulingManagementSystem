@@ -1,6 +1,8 @@
 <?php
 session_start();
 include 'config.php';
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 $userID = $_SESSION['user_id'];
@@ -187,8 +189,6 @@ if ($action === 'pdf') {
 // ── EMAIL ─────────────────────────────────────────────
 if ($action === 'email') {
     require '../vendor/autoload.php';
-    use PHPMailer\PHPMailer\PHPMailer;
-    use PHPMailer\PHPMailer\Exception;
     require '../vendor/setasign/fpdf/fpdf.php';
 
     // Rebuild PDF for email (same as above but Output 'S')
@@ -313,7 +313,7 @@ if ($action === 'email') {
                     <p style='color:rgba(255,255,255,.85);margin:6px 0 0;font-size:14px;'>Language Learning Platform</p>
                 </div>
                 <div style='background:#fff;padding:28px;border:1px solid #BFDDF0;border-top:none;border-radius:0 0 16px 16px;'>
-                    <h2 style='color:#3C5078;margin:0 0 6px;'>Payment Confirmed! 🎉</h2>
+                    <h2 style='color:#3C5078;margin:0 0 6px;'>Payment Confirmed!</h2>
                     <p style='color:#7B6178;'>Hi {$data['student_name']}, your payment has been verified. Please find your receipt attached.</p>
                     <div style='background:#FFF9D2;border-radius:12px;padding:16px;margin:20px 0;border:1px solid #FFEBCC;'>
                         <p style='margin:0 0 8px;font-size:13px;'><strong>Receipt No:</strong> {$data['receipt_number']}</p>

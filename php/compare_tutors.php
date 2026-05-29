@@ -101,26 +101,44 @@ $highestExp   = max(array_column($tutors,'experience'));
         radial-gradient(circle at 90% 8%,rgba(255,195,216,.42),transparent 26%),
         radial-gradient(circle at 55% 95%,rgba(234,215,255,.30),transparent 28%)}
     a{text-decoration:none;color:inherit} button,input{font-family:inherit}
-    .container{width:min(1200px,calc(100% - 40px));margin:0 auto}
+    .container{width:min(1440px, calc(100% - 40px)); margin:0 auto}
 
-    /* TOPBAR */
-    .topbar{position:sticky;top:0;z-index:50;background:rgba(255,241,246,.86);backdrop-filter:blur(20px);border-bottom:1px solid rgba(231,90,155,.18);box-shadow:0 10px 30px rgba(201,79,134,.10)}
-    .nav{min-height:78px;display:grid;grid-template-columns:190px minmax(0,1fr) 360px;gap:16px;align-items:center}
-    .brand{display:flex;align-items:center;gap:10px;min-width:0}
-    .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
-    .brand strong{display:block;font-size:18px;line-height:1.05}
-    .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.70)}
+    .topbar{
+      position:sticky; top:0; z-index:50;
+      background:rgba(255,241,246,.86);
+      backdrop-filter:blur(20px);
+      border-bottom:1px solid rgba(231,90,155,.18);
+      box-shadow:0 10px 30px rgba(201,79,134,.10);
+    }
+    .nav{
+      min-height:78px;
+      display:grid;
+      grid-template-columns:160px 1fr 320px;
+      gap:16px;
+      align-items:center;
+    }
+    .brand{display:flex; align-items:center; gap:10px; min-width:0}
+    .brand img{width:44px; height:44px; object-fit:contain; border-radius:14px}
+    .brand strong{display:block; font-size:18px; line-height:1.05}
+    .brand span{display:block; margin-top:3px; font-size:11px; color:var(--muted); white-space:nowrap}
+
+    .nav-links{
+      display:flex; align-items:center; justify-content:center; gap:6px;
+      overflow:auto; scrollbar-width:none;
+      
+    }
     .nav-links::-webkit-scrollbar{display:none}
-    .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
-    .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;box-shadow:0 8px 18px rgba(231,90,155,.28)}
-    .nav-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0}
-    .icon-btn,.profile{border:1px solid rgba(46,42,59,.08);background:rgba(255,255,255,.88);box-shadow:var(--shadow-soft);cursor:pointer}
-    .icon-btn{width:44px;height:44px;border-radius:16px;color:#7A4A68;position:relative;flex:0 0 auto;display:grid;place-items:center}
-    .dot{position:absolute;top:10px;right:10px;width:8px;height:8px;border-radius:50%;background:#E17C91}
-    .profile{display:flex;align-items:center;gap:9px;border-radius:999px;padding:6px 12px 6px 6px;font-weight:900;color:#7A3D65;flex:0 0 auto;max-width:150px}
-    .profile img{width:34px;height:34px;object-fit:cover;border-radius:50%}
-    .profile span{max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .nav-links a{flex:0 0 auto; padding:9px 12px; border-radius:999px; font-size:13px; font-weight:900; color:#6D4964; white-space:nowrap; transition:.18s ease}
+    .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg, var(--hot-pink), var(--pink)); color:#fff; box-shadow:0 8px 18px rgba(231,90,155,.28)}
+
+    .nav-actions{display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:0}
+
+    .icon-btn,.profile{border:1px solid rgba(46,42,59,.08); background:rgba(255,255,255,.88); box-shadow:var(--shadow-soft); cursor:pointer}
+    .icon-btn{width:44px; height:44px; border-radius:16px; color:#7A4A68; position:relative; flex:0 0 auto}
+    .dot{position:absolute; top:10px; right:10px; width:8px; height:8px; border-radius:50%; background:#E17C91}
+    .profile{display:flex; align-items:center; gap:9px; border-radius:999px; padding:6px 12px 6px 6px; font-weight:900; color:#7A3D65; flex:0 0 auto; max-width:150px}
+    .profile img{width:34px; height:34px; object-fit:cover; border-radius:50%}
+    .profile span{max-width:86px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
     /* PAGE */
     .page-header{padding:28px 0 20px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
@@ -231,12 +249,13 @@ $highestExp   = max(array_column($tutors,'experience'));
         </a>
 
         <div class="nav-links">
-          <a href="student_dashboard.php">Home</a>
-          <a class="active" href="find_language.php">Find Language</a>
-          <a href="booking_status.php">My Bookings</a>
-          <a href="my_payments.php">My Payments</a>
-          <a href="my_materials.php">My Materials</a>
-        </div>
+                <a href="student_dashboard.php">Home</a>
+                <a href="find_language.php" class="active">Find Language</a>
+                <a href="booking_status.php">My Bookings</a>
+                <a href="my_payments.php">My Payments</a>
+                <a href="my_materials.php">My Materials</a>
+                <a href="my_assignments.php">My Assignments</a>
+            </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">

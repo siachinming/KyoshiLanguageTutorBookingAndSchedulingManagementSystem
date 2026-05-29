@@ -79,14 +79,14 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     a{text-decoration:none;color:inherit} button,input{font-family:inherit}
     .container{width:min(1440px,calc(100% - 40px));margin:0 auto}
 
-    /* ── TOPBAR (identical to dashboard) ── */
+
     .topbar{position:sticky;top:0;z-index:50;background:rgba(255,241,246,.86);backdrop-filter:blur(20px);border-bottom:1px solid rgba(231,90,155,.18);box-shadow:0 10px 30px rgba(201,79,134,.10);}
     .nav{min-height:78px;display:grid;grid-template-columns:190px minmax(0,1fr) 360px;gap:16px;align-items:center;}
     .brand{display:flex;align-items:center;gap:10px;min-width:0}
     .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
     .brand strong{display:block;font-size:18px;line-height:1.05}
     .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.58);border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.70);}
+    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.70);}
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;box-shadow:0 8px 18px rgba(231,90,155,.28)}
@@ -204,7 +204,8 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
                     <a href="find_language.php">Find Language</a>
                     <a href="booking_status.php">My Bookings</a>
                     <a href="my_payments.php">My Payments</a>
-                    <a class="active" href="my_materials.php">My Materials</a>
+                    <a href="my_materials.php">My Materials</a>
+                    <a href="my_assignments.php">My Assignments</a>
                 </div>
 
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">

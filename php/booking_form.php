@@ -171,17 +171,45 @@ $availJson = json_encode($availability);
       background:radial-gradient(circle at 7% 10%,rgba(231,90,155,.32),transparent 24%),
         radial-gradient(circle at 90% 8%,rgba(255,195,216,.42),transparent 26%)}
     a{text-decoration:none;color:inherit} button,input,select,textarea{font-family:inherit}
-    .container{width:min(1100px,calc(100% - 40px));margin:0 auto}
+   .container{width:min(1440px, calc(100% - 40px)); margin:0 auto}
 
-    /* TOPBAR */
-    .topbar{position:sticky;top:0;z-index:50;background:rgba(255,241,246,.86);backdrop-filter:blur(20px);border-bottom:1px solid rgba(231,90,155,.18);box-shadow:0 10px 30px rgba(201,79,134,.10)}
-    .nav{min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-    .brand{display:flex;align-items:center;gap:10px}
-    .brand img{width:40px;height:40px;object-fit:contain;border-radius:12px}
-    .brand strong{font-size:17px}
-    .nav-actions{display:flex;align-items:center;gap:10px}
-    .profile{display:flex;align-items:center;gap:9px;border-radius:999px;padding:6px 12px 6px 6px;font-weight:900;color:#7A3D65;border:1px solid rgba(46,42,59,.08);background:rgba(255,255,255,.88);cursor:pointer}
-    .profile img{width:32px;height:32px;object-fit:cover;border-radius:50%}
+    .topbar{
+      position:sticky; top:0; z-index:50;
+      background:rgba(255,241,246,.86);
+      backdrop-filter:blur(20px);
+      border-bottom:1px solid rgba(231,90,155,.18);
+      box-shadow:0 10px 30px rgba(201,79,134,.10);
+    }
+    .nav{
+      min-height:78px;
+      display:grid;
+      grid-template-columns:160px 1fr 320px;
+      gap:16px;
+      align-items:center;
+    }
+    .brand{display:flex; align-items:center; gap:10px; min-width:0}
+    .brand img{width:44px; height:44px; object-fit:contain; border-radius:14px}
+    .brand strong{display:block; font-size:18px; line-height:1.05}
+    .brand span{display:block; margin-top:3px; font-size:11px; color:var(--muted); white-space:nowrap}
+
+    .nav-links{
+      display:flex; align-items:center; justify-content:center; gap:6px;
+      overflow:auto; scrollbar-width:none;
+      
+    }
+    .nav-links::-webkit-scrollbar{display:none}
+    .nav-links a{flex:0 0 auto; padding:9px 12px; border-radius:999px; font-size:13px; font-weight:900; color:#6D4964; white-space:nowrap; transition:.18s ease}
+    .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg, var(--hot-pink), var(--pink)); color:#fff; box-shadow:0 8px 18px rgba(231,90,155,.28)}
+
+    .nav-actions{display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:0}
+
+    .icon-btn,.profile{border:1px solid rgba(46,42,59,.08); background:rgba(255,255,255,.88); box-shadow:var(--shadow-soft); cursor:pointer}
+    .icon-btn{width:44px; height:44px; border-radius:16px; color:#7A4A68; position:relative; flex:0 0 auto}
+    .dot{position:absolute; top:10px; right:10px; width:8px; height:8px; border-radius:50%; background:#E17C91}
+    .profile{display:flex; align-items:center; gap:9px; border-radius:999px; padding:6px 12px 6px 6px; font-weight:900; color:#7A3D65; flex:0 0 auto; max-width:150px}
+    .profile img{width:34px; height:34px; object-fit:cover; border-radius:50%}
+    .profile span{max-width:86px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
 
     /* BACK LINK */
     .back-link{display:inline-flex;align-items:center;gap:6px;color:var(--pink-dark);font-weight:900;font-size:13px;padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(46,42,59,.08);transition:.18s ease;margin:20px 0 16px;display:inline-flex}
@@ -293,13 +321,22 @@ $availJson = json_encode($availability);
 <header class="topbar">
   <div class="container">
     <nav class="nav">
-        <a href="student_dashboard.php" class="brand">
+         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
             <strong>Kyoshi</strong>
+            <span>Student Learning Space</span>
           </div>
         </a>
 
+        <div class="nav-links">
+                <a href="student_dashboard.php">Home</a>
+                <a href="find_language.php" class="active">Find Language</a>
+                <a href="booking_status.php">My Bookings</a>
+                <a href="my_payments.php">My Payments</a>
+                <a href="my_materials.php">My Materials</a>
+                <a href="my_assignments.php">My Assignments</a>
+            </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">
@@ -454,12 +491,12 @@ $availJson = json_encode($availability);
                 <?php if (in_array('online', $tutorModes)): ?>
                 <br>
                 <span style="color:#3D7047;">
-                💡 Good news! You can still book this tutor online.
+                Good news! You can still book this tutor online.
                 </span>
                 <?php else: ?>
                 <br>
                 <span>
-                💡 Try another location closer to the tutor, or choose a different tutor.
+                Try another location closer to the tutor, or choose a different tutor.
                 </span>
                 <?php endif; ?>
                         </div>
@@ -475,6 +512,25 @@ $availJson = json_encode($availability);
             <?php endforeach; ?>
           </div>
         </div>
+
+      <div class="form-group">
+        <label><i class="bi bi-graph-up"></i> Your Proficiency Level</label>
+        <div class="chip-group" id="levelChips">
+    <button type="button" class="sel-chip" data-val="beginner" onclick="selectSingle(this,'levelChips','selectedLevel')">
+        <i class="bi bi-emoji-smile"></i> Beginner
+    </button>
+    <button type="button" class="sel-chip" data-val="intermediate" onclick="selectSingle(this,'levelChips','selectedLevel')">
+        <i class="bi bi-emoji-neutral"></i> Intermediate
+    </button>
+    <button type="button" class="sel-chip" data-val="advanced" onclick="selectSingle(this,'levelChips','selectedLevel')">
+        <i class="bi bi-emoji-sunglasses"></i> Advanced
+    </button>
+    <button type="button" class="sel-chip" data-val="master" onclick="selectSingle(this,'levelChips','selectedLevel')">
+        <i class="bi bi-emoji-dizzy"></i> Master
+    </button>
+</div>
+<input type="hidden" id="selectedLevel" value=""> 
+    </div>
 
         <div class="form-group">
           <label><i class="bi bi-chat-left-text"></i> Notes for tutor <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
@@ -542,6 +598,7 @@ $availJson = json_encode($availability);
           <div class="summary-row"><span class="summary-label">Tutor</span><span class="summary-val"><?= e($tutor['fullname']) ?></span></div>
           <div class="summary-row"><span class="summary-label">Language</span><span class="summary-val" id="rev-lang">—</span></div>
           <div class="summary-row"><span class="summary-label">Mode</span><span class="summary-val" id="rev-mode">—</span></div>
+          <div class="summary-row"><span class="summary-label">Proficiency Level</span><span class="summary-val" id="rev-level">—</span></div>
           <div class="summary-row" id="rev-location-row" style="display:none;"><span class="summary-label">Location</span><span class="summary-val" id="rev-location">—</span></div>
           <div class="summary-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
                 <span class="summary-label">Date &amp; Time</span>
@@ -570,6 +627,7 @@ $availJson = json_encode($availability);
       <div class="summary-row"><span class="summary-label">Tutor</span><span class="summary-val"><?= e($tutor['fullname']) ?></span></div>
       <div class="summary-row"><span class="summary-label">Language</span><span class="summary-val" id="sum-lang">Not selected</span></div>
       <div class="summary-row"><span class="summary-label">Mode</span><span class="summary-val" id="sum-mode">Not selected</span></div>
+      <div class="summary-row"><span class="summary-label">Level</span><span class="summary-val" id="sum-level">Not selected</span></div>
       <div class="summary-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
   <span class="summary-label">Date &amp; Time</span>
   <div id="sum-datetime" style="width:100%;">
@@ -614,6 +672,7 @@ $availJson = json_encode($availability);
   let sessions = {};
   let langUserSelected = null;
 let modeUserSelected = null;
+let levelUserSelected = null;
 
   // ── Helpers ──────────────────────────────────────
   const DAY_NAMES  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -940,8 +999,12 @@ function toggleSlot(ds, timeVal, btn) {
   function updateSummary() {
   document.getElementById('sum-lang').textContent = langUserSelected || 'Not selected';
   document.getElementById('sum-mode').textContent = modeUserSelected
-    ? (modeUserSelected === 'online' ? '💻 Online' : '🤝 Face to Face')
+    ? (modeUserSelected === 'online' ? 'Online' : 'Face to Face')
     : 'Not selected';
+  document.getElementById('sum-level').textContent = levelUserSelected ? 
+    (levelUserSelected === 'beginner' ? 'Beginner' :
+     levelUserSelected === 'intermediate' ? 'Intermediate' :
+     levelUserSelected === 'advanced' ? 'Advanced' : 'Master') : 'Not selected';
 
   const sortedDates = Object.keys(sessions).sort();
   const slotCount   = Object.values(sessions).reduce((a, s) => a + s.slots.size, 0);
@@ -999,6 +1062,12 @@ function toggleSlot(ds, timeVal, btn) {
   const notes = document.getElementById('bookingNotes').value;
   const focus = [...document.querySelectorAll('.focus-chip input:checked')]
                   .map(c => c.value).join(', ') || '—';
+
+  const level = document.getElementById('selectedLevel').value;
+document.getElementById('rev-level').textContent = level ? 
+    (level === 'beginner' ? 'Beginner' : 
+     level === 'intermediate' ? 'Intermediate' : 
+     level === 'advanced' ? 'Advanced' : 'Master') : '—';
 
   document.getElementById('rev-lang').textContent  = lang || '—';
   document.getElementById('rev-mode').textContent  = mode === 'online' ? '💻 Online' : '🤝 Face to Face';
@@ -1066,6 +1135,7 @@ function toggleSlot(ds, timeVal, btn) {
    if (n === 2) {
   const lang  = document.getElementById('selectedLang').value;
   const mode  = document.getElementById('selectedMode').value;
+  const level = document.getElementById('selectedLevel').value;
   const focus = [...document.querySelectorAll('.focus-chip input:checked')];
   const isFace = mode === 'face_to_face';
   const locVal = document.getElementById('locationInput').value.trim();
@@ -1073,6 +1143,7 @@ function toggleSlot(ds, timeVal, btn) {
   if (!lang || !mode || focus.length === 0 || (isFace && (!locVal || !studentLatLng))) {
     showToast('Please fill in all details'); return;
   }
+  if (!level) { showToast('Please select your proficiency level'); return; }
   if (!lang) { showToast('Please select a language'); return; }
   if (!mode) { showToast('Please select a learning mode'); return; }
   if (focus.length === 0) { showToast('Please select at least one focus area'); return; }
@@ -1115,7 +1186,7 @@ function toggleSlot(ds, timeVal, btn) {
   const notes = document.getElementById('bookingNotes').value;
   const focus = [...document.querySelectorAll('.focus-chip input:checked')].map(c => c.value).join(', ');
   const loc   = document.getElementById('locationInput')?.value || '';
-
+  const level = document.getElementById('selectedLevel').value;
   const bookings = [];
   Object.entries(sessions).forEach(([ds, sess]) => {
     sess.slots.forEach(timeVal => {
@@ -1123,10 +1194,10 @@ function toggleSlot(ds, timeVal, btn) {
     });
   });
 
-  if (!lang || !mode || bookings.length === 0) {
-    showToast('Please complete all required fields');
-    return;
-  }
+  if (!lang || !mode || !level || bookings.length === 0) {  
+      showToast('Please complete all required fields');
+      return;
+   }
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -1137,14 +1208,16 @@ function toggleSlot(ds, timeVal, btn) {
   form.method = 'POST';
   form.action = 'submit_booking.php';
 
-  const fields = {
+// Add to fields object
+const fields = {
     tutor_id: tutorId,
     language: lang,
     mode:     mode,
     focus:    focus,
+    proficiency_level: level,  
     notes:    notes,
     location: loc
-  };
+};
 
   Object.entries(fields).forEach(([key, val]) => {
     const input = document.createElement('input');
@@ -1179,6 +1252,7 @@ function toggleSlot(ds, timeVal, btn) {
     document.getElementById(hiddenId).value = el.dataset.val;
     if (hiddenId === 'selectedLang') langUserSelected = el.dataset.val;
     if (hiddenId === 'selectedMode') modeUserSelected = el.dataset.val;
+    if (hiddenId === 'selectedLevel') levelUserSelected = el.dataset.val;
     updateSummary();
     }
 

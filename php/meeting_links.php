@@ -445,9 +445,10 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
             </a>
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
-                <a href="booking_requests.php">My Bookings</a>
-                <a href="learning_materials.php">My Materials</a>
-                <a href="assignments.php">My Assignments</a>
+                <a href="booking_requests.php" class="active">My Bookings</a>
+                <a href="material_overview.php">My Materials</a>
+                <a href="assignment_overview.php">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">

@@ -100,17 +100,28 @@ $totalMaterials = $stmt->get_result()->fetch_assoc()['total'] ?? 0;
    TOTAL EARNINGS
 ───────────────────────────── */
 $stmt = $conn->prepare("
-    SELECT SUM(amount) AS total
-    FROM payments p
-    JOIN bookings b ON p.booking_id = b.id
+    SELECT SUM(b.total_amount) AS total
+    FROM bookings b
+    JOIN payments p ON b.id = p.booking_id
+    LEFT JOIN session_completion sc ON b.id = sc.booking_id
+    LEFT JOIN session_reports sr ON b.id = sr.booking_id AND sr.report_status = 'submitted'
     WHERE b.tutor_id = ?
+    AND b.status = 'completed'
     AND p.status = 'verified'
+    AND (
+        (sc.student_confirmed = 1 AND sr.id IS NOT NULL)
+        OR
+        (sc.student_confirmed = 0 AND sc.no_show_type = 'student_no_show')
+    )
 ");
 
 $stmt->bind_param("i", $userID);
 $stmt->execute();
 
 $totalEarnings = $stmt->get_result()->fetch_assoc()['total'] ?? 0;
+
+$commissionRate = 0.20;
+$netEarnings = $totalEarnings * (1 - $commissionRate);
 
 /* ─────────────────────────────
    UPCOMING BOOKINGS
@@ -131,6 +142,46 @@ $stmt->execute();
 
 $upcomingSessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+/* ─────────────────────────────
+   PENDING REPORTS COUNT
+───────────────────────────── */
+$stmt = $conn->prepare("
+    SELECT COUNT(*) as count
+    FROM bookings b
+    JOIN payments p ON b.id = p.booking_id
+    LEFT JOIN session_reports sr ON b.id = sr.booking_id AND sr.report_status = 'submitted'
+    LEFT JOIN session_completion sc ON b.id = sc.booking_id
+    WHERE b.tutor_id = ?
+    AND b.status = 'completed'
+    AND p.status = 'verified'
+    AND sc.student_confirmed = 1
+    AND (sr.id IS NULL OR sr.report_status != 'submitted')
+");
+
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+
+$pendingReportCount = $stmt->get_result()->fetch_assoc()['count'] ?? 0;
+
+/* ─────────────────────────────
+   PENDING DISPUTES
+───────────────────────────── */
+$totalDisputeStmt = $conn->prepare("
+    SELECT COUNT(*) as count 
+    FROM disputes d
+    JOIN bookings b ON d.booking_id = b.id
+    WHERE b.tutor_id = ? 
+    AND d.status = 'pending' 
+    AND d.resolution_type = 'student_tutor'
+");
+$totalDisputeStmt->bind_param("i", $userID);
+$totalDisputeStmt->execute();
+$totalDisputes = $totalDisputeStmt->get_result()->fetch_assoc()['count'] ?? 0;
+
+// Check if alerts have been dismissed this session
+$showDisputeAlert = ($totalDisputes > 0 && !isset($_SESSION['dismissed_dispute_alert']));
+$showReportAlert = ($pendingReportCount > 0 && !isset($_SESSION['dismissed_report_alert']));
+
 function e($value){
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
@@ -148,7 +199,7 @@ function e($value){
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
 <style>
-
+/* Your existing CSS styles remain the same */
 *{
     margin:0;
     padding:0;
@@ -163,7 +214,6 @@ body{
     position: relative;
 }
 
-/* Dark transparent overlay */
 body::before{
     content:'';
     position:fixed;
@@ -171,7 +221,6 @@ body::before{
     background: rgba(255,255,255,0.25);
     z-index:-1;
 }
-
 
 .topbar{
     width:100%;
@@ -197,7 +246,6 @@ body::before{
     min-height: 70px;
 }
 
-/* BRAND */
 .brand{
     display:flex;
     align-items:center;
@@ -227,7 +275,6 @@ body::before{
     letter-spacing:0.5px;
 }
 
-/* NAVIGATION */
 .nav-links{
     display:flex;
     gap: 28px;
@@ -269,7 +316,6 @@ body::before{
     width:100%;
 }
 
-/* PROFILE BUTTON */
 .profile{
     display:flex;
     align-items:center;
@@ -306,7 +352,6 @@ body::before{
     color:#b0cbe6;
 }
 
-/* DROPDOWN */
 .dropdown{
     position:absolute;
     top:calc(100% + 10px);
@@ -343,7 +388,6 @@ body::before{
     margin:0;
 }
 
-/* MAIN CONTENT CARDS - Glass effect */
 .main{
     width:min(1280px,92%);
     margin:32px auto 48px;
@@ -355,24 +399,12 @@ body::before{
     align-items:center;
     gap:50px;
     flex-wrap:wrap;
-
-    background:
-    linear-gradient(
-        135deg,
-        rgba(29,49,86,0.92),
-        rgba(73,104,148,0.88)
-    );
-
+    background: linear-gradient(135deg, rgba(29,49,86,0.92), rgba(73,104,148,0.88));
     border-radius:32px;
     padding:42px;
-
     color:white;
-
-    box-shadow:
-    0 10px 30px rgba(0,0,0,0.12);
-
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
     border:1px solid rgba(255,255,255,0.15);
-
     overflow:hidden;
     position:relative;
 }
@@ -380,17 +412,12 @@ body::before{
 .hero::before{
     content:'';
     position:absolute;
-
     width:300px;
     height:300px;
-
     background:rgba(255,255,255,0.08);
-
     border-radius:50%;
-
     top:-120px;
     right:-80px;
-
     filter:blur(10px);
 }
 
@@ -407,14 +434,6 @@ body::before{
     font-size:16px;
     line-height:1.7;
     max-width:560px;
-}
-
-.hero{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:40px;
-    flex-wrap:wrap;
 }
 
 .hero-left{
@@ -434,14 +453,11 @@ body::before{
     background:rgba(255,255,255,0.15);
     border:1px solid rgba(255,255,255,0.18);
     backdrop-filter:blur(10px);
-
     border-radius:20px;
     padding:18px;
-
     display:flex;
     align-items:center;
     gap:14px;
-
     transition:0.25s;
 }
 
@@ -454,13 +470,12 @@ body::before{
     width:52px;
     height:52px;
     border-radius:16px;
-
     display:flex;
     align-items:center;
     justify-content:center;
-
     font-size:22px;
     flex-shrink:0;
+    background:rgba(255,255,255,0.2);
 }
 
 .hero-card span{
@@ -476,7 +491,6 @@ body::before{
     color:white;
 }
 
-/* SECTIONS */
 .section{
     margin-top:40px;
 }
@@ -489,53 +503,55 @@ body::before{
     letter-spacing:-0.2px;
 }
 
-/* QUICK BUTTONS */
-.quick-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
-    gap:20px;
+.quick-actions-section {
+    margin-top: 0;
 }
 
-.quick-btn{
-    background:rgba(255,255,255,0.95);
-    backdrop-filter: blur(5px);
-    border:1px solid rgba(255,255,255,0.3);
-    border-radius:24px;
-    padding:22px 20px;
-    text-align:left;
-    cursor:pointer;
-    transition:0.25s;
-    box-shadow:0 2px 8px rgba(0,0,0,0.03);
+.quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
 }
 
-.quick-btn:hover{
-    transform:translateY(-4px);
-    background:white;
-    border-color:#cbd5e1;
-    box-shadow:0 14px 30px rgba(0,0,0,0.08);
+.quick-card {
+    background: white;
+    border-radius: 20px;
+    padding: 24px 20px;
+    text-decoration: none;
+    transition: all 0.25s;
+    border: 1px solid #eef2f7;
+    display: block;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
-.quick-btn i{
-    font-size:28px;
-    margin-bottom:16px;
-    display:block;
-    color:#1d3156;
+.quick-card:hover {
+    transform: translateY(-4px);
+    border-color: #E75A9B;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.08);
 }
 
-.quick-btn h4{
-    margin-bottom:8px;
-    font-size:17px;
-    font-weight:700;
-    color:#0f172a;
+.quick-card i {
+    font-size: 32px;
+    color: #E75A9B;
+    margin-bottom: 16px;
+    display: block;
 }
 
-.quick-btn p{
-    font-size:13px;
-    line-height:1.5;
-    color:#5b6e8c;
+.quick-card span {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1d3156;
+    display: block;
+    margin-bottom: 6px;
 }
 
-/* UPCOMING SESSIONS */
+.quick-card small {
+    font-size: 12px;
+    color: #64748b;
+    display: block;
+    line-height: 1.4;
+}
+
 .session-box{
     background:rgba(255,255,255,0.95);
     backdrop-filter: blur(5px);
@@ -587,7 +603,11 @@ body::before{
     color:#1e6f3f;
 }
 
-/* RESPONSIVE */
+.dismissible-alert {
+    position: relative;
+    transition: opacity 0.3s ease;
+}
+
 @media(max-width:1000px){
     .nav{
         flex-wrap: wrap;
@@ -604,6 +624,9 @@ body::before{
     .profile{
         padding: 4px 12px;
     }
+    .hero-stats{
+        grid-template-columns: 1fr 1fr;
+    }
 }
 
 @media(max-width:720px){
@@ -613,7 +636,7 @@ body::before{
     .hero h1{
         font-size: 24px;
     }
-    .stats-grid{
+    .hero-stats{
         gap: 14px;
     }
     .nav-links{
@@ -623,57 +646,6 @@ body::before{
         font-size: 12px;
     }
 }
-
-/* QUICK ACTIONS */
-.quick-actions-section {
-    margin-top: 0;
-}
-
-.quick-actions-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 20px;
-}
-
-.quick-card {
-    background: white;
-    border-radius: 20px;
-    padding: 24px 20px;
-    text-decoration: none;
-    transition: all 0.25s;
-    border: 1px solid #eef2f7;
-    display: block;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-}
-
-.quick-card:hover {
-    transform: translateY(-4px);
-    border-color: #E75A9B;
-    box-shadow: 0 14px 30px rgba(0,0,0,0.08);
-}
-
-.quick-card i {
-    font-size: 32px;
-    color: #E75A9B;
-    margin-bottom: 16px;
-    display: block;
-}
-
-.quick-card span {
-    font-size: 16px;
-    font-weight: 700;
-    color: #1d3156;
-    display: block;
-    margin-bottom: 6px;
-}
-
-.quick-card small {
-    font-size: 12px;
-    color: #64748b;
-    display: block;
-    line-height: 1.4;
-}
-
 </style>
 </head>
 
@@ -691,11 +663,12 @@ body::before{
     </a>
 
     <div class="nav-links">
-    <a href="tutor_dashboard.php" class="active">Dashboard</a>
-    <a href="booking_requests.php">My Bookings</a>
-    <a href="material_overview.php">My Materials</a>
-    <a href="assignment_overview.php">My Assignments</a>
-</div>
+        <a href="tutor_dashboard.php" class="active">Dashboard</a>
+        <a href="booking_requests.php">My Bookings</a>
+        <a href="material_overview.php">My Materials</a>
+        <a href="assignment_overview.php">My Assignments</a>
+        <a href="view_session_reports.php">My Reports</a>
+    </div>
 
     <div style="position:relative;">
         <button class="profile" onclick="toggleDropdown()">
@@ -704,7 +677,7 @@ body::before{
             <i class="bi bi-chevron-down"></i>
         </button>
         <div class="dropdown" id="profileDropdown">
-            <a href="tutor_profile.php">
+            <a href="teacher_profile.php">
                 <i class="bi bi-person-circle"></i> My Profile
             </a>
             <a href="earnings.php">
@@ -719,26 +692,18 @@ body::before{
 </nav>
 </div>
 </header>
-<!-- HERO -->
- <div class="main">
-<div class="hero">
 
+<div class="main">
+
+<div class="hero">
     <div class="hero-left">
         <h1>Welcome Back, <?= e($firstName) ?></h1>
-
-        <p>
-            Manage sessions, bookings, materials,
-            and student interactions — all in one place.
-        </p>
+        <p>Manage sessions, bookings, materials, and student interactions — all in one place.</p>
     </div>
 
     <div class="hero-stats">
-
         <div class="hero-card">
-            <div class="hero-icon bg1">
-                <i class="bi bi-calendar-check"></i>
-            </div>
-
+            <div class="hero-icon"><i class="bi bi-calendar-check"></i></div>
             <div>
                 <span>Total Bookings</span>
                 <h3><?= e($totalBookings) ?></h3>
@@ -746,10 +711,7 @@ body::before{
         </div>
 
         <div class="hero-card">
-            <div class="hero-icon bg2">
-                <i class="bi bi-hourglass-split"></i>
-            </div>
-
+            <div class="hero-icon"><i class="bi bi-hourglass-split"></i></div>
             <div>
                 <span>Pending Requests</span>
                 <h3><?= e($pendingBookings) ?></h3>
@@ -757,10 +719,7 @@ body::before{
         </div>
 
         <div class="hero-card">
-            <div class="hero-icon bg3">
-                <i class="bi bi-book"></i>
-            </div>
-
+            <div class="hero-icon"><i class="bi bi-book"></i></div>
             <div>
                 <span>Materials Uploaded</span>
                 <h3><?= e($totalMaterials) ?></h3>
@@ -768,80 +727,131 @@ body::before{
         </div>
 
         <div class="hero-card">
-            <div class="hero-icon bg4">
-                <i class="bi bi-wallet2"></i>
-            </div>
-
+            <div class="hero-icon"><i class="bi bi-wallet2"></i></div>
             <div>
-                <span>Total Earnings</span>
-                <h3>RM <?= number_format($totalEarnings,2) ?></h3>
+                <span>Net Earnings</span>
+                <h3>RM <?= number_format($netEarnings, 2) ?></h3>
+                <span style="font-size: 10px; margin-top: 2px;">Gross: RM <?= number_format($totalEarnings, 2) ?></span>
             </div>
         </div>
-
     </div>
-
 </div>
 
-    <!-- QUICK ACTIONS -->
-    <div class="section">
-        <h2 class="section-title">Quick Actions</h2>
-        <div class="quick-actions-section">
-    <div class="quick-actions-grid">
-        <a href="select_booking.php?action=upload" class="quick-card">
-            <i class="bi bi-upload"></i>
-            <span>Upload Material</span>
-            <small>Share resources with students</small>
-        </a>
-        <a href="select_booking.php?action=assignment" class="quick-card">
-            <i class="bi bi-pencil-square"></i>
-            <span>Create Assignment</span>
-            <small>Give homework or tasks</small>
-        </a>
-        <a href="meeting_links.php" class="quick-card">
-            <i class="bi bi-camera-video"></i>
-            <span>Meeting Links</span>
-            <small>Manage session links</small>
-        </a>
-        <a href="availability.php" class="quick-card">
-            <i class="bi bi-calendar-week"></i>
-            <span>Set Availability</span>
-            <small>Update your schedule</small>
+<?php if ($showDisputeAlert): ?>
+<div id="disputeAlert" class="alert alert-warning dismissible-alert" style="background: #fff3cd; border-left: 4px solid #f59e0b; margin-bottom: 20px; padding: 15px 20px; border-radius: 12px; position: relative;">
+    <button onclick="dismissAlert('disputeAlert', 'dispute')" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 20px; cursor: pointer; color: #856404;">&times;</button>
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px; padding-right: 30px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <i class="bi bi-exclamation-triangle-fill" style="font-size: 24px; color: #f59e0b;"></i>
+            <div>
+                <strong style="color: #856404;">Pending Disputes Require Your Attention</strong>
+                <p style="margin: 5px 0 0; color: #856404; font-size: 13px;">
+                    You have <strong><?= $totalDisputes ?></strong> pending dispute<?= $totalDisputes > 1 ? 's' : '' ?> that need resolution.
+                    Please resolve them within 24 hours.
+                </p>
+            </div>
+        </div>
+        <a href="booking_requests.php?tab=disputes" class="btn-pink" style="background: #f59e0b; color: white; padding: 8px 20px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 13px;">
+            <i class="bi bi-eye"></i> View Disputes
         </a>
     </div>
 </div>
+<?php endif; ?>
+<br>
+<?php if ($showReportAlert): ?>
+<div id="reportAlert" class="alert alert-warning dismissible-alert" style="background: #fff3e0; border-left: 4px solid #f59e0b; padding: 16px 20px; margin-bottom: 24px; border-radius: 16px; position: relative;">
+    <button onclick="dismissAlert('reportAlert', 'report')" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 20px; cursor: pointer; color: #b45309;">&times;</button>
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px; padding-right: 30px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b; font-size: 24px;"></i>
+            <div>
+                <strong style="color: #92400e;">Action Required: <?= $pendingReportCount ?> Session Report<?= $pendingReportCount != 1 ? 's' : '' ?> Pending</strong>
+                <p style="margin: 4px 0 0; font-size: 13px; color: #b45309;">Payment will only be released after you submit session reports.</p>
+            </div>
+        </div>
+        <a href="submit_session_report.php" style="background: #f59e0b; color: white; padding: 10px 24px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 13px;">
+            Submit Reports Now
+        </a>
     </div>
+</div>
+<?php endif; ?>
 
-    <!-- UPCOMING SESSIONS -->
-    <div class="section">
-        <h2 class="section-title">Upcoming Sessions</h2>
-        <div class="session-box">
-            <?php if(empty($upcomingSessions)): ?>
-                <p style="color:#5c6f91; padding: 16px 0;">📭 No upcoming sessions scheduled.</p>
-            <?php else: ?>
-                <?php foreach($upcomingSessions as $session): ?>
-                    <div class="session-item">
-                        <div class="session-left">
-                            <h4><?= e($session['student_name']) ?></h4>
-                            <p>
-                                <?= e($session['language']) ?> •
-                                <?= date('d M Y', strtotime($session['booking_date'])) ?> •
-                                <?= date('g:i A', strtotime($session['booking_time'])) ?>
-                            </p>
-                        </div>
-                        <div class="status <?= e($session['status']) ?>">
-                            <?= ucfirst(e($session['status'])) ?>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
+<!-- QUICK ACTIONS -->
+<div class="section">
+    <h2 class="section-title">Quick Actions</h2>
+    <div class="quick-actions-section">
+        <div class="quick-actions-grid">
+            <a href="select_booking.php?action=upload" class="quick-card">
+                <i class="bi bi-upload"></i>
+                <span>Upload Material</span>
+                <small>Share resources with students</small>
+            </a>
+            <a href="select_booking.php?action=assignment" class="quick-card">
+                <i class="bi bi-pencil-square"></i>
+                <span>Create Assignment</span>
+                <small>Give homework or tasks</small>
+            </a>
+            <a href="meeting_links.php" class="quick-card">
+                <i class="bi bi-camera-video"></i>
+                <span>Meeting Links</span>
+                <small>Manage session links</small>
+            </a>
+            <a href="availability.php" class="quick-card">
+                <i class="bi bi-calendar-week"></i>
+                <span>Set Availability</span>
+                <small>Update your schedule</small>
+            </a>
         </div>
     </div>
+</div>
+
+<!-- UPCOMING SESSIONS -->
+<div class="section">
+    <h2 class="section-title">Upcoming Sessions</h2>
+    <div class="session-box">
+        <?php if(empty($upcomingSessions)): ?>
+            <p style="color:#5c6f91; padding: 16px 0;">📭 No upcoming sessions scheduled.</p>
+        <?php else: ?>
+            <?php foreach($upcomingSessions as $session): ?>
+                <div class="session-item">
+                    <div class="session-left">
+                        <h4><?= e($session['student_name']) ?></h4>
+                        <p>
+                            <?= e($session['language']) ?> •
+                            <?= date('d M Y', strtotime($session['booking_date'])) ?> •
+                            <?= date('g:i A', strtotime($session['booking_time'])) ?>
+                        </p>
+                    </div>
+                    <div class="status <?= e($session['status']) ?>">
+                        <?= ucfirst(e($session['status'])) ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+</div>
 </div>
 
 <script>
 function toggleDropdown(){
     const dropdown = document.getElementById('profileDropdown');
     dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+}
+
+function dismissAlert(alertId, type) {
+    const alert = document.getElementById(alertId);
+    if (alert) {
+        alert.style.transition = 'opacity 0.3s ease';
+        alert.style.opacity = '0';
+        setTimeout(() => {
+            alert.style.display = 'none';
+            fetch('dismiss_alert.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'type=' + type
+            });
+        }, 300);
+    }
 }
 
 window.addEventListener('click', function(e){

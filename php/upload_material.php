@@ -49,6 +49,7 @@ $stmt = $conn->prepare("
     SELECT b.*, 
            u.fullname AS student_name,
            u.email    AS student_email,
+           u.id       AS student_id,
            b.focus,
            b.proficiency_level
     FROM bookings b
@@ -134,18 +135,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "Please enter a valid URL (http:// or https://).";
             $messageType = "error";
         } else {
-            $stmt = $conn->prepare("
-                INSERT INTO learning_materials
-                    (tutor_id, booking_id, title, description, feedback, material_url,
-                    is_url, file_type, material_type, proficiency_level, uploaded_at)
-                VALUES (?, ?, ?, ?, ?, ?, 1, 'url', ?, ?, NOW())
-            ");
-            $stmt->bind_param("iisssssss", $userID, $booking_id, $title, $description, $feedback, $material_url, $material_type, $proficiency_level);
-            
+           $stmt = $conn->prepare("
+    INSERT INTO learning_materials
+                (tutor_id, student_id, booking_id, title, description, feedback, material_url,
+                is_url, file_type, material_type, proficiency_level, uploaded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'url', ?, ?, NOW())
+        ");
+        $stmt->bind_param("iiissssss",
+            $userID,                    // tutor_id
+            $booking['student_id'],     // student_id
+            $booking_id,                // booking_id
+            $title,                     // title
+            $description,               // description
+            $feedback,                  // feedback
+            $material_url,              // material_url
+            $material_type,             // material_type
+            $proficiency_level          // proficiency_level
+        );
+                    
             if ($stmt->execute()) {
                 $stmt->close();
                 insertNotification($conn, $booking['student_id'],
-                    "New Learning Material", "{$tutorName} uploaded: {$title}", "learning_materials.php?booking_id={$booking_id}");
+                    "New Learning Material", "{$tutorName} uploaded: {$title}", "view_material.php?id={$booking_id}");
                 sendMaterialEmail($booking, $title, $description, $material_type, $tutorName);
                 header("Location: " . $backUrl . (strpos($backUrl, '?') !== false ? '&' : '?') . "success=Material added!");
                 exit();
@@ -172,16 +183,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $origName = $_FILES['material_file']['name'];
                 $fileType = $_FILES['material_file']['type'];
                 $fileSize = $_FILES['material_file']['size'];
-                
                 $stmt = $conn->prepare("
                     INSERT INTO learning_materials
-                        (tutor_id, booking_id, title, description, feedback,
+                        (tutor_id, student_id, booking_id, title, description, feedback,
                         file_name, file_path, file_type, file_size,
                         is_url, material_type, proficiency_level, uploaded_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NOW())
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NOW())
                 ");
-                $stmt->bind_param("iisssssssiss", $userID, $booking_id, $title, $description, $feedback, $origName, $filePath, $fileType, $fileSize, $material_type, $proficiency_level);
-                
+                $stmt->bind_param("iiissssssiss", 
+                    $userID,                    // tutor_id
+                    $booking['student_id'],     // student_id - THIS WAS MISSING
+                    $booking_id,                // booking_id
+                    $title,                     // title
+                    $description,               // description
+                    $feedback,                  // feedback
+                    $origName,                  // file_name
+                    $filePath,                  // file_path
+                    $fileType,                  // file_type
+                    $fileSize,                  // file_size
+                    $material_type,             // material_type
+                    $proficiency_level          // proficiency_level
+                );
+                            
                 if ($stmt->execute()) {
                     $stmt->close();
                     insertNotification($conn, $booking['student_id'],
@@ -320,6 +343,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background:#f0f9ff; border-radius:12px; padding:12px 16px;
             margin-bottom:20px; display:flex; align-items:center; gap:12px;
         }
+        .toast-message.info {
+            background: #64748b;
+        }
         .info-bar i { font-size:24px; color:#0284c7; }
         .info-bar strong { display:block; font-size:14px; color:#1d3156; }
         .info-bar span { font-size:12px; color:#64748b; }
@@ -343,6 +369,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .toast-message.error {
             background: #dc3545;
         }
+
+        .file-preview-remove {
+    background: none;
+    border: none;
+    color: #dc2626;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0 5px;
+    transition: 0.2s;
+}
+.file-preview-remove:hover {
+    color: #b91c1c;
+    transform: scale(1.1);
+}
+.file-preview {
+    display: none;
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #eef2ff;
+    border-radius: 12px;
+    font-size: 13px;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+}
         @keyframes slideIn {
             from {
                 transform: translateX(100%);
@@ -352,7 +403,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 transform: translateX(0);
                 opacity: 1;
             }
-        }
+}
+        
         @media (max-width:768px) {
             .main { padding:0 16px; }
             .card { padding:20px; }
@@ -376,11 +428,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </a>
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
-                <a href="availability.php">Availability</a>
-                <a href="booking_requests.php">Requests</a>
-                <a class="active" href="learning_materials.php">Materials</a>
-                <a href="earnings.php">Earnings</a>
-                <a href="meeting_links.php">Meeting Links</a>
+                <a href="booking_requests.php">My Bookings</a>
+                <a href="material_overview.php" class="active">My Materials</a>
+                <a href="assignment_overview.php">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
@@ -389,7 +440,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -462,11 +513,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <p>Drag & drop or click to browse</p>
                         <small>PDF, Word, PPT, Images, MP4, ZIP (Max 50MB)</small>
                     </div>
-                    <input type="file" name="material_file" id="fileInput" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.zip" onchange="previewFile(this)">
+                    <input type="file" name="material_file" id="fileInput" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.mp3,.zip" onchange="previewFile(this)">
                 </div>
                 <div class="file-preview" id="filePreview">
                     <i class="bi bi-file-earmark-check"></i>
-                    <div><strong id="fileName"></strong> <span id="fileSize"></span></div>
+                    <div style="flex: 1;"><strong id="fileName"></strong> <span id="fileSize"></span></div>
+                    <button type="button" class="file-preview-remove" id="removeFileBtn" style="background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px;" onclick="removeSelectedFile()">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
                 </div>
             </div>
 
@@ -540,19 +594,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         });
     });
 
-    function previewFile(input) {
-        const preview = document.getElementById('filePreview');
-        const nameEl = document.getElementById('fileName');
-        const sizeEl = document.getElementById('fileSize');
-        if (input.files && input.files[0]) {
-            const f = input.files[0];
-            nameEl.textContent = f.name;
-            sizeEl.textContent = '(' + (f.size / 1024 / 1024).toFixed(2) + ' MB)';
-            preview.style.display = 'flex';
-        } else {
-            preview.style.display = 'none';
-        }
+    function removeSelectedFile() {
+    // Clear the file input
+    const fileInput = document.getElementById('fileInput');
+    fileInput.value = '';
+    
+    // Hide the preview
+    const preview = document.getElementById('filePreview');
+    preview.style.display = 'none';
+    
+    // Clear the file name and size display
+    document.getElementById('fileName').textContent = '';
+    document.getElementById('fileSize').textContent = '';
+    
+    showToast('File removed', 'info');
+}
+
+function previewFile(input) {
+    const preview = document.getElementById('filePreview');
+    const nameEl = document.getElementById('fileName');
+    const sizeEl = document.getElementById('fileSize');
+    if (input.files && input.files[0]) {
+        const f = input.files[0];
+        nameEl.textContent = f.name;
+        sizeEl.textContent = '(' + (f.size / 1024 / 1024).toFixed(2) + ' MB)';
+        preview.style.display = 'flex';
+    } else {
+        preview.style.display = 'none';
     }
+}
 
     // Form validation before submit
     document.getElementById('uploadForm').addEventListener('submit', function(e) {

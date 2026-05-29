@@ -57,9 +57,6 @@ $conn->query("
     )
 ");
 
-// ============================================================
-// SEND EMAIL NOTIFICATIONS FOR AUTO-CANCELLED BOOKINGS
-// ============================================================
 require_once '../vendor/autoload.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -154,15 +151,14 @@ $displayName = $user['fullname'];
 $profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
 
 $filterStatus  = $_GET['status'] ?? 'all';
-$filterDateFrom = $_GET['date_from'] ?? '';
-$filterDateTo   = $_GET['date_to'] ?? '';
+$filterDateFrom = isset($_GET['date_from']) && !empty($_GET['date_from']) ? $_GET['date_from'] : '';
+$filterDateTo   = isset($_GET['date_to']) && !empty($_GET['date_to']) ? $_GET['date_to'] : '';
 $sortBy = $_GET['sort'] ?? 'booked_newest';
 
 $where = "WHERE b.student_id = ?";
 $params = [$userID];
 $types  = "i";
-
-if ($filterStatus !== 'all' && in_array($filterStatus, ['pending','accepted','confirmed','completed','cancelled','rescheduled'])) {
+if ($filterStatus !== 'all' && in_array($filterStatus, ['pending','accepted','confirmed','completed','cancelled','rescheduled','disputed'])) {
     $where .= " AND b.status = ?";
     $params[] = $filterStatus;
     $types .= "s";
@@ -227,12 +223,11 @@ $countStmt = $conn->prepare("SELECT status, COUNT(*) as cnt FROM bookings WHERE 
 $countStmt->bind_param("i", $userID);
 $countStmt->execute();
 $countResult = $countStmt->get_result();
-$counts = ['all'=>0,'pending'=>0,'accepted'=>0,'confirmed'=>0,'rescheduled'=>0,'completed'=>0,'cancelled'=>0];
+$counts = ['all'=>0,'pending'=>0,'accepted'=>0,'confirmed'=>0,'rescheduled'=>0,'completed'=>0,'cancelled'=>0,'disputed'=>0];
 while ($row = $countResult->fetch_assoc()) {
     $counts[$row['status']] = $row['cnt'];
     $counts['all'] += $row['cnt'];
 }
-$counts['all'] = array_sum($counts);
 
 function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 function statusCfg($s) {
@@ -268,6 +263,12 @@ function statusCfg($s) {
             'icon' => 'bi-patch-check-fill',
             'bg' => 'rgba(221,211,255,.78)',
             'color' => '#7648B8'
+        ],
+        'disputed' => [
+            'label' => 'Disputed',
+            'icon' => 'bi-exclamation-triangle-fill',
+            'bg' => 'rgba(255,200,200,.78)',
+            'color' => '#C94F4F'
         ],
         'cancelled' => [
             'label' => 'Cancelled',
@@ -430,7 +431,6 @@ function statusCfg($s) {
     .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,18px);opacity:0;pointer-events:none;z-index:99;background:#8E3F70;color:#fff;border-radius:999px;padding:12px 18px;font-size:13px;font-weight:900;transition:.2s ease}
     .toast.show{opacity:1;transform:translate(-50%,0)}
 
-    /* CANCEL MODAL */
     .modal-overlay{position:fixed;inset:0;background:rgba(52,38,53,.5);backdrop-filter:blur(6px);z-index:200;display:none;place-items:center;}
     .modal-overlay.show{display:grid}
     .modal-box{background:white;border-radius:24px;padding:28px;max-width:560px;width:calc(100% - 40px);box-shadow:0 30px 60px rgba(201,79,134,.2);max-height:80vh;overflow-y:auto;}
@@ -534,6 +534,7 @@ function statusCfg($s) {
           <a class="active" href="booking_status.php">My Bookings</a>
           <a href="my_payments.php">My Payments</a>
           <a href="my_materials.php">My Materials</a>
+          <a href="my_assignments.php">My Assignments</a>
         </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
@@ -592,6 +593,7 @@ function statusCfg($s) {
             <option value="confirmed" <?= $filterStatus==='confirmed'?'selected':'' ?>>Confirmed (<?= $counts['confirmed'] ?>)</option>
             <option value="completed" <?= $filterStatus==='completed'?'selected':'' ?>>Completed (<?= $counts['completed'] ?>)</option>
             <option value="rescheduled" <?= $filterStatus==='rescheduled'?'selected':'' ?>>Rescheduled (<?= $counts['rescheduled'] ?>)</option>
+            <option value="disputed" <?= $filterStatus==='disputed'?'selected':'' ?>>Disputed (<?= $counts['disputed'] ?? 0 ?>)</option>
             <option value="cancelled" <?= $filterStatus==='cancelled'?'selected':'' ?>>Cancelled (<?= $counts['cancelled'] ?>)</option>
             </select>
         </div>
@@ -675,11 +677,21 @@ function statusCfg($s) {
   $cfg = statusCfg($b['status']);
   $tutorPic = !empty($b['tutor_pic']) ? '../uploads/profiles/' . $b['tutor_pic'] : $assetBase . '/profile-tutor.png';
   // Determine which mode this card belongs to
-  $checkboxClass = '';
-  if (in_array($b['status'], ['confirmed']))              $checkboxClass = 'checkbox-reschedule';
-  elseif (in_array($b['status'], ['pending','accepted'])) $checkboxClass = 'checkbox-cancel';
-  elseif ($b['status'] === 'completed' && !$b['rated'])   $checkboxClass = 'checkbox-rate';
+  // Determine which mode this card belongs to
+$checkboxClass = '';
+// Check if session is in the future for rescheduling
+$session_datetime = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
+$is_future_session = $session_datetime > time();
 
+if (in_array($b['status'], ['confirmed']) && $is_future_session) {
+    $checkboxClass = 'checkbox-reschedule';  // Only future confirmed sessions can be rescheduled
+}
+elseif (in_array($b['status'], ['pending','accepted'])) {
+    $checkboxClass = 'checkbox-cancel';  // Pending/Accepted can be cancelled
+}
+elseif ($b['status'] === 'completed' && !$b['rated']) {
+    $checkboxClass = 'checkbox-rate';  // Completed but not rated can be rated
+}
   $bulkable = !empty($checkboxClass);
 ?>
 <div class="booking-row">
@@ -812,15 +824,37 @@ $is_completed = ($b['status'] === 'completed');
         <?php endif; ?>
 
 <?php elseif ($b['status'] === 'confirmed'): ?>
-    <a href="reschedule_booking.php?id=<?= $b['id'] ?>" class="btn-action ghost">
-        <i class="bi bi-calendar-plus"></i> Reschedule
-</a>
+    <?php 
+    // Check if session is in the future (not ended)
+    $session_datetime = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
+    $is_future_session = $session_datetime > time();
+    ?>
+    <?php if ($is_future_session): ?>
+        <a href="reschedule_booking.php?id=<?= $b['id'] ?>" class="btn-action ghost">
+            <i class="bi bi-calendar-plus"></i> Reschedule
+        </a>
+    <?php else: ?>
+        <span class="btn-action muted">
+            <i class="bi bi-clock-history"></i> Session Ended
+        </span>
+    <?php endif; ?>
 
 <?php elseif ($b['status'] === 'rescheduled'): ?>
-    <span class="btn-action muted">
-        <i class="bi bi-calendar-check"></i> Reschedule Requested
-    </span>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <span class="btn-action muted">
+            <i class="bi bi-calendar-check"></i> Reschedule Requested
+        </span>
+        <button class="btn-action ghost" onclick="cancelRescheduleRequest(<?= $b['id'] ?>)">
+            <i class="bi bi-x-circle"></i> Cancel Reschedule Request
+        </button>
+    </div>
 
+<?php elseif ($b['status'] === 'disputed'): ?>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <span class="btn-action muted" style="background:rgba(255,200,200,.78); color:#C94F4F;">
+            <i class="bi bi-exclamation-triangle-fill"></i> Under Review
+        </span>
+    </div>
 <?php elseif ($b['status'] === 'completed'): ?>
     <?php if ($b['rated']): ?>
         <span class="btn-action muted"><i class="bi bi-star-fill"></i> Rated</span>
@@ -890,6 +924,22 @@ $is_completed = ($b['status'] === 'completed');
         </button>
       </div>
     </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="rescheduleModal">
+  <div class="modal-box">
+    <h3 id="rescheduleModalTitle"><i class="bi bi-calendar-plus" style="color: #FFB800;"></i> Reschedule Sessions</h3>
+    <div id="rescheduleModalContent"></div>
+    <div class="modal-actions" id="rescheduleModalActions"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ratingModal">
+  <div class="modal-box">
+    <h3 id="ratingModalTitle"><i class="bi bi-star-fill" style="color: #FFB800;"></i> Rate Sessions</h3>
+    <div id="ratingModalContent"></div>
+    <div class="modal-actions" id="ratingModalActions"></div>
   </div>
 </div>
 <script>
@@ -1015,20 +1065,14 @@ function bulkAction(type) {
     if (ids.length === 1) {
         window.location.href = 'booking_detail.php?id=' + ids[0] + '#rate';
     } else {
-        const firstUrl = 'booking_detail.php?id=' + ids[0] + '#rate';
-
         const rateList = checked.map(c => `
             <div style="padding:12px 14px;background:rgba(221,211,255,.3);border-radius:12px;
                  margin-bottom:8px;border:1px solid rgba(167,123,232,.15);">
-
                 <div style="font-size:13px;font-weight:900;color:#342635;margin-bottom:10px;">
                     <i class="bi bi-star-fill" style="color:#FFB800;"></i>
                     ${c.dataset.lang} with ${c.dataset.tutor}
                 </div>
-
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-
-                    <!-- Session date/time -->
                     <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
                          background:rgba(255,241,246,.8);border:1px solid rgba(242,138,178,.2);">
                         <div style="font-size:10px;font-weight:900;color:#C94F86;
@@ -1042,11 +1086,7 @@ function bulkAction(type) {
                             <i class="bi bi-clock"></i> ${c.dataset.time}
                         </div>
                     </div>
-
-                    <!-- Arrow -->
                     <div style="font-size:18px;color:#FFB800;font-weight:900;">→</div>
-
-                    <!-- Rating placeholder -->
                     <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
                          background:rgba(255,184,0,.1);border:1px dashed rgba(255,184,0,.4);">
                         <div style="font-size:10px;font-weight:900;color:#A06B00;
@@ -1060,99 +1100,88 @@ function bulkAction(type) {
                             on next page
                         </div>
                     </div>
-
                 </div>
             </div>
         `).join('');
 
-        document.querySelector('#cancelModal h3').textContent = 'Rate ' + ids.length + ' Sessions?';
-        document.querySelector('#cancelModal p').innerHTML = `
+         document.getElementById('ratingModalContent').innerHTML = `
             <p style="margin:0 0 10px;font-size:13px;color:var(--muted);">
                 Rating <strong>${ids.length} completed session${ids.length > 1 ? 's' : ''}</strong> 
-                <br> You'll rate each one in order <br>
+                <br> You'll rate each one in order
             </p>
             ${rateList}
         `;
-        document.querySelector('#cancelModal .modal-actions').innerHTML = `
-            <button onclick="closeCancelModal()" style="padding:10px 20px;border-radius:999px;
+        
+        // When "Start Rating" is clicked, redirect to rate_chain.php with the IDs
+        document.getElementById('ratingModalActions').innerHTML = `
+            <button onclick="closeRatingModal()" style="padding:10px 20px;border-radius:999px;
              border:1px solid rgba(46,42,59,.12);background:none;color:#7A5570;
              font-size:13px;font-weight:900;cursor:pointer;">Cancel</button>
-            <a href="${firstUrl}" style="padding:10px 20px;border-radius:999px;border:none;
+            <a href="rate_chain.php?ids=${ids.join(',')}" style="padding:10px 20px;border-radius:999px;border:none;
              background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;
              font-size:13px;font-weight:900;text-decoration:none;display:inline-flex;
              align-items:center;gap:6px;">
              <i class="bi bi-star-fill"></i> Start Rating
             </a>`;
-        document.getElementById('cancelModal').classList.add('show');
+        document.getElementById('ratingModal').classList.add('show');
     }
- } else if (type === 'reschedule') {
+    return;
+} else if (type === 'reschedule') {
     const ids = checked.map(c => c.dataset.id);
     if (ids.length === 1) {
         window.location.href = 'reschedule_booking.php?id=' + ids[0];
     } else {
-        // Build the chained URL: first booking, with next= pointing to second, etc.
-        const firstUrl = 'reschedule_booking.php?id=' + ids[0] + '&next=' + ids[1];
-
-        // Show confirmation
-        document.querySelector('#cancelModal h3').textContent = 'Reschedule ' + ids.length + ' Bookings?';
-        const sessionList = checked.map(c => `
-    <div style="padding:12px 14px;background:rgba(255,241,246,.7);border-radius:12px;
-         margin-bottom:8px;border:1px solid rgba(242,138,178,.15);">
+        const firstUrl = 'reschedule_booking.php?id=' + ids[0] + '&next=' + ids.slice(1).join(',');
         
-        <div style="font-size:13px;font-weight:900;color:#342635;margin-bottom:10px;">
-            <i class="bi bi-translate" style="color:var(--hot-pink);"></i> 
-            ${c.dataset.lang} with ${c.dataset.tutor}
-        </div>
-
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            
-            <!-- Current date -->
-            <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
-                 background:rgba(255,200,200,.4);border:1px solid rgba(163,95,63,.2);">
-                <div style="font-size:10px;font-weight:900;color:#A35F3F;
-                     text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
-                    Current
+        const sessionList = checked.map(c => `
+            <div style="padding:12px 14px;background:rgba(255,241,246,.7);border-radius:12px;
+                 margin-bottom:8px;border:1px solid rgba(242,138,178,.15);">
+                <div style="font-size:13px;font-weight:900;color:#342635;margin-bottom:10px;">
+                    <i class="bi bi-translate" style="color:var(--hot-pink);"></i> 
+                    ${c.dataset.lang} with ${c.dataset.tutor}
                 </div>
-                <div style="font-size:12px;font-weight:700;color:#342635;">
-                    <i class="bi bi-calendar3"></i> ${c.dataset.date}
-                </div>
-                <div style="font-size:12px;font-weight:700;color:#342635;margin-top:2px;">
-                    <i class="bi bi-clock"></i> ${c.dataset.time}
-                </div>
-            </div>
-
-            <!-- Arrow -->
-            <div style="font-size:18px;color:var(--hot-pink);font-weight:900;">→</div>
-
-            <!-- New date placeholder -->
-            <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
-                 background:rgba(215,238,219,.5);border:1px solid rgba(45,106,66,.2);
-                 border-style:dashed;">
-                <div style="font-size:10px;font-weight:900;color:#3D7047;
-                     text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
-                    New
-                </div>
-                <div style="font-size:12px;font-weight:700;color:#3D7047;">
-                    <i class="bi bi-calendar-plus"></i> To be selected
-                </div>
-                <div style="font-size:11px;color:#7B6178;margin-top:2px;">
-                    on next page
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
+                         background:rgba(255,200,200,.4);border:1px solid rgba(163,95,63,.2);">
+                        <div style="font-size:10px;font-weight:900;color:#A35F3F;
+                             text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
+                            Current
+                        </div>
+                        <div style="font-size:12px;font-weight:700;color:#342635;">
+                            <i class="bi bi-calendar3"></i> ${c.dataset.date}
+                        </div>
+                        <div style="font-size:12px;font-weight:700;color:#342635;margin-top:2px;">
+                            <i class="bi bi-clock"></i> ${c.dataset.time}
+                        </div>
+                    </div>
+                    <div style="font-size:18px;color:var(--hot-pink);font-weight:900;">→</div>
+                    <div style="flex:1;min-width:120px;padding:8px 12px;border-radius:10px;
+                         background:rgba(215,238,219,.5);border:1px solid rgba(45,106,66,.2);
+                         border-style:dashed;">
+                        <div style="font-size:10px;font-weight:900;color:#3D7047;
+                             text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">
+                            New
+                        </div>
+                        <div style="font-size:12px;font-weight:700;color:#3D7047;">
+                            <i class="bi bi-calendar-plus"></i> To be selected
+                        </div>
+                        <div style="font-size:11px;color:#7B6178;margin-top:2px;">
+                            on next page
+                        </div>
+                    </div>
                 </div>
             </div>
+        `).join('');
 
-        </div>
-    </div>
-`).join('');
-
-document.querySelector('#cancelModal p').innerHTML = `
-    <p style="margin:0 0 10px;font-size:13px;color:var(--muted);">
-        Rescheduling <strong>${ids.length} booking${ids.length > 1 ? 's' : ''}</strong> 
-        <br> You'll pick a new date and time for each one <br>
-    </p>
-    ${sessionList}
-`;
-        document.querySelector('#cancelModal .modal-actions').innerHTML = `
-            <button onclick="closeCancelModal()" style="padding:10px 20px;border-radius:999px;
+        document.getElementById('rescheduleModalContent').innerHTML = `
+            <p style="margin:0 0 10px;font-size:13px;color:var(--muted);">
+                Rescheduling <strong>${ids.length} booking${ids.length > 1 ? 's' : ''}</strong> 
+                <br> You'll pick a new date and time for each one
+            </p>
+            ${sessionList}
+        `;
+        document.getElementById('rescheduleModalActions').innerHTML = `
+            <button onclick="closeRescheduleModal()" style="padding:10px 20px;border-radius:999px;
              border:1px solid rgba(46,42,59,.12);background:none;color:#7A5570;
              font-size:13px;font-weight:900;cursor:pointer;">Cancel</button>
             <a href="${firstUrl}" style="padding:10px 20px;border-radius:999px;border:none;
@@ -1161,19 +1190,39 @@ document.querySelector('#cancelModal p').innerHTML = `
              align-items:center;gap:6px;">
              <i class="bi bi-calendar-plus"></i> Start Rescheduling
             </a>`;
-        document.getElementById('cancelModal').classList.add('show');
+        document.getElementById('rescheduleModal').classList.add('show');
     }
+
   } else if (type === 'cancel') {
     const ids = checked.map(c => c.dataset.id);
     if (ids.length === 1) {
-      confirmCancel(ids[0], checked[0].dataset.status);
+        confirmCancel(ids[0], checked[0].dataset.status);
     } else {
-      if (confirm('Cancel ' + ids.length + ' bookings? This cannot be undone.')) {
-        ids.forEach(id => fetch('cancel_booking.php?id=' + id + '&ajax=1').catch(() => {}));
-        setTimeout(() => location.reload(), 800);
-      }
+        // Set the booking IDs as comma-separated in the hidden field
+        document.getElementById('cancel_booking_id').value = ids.join(',');
+        
+        // Change modal title to indicate multiple bookings
+        const modalTitle = document.querySelector('#cancelModal h3');
+        modalTitle.innerHTML = '<i class="bi bi-exclamation-triangle" style="color: #dc2626;"></i> Cancel ' + ids.length + ' Bookings?';
+        
+        // Store original title to restore later
+        const originalTitle = '<i class="bi bi-exclamation-triangle" style="color: #dc2626;"></i> Cancel Booking';
+        
+        // Add a data attribute to indicate bulk cancel
+        document.getElementById('cancelForm').setAttribute('data-bulk', 'true');
+        
+        // Show the modal
+        document.getElementById('cancelModal').classList.add('show');
+        
+        // Restore title when modal closes
+        const restoreTitle = function() {
+            document.querySelector('#cancelModal h3').innerHTML = originalTitle;
+            document.getElementById('cancelForm').removeAttribute('data-bulk');
+            document.getElementById('cancelModal').removeEventListener('hidden', restoreTitle);
+        };
+        document.getElementById('cancelModal').addEventListener('hidden', restoreTitle);
     }
-  }
+}
 }
 
 document.addEventListener('change', e => {
@@ -1183,6 +1232,36 @@ document.addEventListener('change', e => {
 <?php include 'nav_search_modal.php'; ?>
 <script src="../js/search_modal.js"></script>
 <script>
+function closeRatingModal() {
+    document.getElementById('ratingModal').classList.remove('show');
+}
+
+function closeCancelModal() {
+    document.getElementById('cancelModal').classList.remove('show');
+    document.getElementById('cancelForm').reset();
+    document.getElementById('otherReasonText').style.display = 'none';
+}
+function closeRescheduleModal() {
+    document.getElementById('rescheduleModal').classList.remove('show');
+}
+
+function cancelRescheduleRequest(bookingId) {
+    if (confirm('Cancel your reschedule request? The booking will go back to confirmed status at the original date/time.')) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = 'cancel_reschedule_request.php';
+        
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'booking_id';
+        input.value = bookingId;
+        
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
 function showReportIssue(bookingId) {
     const modal = document.createElement('div');
     modal.id = 'reportModal';

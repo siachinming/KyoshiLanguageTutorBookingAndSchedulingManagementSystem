@@ -48,11 +48,11 @@ while ($row = $languageQuery->fetch_assoc()) {
 }
 
 $languages = [
-    ['img'=>'japanese.webp','language'=>'Japanese','level'=>'Beginner → Advanced','desc'=>'Daily conversation, basic phrases, kanji, and speaking confidence.','tag'=>'Most booked','color'=>'#FFD0DD'],
-    ['img'=>'english.webp','language'=>'English','level'=>'All levels','desc'=>'Presentation practice, grammar, confidence building.','tag'=>'Recommended','color'=>'#D8ECFF'],
-    ['img'=>'mandarin.png','language'=>'Mandarin','level'=>'Beginner → HSK','desc'=>'Tone practice and sentence patterns.','tag'=>'Beginner friendly','color'=>'#DDF4E3'],
-    ['img'=>'korean.jpg','language'=>'Korean','level'=>'Starter → TOPIK','desc'=>'Hangul, pronunciation, K-drama phrases.','tag'=>'Trending','color'=>'#EAD7FF'],
-    ['img'=>'malay.jpg','language'=>'Malay','level'=>'All levels','desc'=>'Formal and informal Malay communication.','tag'=>'Local favourite','color'=>'#FFE4CC'],
+    ['img' => 'japanese.webp', 'language' => 'Japanese', 'level' => 'Native / Fluent', 'desc' => 'Experienced in teaching all levels from JLPT N5 to N1', 'tag' => 'Most requested', 'color' => '#FFD0DD'],
+    ['img' => 'english.webp', 'language' => 'English', 'level' => 'IELTS Certified', 'desc' => 'Business English, conversation, exam preparation', 'tag' => 'Certified', 'color' => '#D8ECFF'],
+    ['img' => 'mandarin.png', 'language' => 'Mandarin', 'level' => 'HSK Advanced', 'desc' => 'Specialized in HSK preparation and business Mandarin', 'tag' => 'Expert', 'color' => '#DDF4E3'],
+    ['img' => 'korean.jpg', 'language' => 'Korean', 'level' => 'TOPIK Level 6', 'desc' => 'Focus on TOPIK exam and daily conversation', 'tag' => 'Popular', 'color' => '#EAD7FF'],
+    ['img' => 'malay.jpg', 'language' => 'Malay', 'level' => 'Native Speaker', 'desc' => 'Formal Malay, casual conversation, exam prep', 'tag' => 'Local expert', 'color' => '#FFE4CC'],
 ];
 
 ?>
@@ -172,13 +172,14 @@ $languages = [
           </div>
         </a>
 
-        <div class="nav-links">
-          <a href="student_dashboard.php">Home</a>
-          <a class="active" href="find_language.php">Find Language</a>
-          <a href="booking_status.php">My Bookings</a>
-          <a href="my_payments.php">My Payments</a>
-          <a href="my_materials.php">My Materials</a>
-        </div>
+         <div class="nav-links">
+                <a href="student_dashboard.php">Home</a>
+                <a href="find_language.php" class="active">Find Language</a>
+                <a href="booking_status.php">My Bookings</a>
+                <a href="my_payments.php">My Payments</a>
+                <a href="my_materials.php">My Materials</a>
+                <a href="my_assignments.php">My Assignments</a>
+            </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
             <button class="profile" onclick="toggleDropdown()" id="profileBtn">
@@ -209,8 +210,7 @@ $languages = [
 
 <main class="container">
   <div class="page-hero">
-    <div class="eyebrow"><i class="bi bi-globe2"></i> Choose your language</div>
-    <h1>What do you want<br>to learn today?</h1>
+    <h1>What do you want to learn today?</h1>
     <p>Pick a language to browse tutors, compare prices, and book your first session.</p>
   </div>
 
@@ -233,7 +233,7 @@ $languages = [
         </div>
         <div class="lang-body">
           <div>
-            <h3><?= e($card['language']) ?></h3>
+            <h3><?= e($card['language']) ?></h3><br>
             <span class="lang-level"><?= e($card['level']) ?></span>
           </div>
           <p><?= e($card['desc']) ?></p>

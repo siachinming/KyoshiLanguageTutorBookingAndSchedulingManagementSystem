@@ -26,7 +26,7 @@ if (!$booking_id) {
 
 // Get booking info
 $stmt = $conn->prepare("
-    SELECT b.*, u.fullname as student_name
+    SELECT b.*, u.fullname as student_name, b.focus, b.proficiency_level
     FROM bookings b
     JOIN users u ON b.student_id = u.id
     WHERE b.id = ? AND b.tutor_id = ?
@@ -63,7 +63,6 @@ $postMaterials = $postStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 // Helper functions
 function getFileIcon($filename, $is_url = false, $material_url = null) {
     if ($is_url) {
-        // Detect platform from URL
         if (strpos($material_url, 'youtube.com') !== false || strpos($material_url, 'youtu.be') !== false) {
             return 'bi-youtube';
         } elseif (strpos($material_url, 'docs.google.com') !== false) {
@@ -93,10 +92,6 @@ function getFileIcon($filename, $is_url = false, $material_url = null) {
 
 function e($value) {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
-}
-
-function fileExists($path) {
-    return file_exists($path) && is_file($path);
 }
 
 function formatFileSize($bytes) {
@@ -325,11 +320,10 @@ $error_msg = $_GET['error'] ?? '';
             </a>
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
-                <a href="availability.php">Availability</a>
-                <a href="booking_requests.php">Requests</a>
-                <a href="learning_materials.php?booking_id=<?= $booking_id ?>" class="active">Materials</a>
-                <a href="earnings.php">Earnings</a>
-                <a href="meeting_links.php">Meeting Links</a>
+                <a href="booking_requests.php">My Bookings</a>
+                <a href="material_overview.php" class="active">My Materials</a>
+                <a href="assignment_overview.php">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
@@ -338,7 +332,7 @@ $error_msg = $_GET['error'] ?? '';
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -397,28 +391,20 @@ $error_msg = $_GET['error'] ?? '';
                                 </div>
                                 <div class="material-actions">
                                     <?php if (isset($material['is_url']) && $material['is_url'] == 1): ?>
-                                        <!-- URL Material -->
                                         <a href="<?= e($material['material_url']) ?>" target="_blank" class="btn-link">
                                             <i class="bi bi-box-arrow-up-right"></i> Open Link
                                         </a>
                                     <?php else: ?>
-                                        <!-- File Material -->
-                                        <?php if (fileExists($material['file_path'])): ?>
-                                            <a href="view_materials.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" target="_blank" class="btn-view">
-                                                <i class="bi bi-eye"></i> Preview
-                                            </a>
-                                            <a href="download_material.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" class="btn-download">
-                                                <i class="bi bi-download"></i> Download
-                                            </a>
-                                        <?php else: ?>
-                                            <span class="btn-view" style="opacity:0.5;cursor:not-allowed;">
-                                                <i class="bi bi-exclamation-triangle"></i> File Missing
-                                            </span>
-                                        <?php endif; ?>
+                                        <a href="view_materials.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" target="_blank" class="btn-view">
+                                            <i class="bi bi-eye"></i> Preview
+                                        </a>
+                                        <a href="download_material.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" class="btn-download">
+                                            <i class="bi bi-download"></i> Download
+                                        </a>
                                     <?php endif; ?>
-                                    <a href="delete_material.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" class="btn-delete" onclick="return confirm('Delete <?= e($material['title']) ?>?')">
-                                        <i class="bi bi-trash"></i> Delete
-                                    </a>
+                                    <button class="btn-delete" onclick="confirmDelete(<?= $material['id'] ?>, <?= $booking_id ?>, '<?= addslashes($material['title']) ?>')">
+                                `        <i class="bi bi-trash"></i> Delete
+                                    </button>`
                                 </div>
                             </div>
                             <?php if (!empty($material['description'])): ?>
@@ -429,7 +415,7 @@ $error_msg = $_GET['error'] ?? '';
                                 <?php if (isset($material['is_url']) && $material['is_url'] == 1): ?>
                                     <span><i class="bi bi-link-45deg"></i> <?= e(getDomainName($material['material_url'])) ?></span>
                                 <?php else: ?>
-                                    <span><i class="bi bi-file-earmark"></i> <?= e($material['file_name']) ?></span>
+                                    <span><i class="bi bi-file-earmark"></i> <?= e(basename($material['file_name'])) ?></span>
                                     <?php if (isset($material['file_size']) && $material['file_size']): ?>
                                         <span><i class="bi bi-database"></i> <?= formatFileSize($material['file_size']) ?></span>
                                     <?php endif; ?>
@@ -459,24 +445,16 @@ $error_msg = $_GET['error'] ?? '';
                                 </div>
                                 <div class="material-actions">
                                     <?php if (isset($material['is_url']) && $material['is_url'] == 1): ?>
-                                        <!-- URL Material -->
                                         <a href="<?= e($material['material_url']) ?>" target="_blank" class="btn-link">
                                             <i class="bi bi-box-arrow-up-right"></i> Open Link
                                         </a>
                                     <?php else: ?>
-                                        <!-- File Material -->
-                                        <?php if (fileExists($material['file_path'])): ?>
-                                            <a href="view_materials.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" target="_blank" class="btn-view">
-                                                <i class="bi bi-eye"></i> Preview
-                                            </a>
-                                            <a href="download_material.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" class="btn-download">
-                                                <i class="bi bi-download"></i> Download
-                                            </a>
-                                        <?php else: ?>
-                                            <span class="btn-view" style="opacity:0.5;cursor:not-allowed;">
-                                                <i class="bi bi-exclamation-triangle"></i> File Missing
-                                            </span>
-                                        <?php endif; ?>
+                                        <a href="view_materials.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" target="_blank" class="btn-view">
+                                            <i class="bi bi-eye"></i> Preview
+                                        </a>
+                                        <a href="download_material.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" class="btn-download">
+                                            <i class="bi bi-download"></i> Download
+                                        </a>
                                     <?php endif; ?>
                                     <a href="delete_material.php?id=<?= $material['id'] ?>&booking_id=<?= $booking_id ?>" class="btn-delete" onclick="return confirm('Delete <?= e($material['title']) ?>?')">
                                         <i class="bi bi-trash"></i> Delete
@@ -491,7 +469,7 @@ $error_msg = $_GET['error'] ?? '';
                                 <?php if (isset($material['is_url']) && $material['is_url'] == 1): ?>
                                     <span><i class="bi bi-link-45deg"></i> <?= e(getDomainName($material['material_url'])) ?></span>
                                 <?php else: ?>
-                                    <span><i class="bi bi-file-earmark"></i> <?= e($material['file_name']) ?></span>
+                                    <span><i class="bi bi-file-earmark"></i> <?= e(basename($material['file_name'])) ?></span>
                                     <?php if (isset($material['file_size']) && $material['file_size']): ?>
                                         <span><i class="bi bi-database"></i> <?= formatFileSize($material['file_size']) ?></span>
                                     <?php endif; ?>
@@ -520,6 +498,11 @@ function toggleDropdown() {
         dropdown.style.display = 'block';
     }
 }
+function confirmDelete(materialId, bookingId, title) {
+    if (confirm('WARNING: Are you sure you want to delete "' + title + '"?\n\nThis will permanently remove the file and cannot be undone!')) {
+        window.location.href = 'delete_material.php?id=' + materialId + '&booking_id=' + bookingId;
+    }
+}
 
 window.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
@@ -530,19 +513,18 @@ window.addEventListener('click', function(e) {
 });
 
 function switchTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
+    const btns = document.querySelectorAll('.tab-btn');
+    btns.forEach(btn => btn.classList.remove('active'));
+    if (event && event.target) event.target.classList.add('active');
     document.getElementById('pre-tab').classList.remove('active');
     document.getElementById('post-tab').classList.remove('active');
     document.getElementById(tab + '-tab').classList.add('active');
     document.getElementById('pre-search').style.display = tab === 'pre' ? 'block' : 'none';
     document.getElementById('post-search').style.display = tab === 'post' ? 'block' : 'none';
-    if (tab === 'pre') {
-        let searchInput = document.querySelector('#pre-search input');
-        if (searchInput) { searchInput.value = ''; filterMaterials('pre', ''); }
-    } else {
-        let searchInput = document.querySelector('#post-search input');
-        if (searchInput) { searchInput.value = ''; filterMaterials('post', ''); }
+    const searchInput = document.querySelector(tab === 'pre' ? '#pre-search input' : '#post-search input');
+    if (searchInput) {
+        searchInput.value = '';
+        filterMaterials(tab, '');
     }
 }
 

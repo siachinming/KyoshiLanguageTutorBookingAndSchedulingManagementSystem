@@ -920,11 +920,10 @@ body::before{
             </a>
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
-                <a class="active" href="availability.php">Availability</a>
-                <a href="booking_requests.php">Requests</a>
-                <a href="learning_materials.php">Materials</a>
-                <a href="earnings.php">Earnings</a>
-                <a href="meeting_links.php">Meeting Links</a>
+                <a href="booking_requests.php">My Bookings</a>
+                <a href="material_overview.php">My Materials</a>
+                <a href="assignment_overview.php">My Assignments</a>
+                <a href="view_session_reports.php">My Reports</a>
             </div>
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">

@@ -10,13 +10,15 @@ $bookingID = intval($_GET['id'] ?? 0);
 $nextID = intval($_GET['next'] ?? 0);
 if (!$bookingID) { header("Location: booking_status.php"); exit(); }
 
-// Get original booking
 $stmt = $conn->prepare("
     SELECT b.*, u.fullname AS tutor_name, u.profile_pic AS tutor_pic, u.email AS tutor_email,
            tp.rate, tp.bio, tp.experience,
            GROUP_CONCAT(DISTINCT tl.language) AS tutor_languages,
            GROUP_CONCAT(DISTINCT ttm.mode) AS teaching_modes,
-           ul.location
+           ul.location,
+           b.proficiency_level,
+           b.meeting_link,
+           b.meeting_location
     FROM bookings b
     JOIN users u ON b.tutor_id = u.id
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
@@ -31,8 +33,19 @@ $b = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$b) { header("Location: booking_status.php"); exit(); }
-
-// Get student info
+$levelLabels = [
+    'beginner' => 'Beginner',
+    'intermediate' => 'Intermediate', 
+    'advanced' => 'Advanced',
+    'master' => 'Master'
+];
+$currentLevel = $b['proficiency_level'] ?? 'beginner';
+$currentLevelLabel = $levelLabels[$currentLevel] ?? ucfirst($currentLevel);
+$meetingLink = $b['meeting_link'] ?? '';
+$meetingLocation = $b['meeting_location'] ?? '';
+$hasMeetingLink = !empty($meetingLink);
+$hasMeetingLocation = !empty($meetingLocation);
+$isOnline = $b['learning_mode'] === 'online';
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param("i", $userID);
 $stmt->execute();
@@ -109,21 +122,44 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       background:radial-gradient(circle at 7% 10%,rgba(231,90,155,.32),transparent 24%),
       radial-gradient(circle at 90% 8%,rgba(255,195,216,.42),transparent 26%)}
     a{text-decoration:none;color:inherit}button,input,select,textarea{font-family:inherit}
-    .container{width:min(1100px,calc(100% - 40px));margin:0 auto}
+    .container{width:min(1440px, calc(100% - 40px)); margin:0 auto}
 
-    .topbar{position:sticky;top:0;z-index:50;background:rgba(255,241,246,.86);backdrop-filter:blur(20px);border-bottom:1px solid rgba(231,90,155,.18);box-shadow:0 10px 30px rgba(201,79,134,.10)}
-    .nav{min-height:78px;display:grid;grid-template-columns:190px minmax(0,1fr) auto;gap:16px;align-items:center;}
-    .brand{display:flex;align-items:center;gap:10px}
-    .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
-    .brand strong{display:block;font-size:18px;line-height:1.05}
-    .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
+    .topbar{
+      position:sticky; top:0; z-index:50;
+      background:rgba(255,241,246,.86);
+      backdrop-filter:blur(20px);
+      border-bottom:1px solid rgba(231,90,155,.18);
+      box-shadow:0 10px 30px rgba(201,79,134,.10);
+    }
+    .nav{
+      min-height:78px;
+      display:grid;
+      grid-template-columns:160px 1fr 320px;
+      gap:16px;
+      align-items:center;
+    }
+    .brand{display:flex; align-items:center; gap:10px; min-width:0}
+    .brand img{width:44px; height:44px; object-fit:contain; border-radius:14px}
+    .brand strong{display:block; font-size:18px; line-height:1.05}
+    .brand span{display:block; margin-top:3px; font-size:11px; color:var(--muted); white-space:nowrap}
+
+    .nav-links{
+      display:flex; align-items:center; justify-content:center; gap:6px;
+      overflow:auto; scrollbar-width:none;
+      
+    }
     .nav-links::-webkit-scrollbar{display:none}
-    .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
-    .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff}
-    .nav-actions{display:flex;align-items:center;gap:10px}
-    .profile{display:flex;align-items:center;gap:9px;border-radius:999px;padding:6px 12px 6px 6px;font-weight:900;color:#7A3D65;border:1px solid rgba(46,42,59,.08);background:rgba(255,255,255,.88);cursor:pointer}
-    .profile img{width:34px;height:34px;object-fit:cover;border-radius:50%}
+    .nav-links a{flex:0 0 auto; padding:9px 12px; border-radius:999px; font-size:13px; font-weight:900; color:#6D4964; white-space:nowrap; transition:.18s ease}
+    .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg, var(--hot-pink), var(--pink)); color:#fff; box-shadow:0 8px 18px rgba(231,90,155,.28)}
+
+    .nav-actions{display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:0}
+
+    .icon-btn,.profile{border:1px solid rgba(46,42,59,.08); background:rgba(255,255,255,.88); box-shadow:var(--shadow-soft); cursor:pointer}
+    .icon-btn{width:44px; height:44px; border-radius:16px; color:#7A4A68; position:relative; flex:0 0 auto}
+    .dot{position:absolute; top:10px; right:10px; width:8px; height:8px; border-radius:50%; background:#E17C91}
+    .profile{display:flex; align-items:center; gap:9px; border-radius:999px; padding:6px 12px 6px 6px; font-weight:900; color:#7A3D65; flex:0 0 auto; max-width:150px}
+    .profile img{width:34px; height:34px; object-fit:cover; border-radius:50%}
+    .profile span{max-width:86px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
     .back-link{display:inline-flex;align-items:center;gap:6px;color:var(--pink-dark);font-weight:900;font-size:13px;padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(46,42,59,.08);transition:.18s ease;margin:20px 0 16px;}
     .back-link:hover{transform:translateY(-1px)}
@@ -257,6 +293,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         <a href="booking_status.php" class="active">My Bookings</a>
         <a href="my_payments.php">My Payments</a>
         <a href="my_materials.php">My Materials</a>
+        <a href="my_assignments.php">My Assignments</a>
       </div>
       <div class="nav-actions">
         <div style="position:relative;">
@@ -321,84 +358,105 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         <div class="step"><div class="step-dot inactive" id="dot3">3</div><div class="step-label">Review</div></div>
       </div>
 
-      <!-- STEP 1 -->
-      <div class="form-section active" id="step1">
+      <!-- STEP 1 - Simplified for reschedule only -->
+<div class="form-section active" id="step1">
 
-        <!-- Language -->
-        <div class="form-group">
-          <label><i class="bi bi-translate"></i> Language to learn</label>
-          <div class="chip-group" id="langChips">
-            <?php foreach ($tutorLangs as $l): ?>
-              <button type="button" class="sel-chip <?= $l === $b['language'] ? 'active' : '' ?>"
-                data-val="<?= e($l) ?>" onclick="selectSingle(this,'langChips','selectedLang')">
-                <?= e($l) ?>
-              </button>
-            <?php endforeach; ?>
-          </div>
+    <!-- Language -->
+    <div class="form-group">
+        <label><i class="bi bi-translate"></i> Language</label>
+        <div class="form-control" style="background:#f5f5f5; cursor: not-allowed;">
+            <?= e($b['language']) ?>
         </div>
+        <input type="hidden" id="selectedLang" value="<?= e($b['language']) ?>">
+    </div>
 
-        <!-- Mode -->
-        <div class="form-group">
-          <label><i class="bi bi-laptop"></i> Learning mode</label>
-          <div class="chip-group" id="modeChips">
-            <?php foreach ($tutorModes as $m): ?>
-              <button type="button" class="sel-chip <?= $m === $b['learning_mode'] ? 'active' : '' ?>"
-                data-val="<?= e($m) ?>" onclick="selectSingle(this,'modeChips','selectedMode');checkModeLocation()">
-                <?= $m === 'online' ? '💻 Online' : '🤝 Face to Face' ?>
-              </button>
-            <?php endforeach; ?>
-          </div>
-          <input type="hidden" id="selectedLang" value="<?= e($b['language']) ?>">
-          <input type="hidden" id="selectedMode" value="<?= e($b['learning_mode']) ?>">
+    <!-- Proficiency Level -->
+    <div class="form-group">
+        <label><i class="bi bi-bar-chart-steps"></i> Proficiency Level</label>
+        <div class="form-control" style="background:#f5f5f5; cursor: not-allowed;">
+            <?= e($currentLevelLabel) ?>
         </div>
+        <input type="hidden" id="selectedLevel" value="<?= e($currentLevel) ?>">
+    </div>
 
-        <!-- Location (if face to face) -->
-        <div class="form-group" id="locationGroup" style="display:none;">
-          <label><i class="bi bi-geo-alt"></i> Your meeting location</label>
-          <div style="padding:10px 14px;border-radius:12px;background:rgba(221,211,255,.3);border:1px solid rgba(167,123,232,.2);font-size:13px;color:#6D4964;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-            <i class="bi bi-info-circle" style="color:#A77BE8;"></i>
-            Tutor is based in <strong style="margin:0 4px;"><?= e($b['location'] ?? 'Unknown') ?></strong> — face to face within 30km only.
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <div style="position:relative;flex:1;">
-              <i class="bi bi-search" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#91899F;pointer-events:none;"></i>
-              <input type="text" id="locationInput" class="form-control" placeholder="Type your area e.g. Bangsar, Kuala Lumpur" style="padding-left:40px;" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();searchLocation();}">
-            </div>
-            <button type="button" onclick="searchLocation()" style="padding:12px 18px;border-radius:14px;border:none;background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;font-size:13px;font-weight:900;cursor:pointer;white-space:nowrap;">Search</button>
-          </div>
-          <div id="locationResults" style="display:none;margin-top:8px;background:white;border:1px solid rgba(46,42,59,.12);border-radius:14px;overflow:hidden;box-shadow:0 10px 26px rgba(201,79,134,.10);"></div>
-          <div id="locationChecking" style="display:none;margin-top:10px;padding:10px 14px;border-radius:12px;background:rgba(221,211,255,.3);border:1px solid rgba(167,123,232,.2);font-size:13px;color:#6D4964;"><i class="bi bi-hourglass-split"></i> Searching...</div>
-          <div id="locationOk" style="display:none;margin-top:10px;padding:10px 14px;border-radius:12px;background:rgba(221,244,230,.6);border:1px solid rgba(45,106,66,.2);color:#2D6A42;font-size:13px;font-weight:700;"><i class="bi bi-check-circle-fill"></i> <span id="locationOkText">Within range!</span></div>
-          <div id="locationWarning" style="display:none;margin-top:10px;padding:10px 14px;border-radius:12px;background:rgba(255,217,199,.6);border:1px solid rgba(163,95,63,.2);color:#A35F3F;font-size:13px;font-weight:700;">
-            <i class="bi bi-exclamation-triangle"></i> <span id="locationWarnText">Too far from tutor.</span>
-            <div id="locationAction" style="margin-top:8px;"></div>
-          </div>
+    <!-- Learning Mode -->
+    <div class="form-group">
+        <label><i class="bi bi-laptop"></i> Learning mode</label>
+        <div class="form-control" style="background:#f5f5f5; cursor: not-allowed;">
+            <?= $b['learning_mode'] === 'online' ? 'Online' : 'Face to Face' ?>
         </div>
+        <input type="hidden" id="selectedMode" value="<?= e($b['learning_mode']) ?>">
+    </div>
 
-        <!-- Focus -->
-        <div class="form-group">
-          <label><i class="bi bi-bullseye"></i> Focus area <span style="font-weight:400;color:var(--muted);">(choose all that apply)</span></label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <?php foreach (['Speaking','Listening','Reading','Writing'] as $focus): ?>
-              <label class="focus-chip" id="fc-<?= $focus ?>">
-                <input type="checkbox" value="<?= $focus ?>" onchange="updateFocusChip(this)"> <?= $focus ?>
-              </label>
-            <?php endforeach; ?>
-          </div>
+    <!-- Meeting Info -->
+    <div class="form-group">
+        <label><i class="bi bi-<?= $isOnline ? 'camera-video' : 'geo-alt' ?>"></i> 
+            <?= $isOnline ? 'Meeting Link' : 'Meeting Location' ?>
+        </label>
+        <div class="form-control" style="background:#f5f5f5; <?= $isOnline && !$hasMeetingLink ? 'color:#dc2626;' : '' ?>">
+            <?php if ($isOnline): ?>
+                <?php if ($hasMeetingLink): ?>
+                    <a href="<?= e($meetingLink) ?>" target="_blank" style="color:#E75A9B; text-decoration:underline;">
+                        <?= e($meetingLink) ?>
+                    </a>
+                    <i class="bi bi-box-arrow-up-right" style="margin-left:5px;"></i>
+                <?php else: ?>
+                    <span style="display:flex; align-items:center; gap:8px;">
+                        <i class="bi bi-exclamation-triangle-fill" style="color:#dc2626;"></i>
+                        No meeting link provided yet. Tutor will share before session.
+                    </span>
+                <?php endif; ?>
+            <?php else: ?>
+                <?php if ($hasMeetingLocation): ?>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span><?= nl2br(e($meetingLocation)) ?></span>
+                        <a href="https://www.google.com/maps/search/?api=1&query=<?= urlencode($meetingLocation) ?>" 
+                           target="_blank" style="color:#E75A9B; text-decoration:underline; font-size:12px;">
+                            <i class="bi bi-map"></i> View Map
+                        </a>
+                    </div>
+                <?php else: ?>
+                    <span style="display:flex; align-items:center; gap:8px;">
+                        <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;"></i>
+                        Meeting location not set. Please contact tutor for venue details.
+                    </span>
+                <?php endif; ?>
+            <?php endif; ?>
         </div>
+    </div>
 
-        <!-- Notes -->
-        <div class="form-group">
-          <label><i class="bi bi-chat-left-text"></i> Notes for tutor <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
-          <textarea class="form-control" id="bookingNotes" placeholder="Any special requests for the new session..."></textarea>
+    <!-- Focus area -->
+    <div class="form-group">
+        <label><i class="bi bi-bullseye"></i> Focus area</label>
+        <div class="form-control" style="background:#f5f5f5; cursor: not-allowed;">
+            <?= e($b['focus'] ?? '—') ?>
         </div>
+        <input type="hidden" id="selectedFocus" value="<?= e($b['focus']) ?>">
+    </div>
 
-        <div class="form-nav">
-          <span></span>
-          <button class="btn-next" onclick="goStep(2)">Next: Choose Schedule <i class="bi bi-arrow-right"></i></button>
-        </div>
-      </div>
+    <!-- Reminder Note -->
+    <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px 16px; border-radius: 14px; background: rgba(231,90,155,.08); border: 1px solid rgba(231,90,155,.15);">
+        <i class="bi bi-info-circle-fill" style="color: #E75A9B; margin-right: 8px;"></i>
+        <span style="font-size: 12px; color: #342635;">
+            <?php if ($isOnline): ?>
+                The meeting link will remain the same after rescheduling. Contact tutor if you need a new link.
+            <?php else: ?>
+                The meeting location will remain the same after rescheduling. Confirm with tutor if needed.
+            <?php endif; ?>
+        </span>
+    </div>
 
+    <!-- Notes for tutor -->
+    <div class="form-group">
+        <label><i class="bi bi-chat-left-text"></i> Notes for tutor <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <textarea class="form-control" id="bookingNotes" placeholder="Any special requests for the new session..."></textarea>
+    </div>
+
+    <div class="form-nav">
+        <span></span>
+        <button class="btn-next" onclick="goStep(2)">Next: Choose Schedule <i class="bi bi-arrow-right"></i></button>
+    </div>
+</div>
       <!-- STEP 2 -->
       <div class="form-section" id="step2">
         <?php if (empty($availability)): ?>
@@ -494,7 +552,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         <div class="summary-row">
             <span class="summary-label">Mode</span>
             <span class="summary-val">
-                <?= $b['learning_mode']=='online' ? '💻 Online' : '🤝 Face to Face' ?>
+                <?= $b['learning_mode']=='online' ? 'Online' : 'Face to Face' ?>
             </span>
         </div>
     </div>
@@ -524,7 +582,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         <div class="summary-row">
             <span class="summary-label">Mode</span>
             <span class="summary-val" id="sum-mode">
-                <?= $b['learning_mode']=='online' ? '💻 Online' : '🤝 Face to Face' ?>
+                <?= $b['learning_mode']=='online' ? 'Online' : 'Face to Face' ?>
             </span>
         </div>
 
@@ -565,7 +623,8 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   const bookedSlots = <?= $bookedSlotsJson ?>;
   let currentStep = 1;
   let calYear, calMonth;
-  const now = new Date(); now.setHours(0,0,0,0);
+  const now = new Date();
+now.setHours(0, 0, 0, 0);  
   calYear  = now.getFullYear();
   calMonth = now.getMonth();
 
@@ -582,7 +641,12 @@ let selectedTime = null;
   function parseDateStr(s) { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
   function dayName(d) { return DAY_NAMES[d.getDay()]; }
   function isAvail(d) { return availDays.includes(dayName(d)); }
-  function isPast(d)  { return d < now; }
+  function isPast(d) {
+    // Don't allow today or past dates
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d <= today;
+}
   function fmt(h,m) { const s=h>=12?'PM':'AM',h12=h%12||12; return h12+(m?':'+String(m).padStart(2,'0'):'')+' '+s; }
 
   function renderCalendar() {
@@ -708,7 +772,7 @@ function handleDateClick(date) {
   function updateSummary(){
   document.getElementById('sum-lang').textContent = langUserSelected || 'Not selected';
   document.getElementById('sum-mode').textContent = modeUserSelected 
-    ? (modeUserSelected === 'online' ? '💻 Online' : '🤝 Face to Face')
+    ? (modeUserSelected === 'online' ? 'Online' : 'Face to Face')
     : 'Not selected';
 
   if(!selectedDate){
@@ -722,30 +786,32 @@ function handleDateClick(date) {
 }
 
   function populateReview(){
-    const lang=document.getElementById('selectedLang').value;
-    const mode=document.getElementById('selectedMode').value;
-    const loc=document.getElementById('locationInput')?.value||'';
-    const notes=document.getElementById('bookingNotes').value;
-    const focus=[...document.querySelectorAll('.focus-chip input:checked')].map(c=>c.value).join(', ')||'—';
-    document.getElementById('rev-lang').textContent=lang||'—';
-    document.getElementById('rev-mode').textContent=mode==='online'?'💻 Online':'🤝 Face to Face';
-    document.getElementById('rev-focus').textContent=focus;
+    const lang = document.getElementById('selectedLang').value;
+    const mode = document.getElementById('selectedMode').value;
+    const notes = document.getElementById('bookingNotes').value;
+    const focus = document.getElementById('selectedFocus')?.value || '—';
+    const level = document.getElementById('selectedLevel')?.value || 'beginner';
+    const levelLabels = {
+        'beginner': 'Beginner',
+        'intermediate': 'Intermediate',
+        'advanced': 'Advanced',
+        'master': 'Master'
+    };
+    const levelLabel = levelLabels[level] || level;
+    
+    document.getElementById('rev-lang').textContent = lang || '—';
+    document.getElementById('rev-mode').textContent = mode === 'online' ? 'Online' : 'Face to Face';
+    document.getElementById('rev-focus').textContent = focus;
     document.getElementById('rev-date').textContent = selectedDate || '—';
-document.getElementById('rev-time').textContent = selectedTime ? selectedTime.substring(0,5) : '—';
-    if(mode==='face_to_face'&&loc){document.getElementById('rev-location-row').style.display='flex';document.getElementById('rev-location').textContent=loc;}
-    if(notes){document.getElementById('rev-notes-row').style.display='flex';document.getElementById('rev-notes').textContent=notes;}
-  }
+    document.getElementById('rev-time').textContent = selectedTime ? selectedTime.substring(0,5) : '—';
+    
+    if(notes){
+        document.getElementById('rev-notes-row').style.display = 'flex';
+        document.getElementById('rev-notes').textContent = notes;
+    }
+}
 
   function goStep(n){
-    if(n===2){
-      const lang=document.getElementById('selectedLang').value;
-      const mode=document.getElementById('selectedMode').value;
-      const focus=[...document.querySelectorAll('.focus-chip input:checked')];
-      const isFace=mode==='face_to_face';
-      const locVal=document.getElementById('locationInput').value.trim();
-      if(!lang||!mode||focus.length===0||(isFace&&(!locVal||!studentLatLng))){showToast('Please fill in all details');return;}
-      if(isFace&&document.getElementById('locationWarning').style.display==='block'&&!tutorModes.includes('online')){showToast('You are too far from the tutor');return;}
-    }
     if(n===3){
       if(!selectedDate || !selectedTime){
   showToast('Please select date and time');
@@ -759,29 +825,67 @@ document.getElementById('rev-time').textContent = selectedTime ? selectedTime.su
     window.scrollTo({top:0,behavior:'smooth'});
   }
 
-  function submitReschedule(){
-    const lang=document.getElementById('selectedLang').value;
-    const mode=document.getElementById('selectedMode').value;
-    const notes=document.getElementById('bookingNotes').value;
-    const focus=[...document.querySelectorAll('.focus-chip input:checked')].map(c=>c.value).join(', ');
-    const loc=document.getElementById('locationInput')?.value||'';
-   const bookings = [{
-  date: selectedDate,
-  time: selectedTime
-}];
-    if(!lang||!mode||bookings.length===0){showToast('Please complete all fields');return;}
-    const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='Submitting...';
-    const form=document.createElement('form');form.method='POST';form.action='submit_reschedule.php';
-    const nextId = new URLSearchParams(window.location.search).get('next') || '';
-    console.log('nextId:', nextId);
-const fields = {booking_id:bookingID,language:lang,mode:mode,focus:focus,notes:notes,location:loc,next_id:nextId};
-    Object.entries(fields).forEach(([key,val])=>{const input=document.createElement('input');input.type='hidden';input.name=key;input.value=val;form.appendChild(input);});
-    bookings.forEach(bk=>{
-      const d=document.createElement('input');d.type='hidden';d.name='booking_date[]';d.value=bk.date;form.appendChild(d);
-      const t=document.createElement('input');t.type='hidden';t.name='booking_time[]';t.value=bk.time;form.appendChild(t);
+  function submitReschedule() {
+    const lang = document.getElementById('selectedLang').value;
+    const mode = document.getElementById('selectedMode').value;
+    const level = document.getElementById('selectedLevel')?.value || 'beginner';
+    const focus = document.getElementById('selectedFocus')?.value || '';
+    const notes = document.getElementById('bookingNotes').value;
+    
+    if (!selectedDate || !selectedTime) {
+        showToast('Please select a date and time');
+        return;
+    }
+    
+    // Get next IDs from URL - THIS IS CRITICAL
+    const urlParams = new URLSearchParams(window.location.search);
+    let nextIds = urlParams.get('next') || '';
+    
+    // DEBUG - Check console
+    console.log('Next IDs to pass:', nextIds);
+    
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'submit_reschedule.php';
+    
+    const fields = {
+        booking_id: bookingID,
+        language: lang,
+        mode: mode,
+        proficiency_level: level,
+        focus: focus,
+        notes: notes,
+        next_ids: nextIds  // ← THIS MUST BE EXACTLY 'next_ids'
+    };
+    
+    Object.entries(fields).forEach(([key, val]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = val;
+        form.appendChild(input);
     });
-    document.body.appendChild(form);form.submit();
-  }
+    
+    // Add date and time
+    const d = document.createElement('input');
+    d.type = 'hidden';
+    d.name = 'booking_date[]';
+    d.value = selectedDate;
+    form.appendChild(d);
+    
+    const t = document.createElement('input');
+    t.type = 'hidden';
+    t.name = 'booking_time[]';
+    t.value = selectedTime;
+    form.appendChild(t);
+    
+    document.body.appendChild(form);
+    form.submit();
+}
 
   function selectSingle(el,groupId,hiddenId){
     document.querySelectorAll('#'+groupId+' .sel-chip').forEach(c=>c.classList.remove('active'));
@@ -792,11 +896,6 @@ const fields = {booking_id:bookingID,language:lang,mode:mode,focus:focus,notes:n
     updateSummary();
   }
 
-  function checkModeLocation(){
-    const mode=document.getElementById('selectedMode').value;
-    document.getElementById('locationGroup').style.display=mode==='face_to_face'?'block':'none';
-    if(mode!=='face_to_face')resetLocationUI();
-  }
 
   function searchLocation(){
     const query=document.getElementById('locationInput').value.trim();
@@ -846,7 +945,6 @@ function closeRescheduleRulesModal() {
   function toggleDropdown(){const d=document.getElementById('profileDropdown');d.style.display=d.style.display==='none'?'block':'none';}
   document.addEventListener('click',function(e){const btn=document.getElementById('profileBtn');const dd=document.getElementById('profileDropdown');if(btn&&dd&&!btn.contains(e.target)&&!dd.contains(e.target))dd.style.display='none';});
   
-  checkModeLocation();
   updateSummary();
   renderCalendar();
 
@@ -860,6 +958,22 @@ function closeRescheduleRulesModal() {
         closeRescheduleRulesModal();
     }
 }
+</script>
+<script>
+    console.log('=== RESCHEDULE PAGE LOADED ===');
+    console.log('Current URL:', window.location.href);
+    
+    // Get next parameter from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const nextParam = urlParams.get('next');
+    console.log('Next parameter value:', nextParam);
+    
+    // Test if the submitReschedule function exists
+    if (typeof submitReschedule === 'function') {
+        console.log('submitReschedule function exists');
+    } else {
+        console.log('submitReschedule function NOT found!');
+    }
 </script>
 </body>
 </html>
