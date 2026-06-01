@@ -15,12 +15,13 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'tutor') {
 
 $userID = $_SESSION['user_id'];
 
-// Get tutor data
 $stmt = $conn->prepare("
     SELECT u.*, tp.experience, tp.rate, tp.bio, tp.language_certificate,
-           tp.qualification
+           tp.qualification,
+           bd.bank_name, bd.bank_account_number, bd.bank_account_name
     FROM users u
     LEFT JOIN tutor_profiles tp ON u.id = tp.user_id
+    LEFT JOIN tutor_bank_details bd ON u.id = bd.tutor_id
     WHERE u.id = ? AND u.role = 'tutor'
 ");
 $stmt->bind_param("i", $userID);
@@ -31,6 +32,18 @@ if (!$tutor) {
     header("Location: login.php");
     exit();
 }
+
+// Get tutor bank details (multiple)
+$bankStmt = $conn->prepare("
+    SELECT id, bank_name, bank_account_number, bank_account_name, is_default 
+    FROM tutor_bank_details 
+    WHERE tutor_id = ? 
+    ORDER BY is_default DESC, id ASC
+");
+$bankStmt->bind_param("i", $userID);
+$bankStmt->execute();
+$bankAccounts = $bankStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$hasBankAccounts = count($bankAccounts) > 0;
 
 
 $displayName = $tutor['fullname'];
@@ -264,8 +277,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
     header("Location: teacher_profile.php");
     exit();
-}
+}// SAVE/ADD Bank Account (WITH DUPLICATE CHECK)
+if ($_POST['action'] === 'save_bank') {
+    $bankId = intval($_POST['bank_id'] ?? 0);
+    $bankName = trim($_POST['bank_name'] ?? '');
+    $bankAccountNumber = trim($_POST['bank_account_number'] ?? '');
+    $bankAccountName = trim($_POST['bank_account_name'] ?? '');
     
+    $errors = [];
+    if (empty($bankName)) $errors[] = "Bank name is required";
+    if (empty($bankAccountNumber)) $errors[] = "Account number is required";
+    if (empty($bankAccountName)) $errors[] = "Account holder name is required";
+    
+    if (empty($errors)) {
+        // CHECK FOR DUPLICATE (same account number)
+        $dupStmt = $conn->prepare("
+            SELECT id FROM tutor_bank_details 
+            WHERE tutor_id = ? AND bank_account_number = ? AND id != ?
+        ");
+        $dupStmt->bind_param("isi", $userID, $bankAccountNumber, $bankId);
+        $dupStmt->execute();
+        $duplicate = $dupStmt->get_result()->fetch_assoc();
+        
+        if ($duplicate) {
+            $_SESSION['error_message'] = "This bank account number already exists! Please use a different account.";
+            header("Location: teacher_profile.php");
+            exit();
+        }
+        
+        $checkCount = $conn->prepare("SELECT COUNT(*) as count FROM tutor_bank_details WHERE tutor_id = ?");
+        $checkCount->bind_param("i", $userID);
+        $checkCount->execute();
+        $count = $checkCount->get_result()->fetch_assoc()['count'];
+        
+        if ($bankId > 0) {
+            // Update existing
+            $stmt = $conn->prepare("
+                UPDATE tutor_bank_details SET 
+                    bank_name = ?, bank_account_number = ?, bank_account_name = ? 
+                WHERE id = ? AND tutor_id = ?
+            ");
+            $stmt->bind_param("sssii", $bankName, $bankAccountNumber, $bankAccountName, $bankId, $userID);
+        } else {
+            // Check limit (max 3)
+            if ($count >= 3) {
+                $_SESSION['error_message'] = "Maximum 3 bank accounts allowed.";
+                header("Location: teacher_profile.php");
+                exit();
+            }
+            // First account becomes default
+            $isDefault = ($count == 0) ? 1 : 0;
+            $stmt = $conn->prepare("
+                INSERT INTO tutor_bank_details (tutor_id, bank_name, bank_account_number, bank_account_name, is_default) 
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->bind_param("isssi", $userID, $bankName, $bankAccountNumber, $bankAccountName, $isDefault);
+        }
+        
+        if ($stmt->execute()) {
+            $_SESSION['success_message'] = $bankId > 0 ? 'Bank details updated!' : 'Bank account added!';
+        } else {
+            $_SESSION['error_message'] = 'Error saving bank details.';
+        }
+    } else {
+        $_SESSION['error_message'] = implode(", ", $errors);
+    }
+    header("Location: teacher_profile.php");
+    exit();
+}
+
+// DELETE Bank Account
+if ($_POST['action'] === 'delete_bank') {
+    $bankId = intval($_POST['bank_id'] ?? 0);
+    $stmt = $conn->prepare("DELETE FROM tutor_bank_details WHERE id = ? AND tutor_id = ?");
+    $stmt->bind_param("ii", $bankId, $userID);
+    if ($stmt->execute()) {
+        $_SESSION['success_message'] = 'Bank account removed.';
+    }
+    header("Location: teacher_profile.php");
+    exit();
+}
+
+// SET DEFAULT Bank Account
+if ($_POST['action'] === 'set_default_bank') {
+    $bankId = intval($_POST['bank_id'] ?? 0);
+    $conn->query("UPDATE tutor_bank_details SET is_default = 0 WHERE tutor_id = $userID");
+    $stmt = $conn->prepare("UPDATE tutor_bank_details SET is_default = 1 WHERE id = ? AND tutor_id = ?");
+    $stmt->bind_param("ii", $bankId, $userID);
+    $stmt->execute();
+    $_SESSION['success_message'] = 'Default bank account updated.';
+    header("Location: teacher_profile.php");
+    exit();
+}
     if ($_POST['action'] === 'change_password') {
         $current = $_POST['current_password'] ?? '';
         $new = $_POST['new_password'] ?? '';
@@ -1124,6 +1227,7 @@ body::before {
         <button class="tab active" onclick="switchTab('profile')"><i class="bi bi-person"></i> Profile</button>
         <button class="tab" onclick="switchTab('security')"><i class="bi bi-shield-lock"></i> Security</button>
         <button class="tab" onclick="switchTab('certificates')"><i class="bi bi-file-earmark-text"></i> Certificates</button>
+        <button class="tab" onclick="switchTab('bank')"><i class="bi bi-bank2"></i> Bank Account</button>
     </div>
 
     <!-- Profile Tab -->
@@ -1302,8 +1406,7 @@ body::before {
     </div>
 </div>
 
-    <!-- Certificates Tab -->
-    <!-- Certificates Tab -->
+
 <div id="tabCertificates" style="display: none;">
     <div class="glass-card">
         <div class="form-panel">
@@ -1374,12 +1477,86 @@ body::before {
             <?php endif; ?>
         </div>
     </div>
+</div><!-- Bank Account Tab - MULTIPLE ACCOUNTS VERSION -->
+<div id="tabBank" style="display: none;">
+    <div class="glass-card">
+        <div class="form-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3><i class="bi bi-bank2"></i> Bank Account Details</h3>
+                <?php if (count($bankAccounts) < 3): ?>
+                    <button class="btn-primary" onclick="openBankModal()" style="width: auto; padding: 8px 20px;">
+                        <i class="bi bi-plus-circle"></i> Add Account
+                    </button>
+                <?php endif; ?>
+            </div>
+            <p class="sub">Your bank details are required to receive payouts (Max 3 accounts)</p>
+            
+            <!-- Security notice -->
+            <div style="background: #e0f2fe; border-radius: 12px; padding: 12px 16px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px;">
+                <i class="bi bi-shield-lock-fill" style="color: #0284c7; font-size: 20px;"></i>
+                <div style="font-size: 12px; color: #075985;">
+                    <strong>Securely stored</strong> — Your bank details are encrypted and only used for payout requests.
+                </div>
+            </div>
+            
+            <?php if (empty($bankAccounts)): ?>
+                <!-- No bank accounts -->
+                <div class="empty-state" style="text-align: center; padding: 40px 20px; background: #f8fafc; border-radius: 16px;">
+                    <i class="bi bi-bank2" style="font-size: 48px; color: #cbd5e1; display: block; margin-bottom: 15px;"></i>
+                    <p style="color: #64748b; margin-bottom: 20px;">No bank account added yet. Add up to 3 bank accounts.</p>
+                </div>
+            <?php else: ?>
+                <!-- Show all bank accounts -->
+                <?php foreach ($bankAccounts as $index => $account): ?>
+                    <div style="background: #f8fafc; border-radius: 16px; padding: 16px 20px; margin-bottom: 16px; border: 1px solid <?= $account['is_default'] ? '#28a745' : '#e2e8f0' ?>;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <?php if ($account['is_default']): ?>
+                                    <span style="background: #28a745; color: white; padding: 2px 10px; border-radius: 20px; font-size: 10px;">DEFAULT</span>
+                                <?php endif; ?>
+                                <span style="font-weight: 600;">Account <?= $index + 1 ?></span>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <?php if (!$account['is_default']): ?>
+                                    <button class="btn-outline" onclick="setDefaultBank(<?= $account['id'] ?>)" style="padding: 4px 12px; font-size: 11px; width: auto;">
+                                        Set as Default
+                                    </button>
+                                <?php endif; ?>
+                                <button class="btn-outline" onclick="editBankAccount(<?= $account['id'] ?>)" style="padding: 4px 12px; font-size: 11px; width: auto;">
+                                    <i class="bi bi-pencil"></i> Edit
+                                </button>
+                                <button class="btn-outline" onclick="deleteBankAccount(<?= $account['id'] ?>)" style="padding: 4px 12px; font-size: 11px; width: auto; background: #fee2e2; color: #dc2626; border-color: #fecaca;">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 130px 1fr; gap: 10px; font-size: 13px;">
+                            <div style="color: #475569;">Bank Name:</div>
+                            <div style="font-weight: 500;"><?= e($account['bank_name']) ?></div>
+                            
+                            <div style="color: #475569;">Account Number:</div>
+                            <div style="font-weight: 500;">****<?= substr(e($account['bank_account_number']), -4) ?></div>
+                            
+                            <div style="color: #475569;">Account Holder:</div>
+                            <div style="font-weight: 500;"><?= e($account['bank_account_name']) ?></div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+                
+                <?php if (count($bankAccounts) < 3): ?>
+                    <button class="btn-outline" onclick="openBankModal()" style="width: 100%; padding: 12px; margin-top: 8px;">
+                        <i class="bi bi-plus-lg"></i> Add Another Bank Account (<?= count($bankAccounts) ?>/3)
+                    </button>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+    </div>
 </div>
 </div>
 <!-- Edit Profile Modal -->
 <div id="editProfileModal" style="display: none;">
     <div class="modal-overlay" onclick="closeEditProfileModal(event)">
-        <div class="modal-container" style="max-width: 800px;" onclick="event.stopPropagation()">
+        <div class="modal-container" style="max-width: 750px;" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h2><i class="bi bi-pencil-square"></i> Edit Profile</h2>
                 <button class="modal-close" onclick="closeEditProfileModal()">&times;</button>
@@ -1522,7 +1699,7 @@ body::before {
 <!-- Deactivate Account Modal -->
 <div id="deactivateModal" style="display: none;">
     <div class="modal-overlay" onclick="closeDeactivateModal(event)">
-        <div class="modal-container" style="max-width: 500px;" onclick="event.stopPropagation()">
+        <div class="modal-container" style="max-width: 750px;" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h2 style="color: #dc2626;"><i class="bi bi-exclamation-triangle-fill"></i> Deactivate Account</h2>
                 <button class="modal-close" onclick="closeDeactivateModal()">&times;</button>
@@ -1611,12 +1788,13 @@ function switchTab(tab) {
     document.getElementById('tabProfile').style.display = tab === 'profile' ? 'block' : 'none';
     document.getElementById('tabSecurity').style.display = tab === 'security' ? 'block' : 'none';
     document.getElementById('tabCertificates').style.display = tab === 'certificates' ? 'block' : 'none';
-    
+    document.getElementById('tabBank').style.display = tab === 'bank' ? 'block' : 'none';
     const tabs = document.querySelectorAll('.tab');
     tabs.forEach(btn => btn.classList.remove('active'));
     if (tab === 'profile') tabs[0].classList.add('active');
     else if (tab === 'security') tabs[1].classList.add('active');
     else if (tab === 'certificates') tabs[2].classList.add('active');
+    else if (tab === 'bank') tabs[3].classList.add('active');
 }
 
 // Password strength check and validation
@@ -1817,6 +1995,87 @@ function closeEditProfileModal(event) {
     document.getElementById('editProfileModal').style.display = 'none';
     document.body.style.overflow = 'auto';
 }
+
+// Bank Account Functions
+function openBankModal() {
+    document.getElementById('modalTitle').innerHTML = '<i class="bi bi-bank2"></i> Add Bank Account';
+    document.getElementById('bank_id').value = '0';
+    document.getElementById('bank_name').value = '';
+    document.getElementById('bank_account_number').value = '';
+    document.getElementById('bank_account_name').value = '';
+    document.getElementById('bankModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function editBankAccount(bankId) {
+    // First get the bank details from the existing data in the table
+    // Since we already have bankAccounts array in PHP, we need to pass it to JS
+    // Alternative: fetch via AJAX
+    fetch(`get_bank_details.php?id=${bankId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data) {
+                document.getElementById('modalTitle').innerHTML = '<i class="bi bi-bank2"></i> Edit Bank Account';
+                document.getElementById('bank_id').value = data.id;
+                document.getElementById('bank_name').value = data.bank_name;
+                document.getElementById('bank_account_number').value = data.bank_account_number;
+                document.getElementById('bank_account_name').value = data.bank_account_name;
+                document.getElementById('bankModal').style.display = 'block';
+                document.body.style.overflow = 'hidden';
+            }
+        })
+        .catch(error => {
+            showToast('Error loading bank details', 'error');
+        });
+}
+
+function deleteBankAccount(bankId) {
+    Swal.fire({
+        title: 'Remove Bank Account?',
+        text: "This action cannot be undone!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, remove it'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.innerHTML = `<input type="hidden" name="action" value="delete_bank"><input type="hidden" name="bank_id" value="${bankId}">`;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
+}
+
+function setDefaultBank(bankId) {
+    Swal.fire({
+        title: 'Set as Default?',
+        text: "This bank account will be used for future payouts",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#28a745',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, set as default'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.innerHTML = `<input type="hidden" name="action" value="set_default_bank"><input type="hidden" name="bank_id" value="${bankId}">`;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
+}
+
+// Also add SweetAlert2 for delete confirmation (you already have the CDN)
+function closeBankModal(event) {
+    if (event && event.target !== event.currentTarget && event.target !== document.getElementById('bankModal')) return;
+    document.getElementById('bankModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+}
+
 // Direct profile picture upload with page refresh
 document.getElementById('directUploadBtn').addEventListener('click', function() {
     document.getElementById('directFileInput').click();
@@ -2025,5 +2284,68 @@ document.addEventListener('DOMContentLoaded', function() {
     <?php unset($_SESSION['error_message']); ?>
 <?php endif; ?>
 </script>
+<div id="bankModal" style="display: none;">
+    <div class="modal-overlay" onclick="closeBankModal(event)">
+        <div class="modal-container" style="max-width: 750px; width: 90%;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 id="modalTitle"><i class="bi bi-bank2"></i> Add Bank Account</h2>
+                <button class="modal-close" onclick="closeBankModal()">&times;</button>
+            </div>
+            <form method="POST" id="bankForm">
+                <input type="hidden" name="action" value="save_bank">
+                <input type="hidden" name="bank_id" id="bank_id" value="0">
+                <div class="modal-body" style="padding: 24px 28px;">
+                    <p style="font-size: 13px; color: #64748b; margin-bottom: 20px;">
+                        Your bank details are required to receive payouts. They are securely stored and only used for transferring your earnings.
+                    </p>
+                    
+                    <div class="form-group">
+                        <label>Bank Name</label>
+                        <select name="bank_name" id="bank_name" required style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px;">
+                            <option value="">-- Select Bank --</option>
+                            <option value="Maybank">Maybank</option>
+                            <option value="CIMB Bank">CIMB Bank</option>
+                            <option value="Public Bank">Public Bank</option>
+                            <option value="RHB Bank">RHB Bank</option>
+                            <option value="Hong Leong Bank">Hong Leong Bank</option>
+                            <option value="AmBank">AmBank</option>
+                            <option value="Bank Islam">Bank Islam</option>
+                            <option value="Bank Rakyat">Bank Rakyat</option>
+                            <option value="BSN">BSN</option>
+                            <option value="OCBC Bank">OCBC Bank</option>
+                            <option value="UOB Bank">UOB Bank</option>
+                            <option value="Standard Chartered">Standard Chartered</option>
+                            <option value="HSBC Bank">HSBC Bank</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Account Number</label>
+                        <input type="text" name="bank_account_number" id="bank_account_number" placeholder="e.g., 112233445566" required pattern="[0-9]{8,20}">
+                        <small style="font-size: 11px; color: #64748b;">Numbers only, 8-20 digits</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Account Holder Name</label>
+                        <input type="text" name="bank_account_name" id="bank_account_name" placeholder="As shown on bank statement" required>
+                        <small style="font-size: 11px; color: #64748b;">Must exactly match your bank account name</small>
+                    </div>
+                    
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label style="display: flex; align-items: center; gap: 10px; font-weight: normal; cursor: pointer;">
+                            <input type="checkbox" required style="width: 18px; height: 18px; margin: 0;"> 
+                            <span style="font-size: 12px; color: #475569;">I confirm that the bank details above are correct and belong to me.</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 16px 24px;">
+                    <button type="button" class="btn-outline" onclick="closeBankModal()" style="width: auto; padding: 8px 20px;">Cancel</button>
+                    <button type="submit" class="btn-primary" style="width: auto; padding: 8px 24px;">Save Bank Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 </body>
 </html>

@@ -758,13 +758,14 @@ $is_completed = ($b['status'] === 'completed');
 
       <!-- BOTTOM: meta + actions -->
       <div class="card-bottom">
-                <div class="card-meta">
-    <?php if ($b['payment_status'] === 'verified'): ?>
-        <strong>RM <?= e(number_format($b['payment_amount'], 2)) ?></strong>
-    <?php else: ?>
-        <strong>RM <?= e($b['rate']) ?>/hr</strong>
-    <?php endif; ?>
-</div>
+               <div class="card-meta">
+            <?php 
+            if (in_array($b['status'], ['confirmed', 'completed', 'rescheduled']) || !empty($b['payment_amount'])): ?>
+                <strong>RM <?= e(number_format($b['payment_amount'] ?? $b['rate'], 2)) ?></strong>
+            <?php else: ?>
+                <strong>RM <?= e($b['rate']) ?>/hr</strong>
+            <?php endif; ?>
+        </div>
 
 <?php if ($is_confirmed && $is_past_class && !$is_completed): ?>
 <div style="margin-top: 12px; background: white; border-radius: 12px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #e8e8e8; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
@@ -827,12 +828,25 @@ $is_completed = ($b['status'] === 'completed');
     <?php 
     // Check if session is in the future (not ended)
     $session_datetime = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
-    $is_future_session = $session_datetime > time();
+    $current_time = time();
+    $is_future_session = $session_datetime > $current_time;
+    $hoursUntilSession = ($session_datetime - $current_time) / 3600;
     ?>
     <?php if ($is_future_session): ?>
-        <a href="reschedule_booking.php?id=<?= $b['id'] ?>" class="btn-action ghost">
-            <i class="bi bi-calendar-plus"></i> Reschedule
-        </a>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="reschedule_booking.php?id=<?= $b['id'] ?>" class="btn-action ghost">
+                <i class="bi bi-calendar-plus"></i> Reschedule
+            </a>
+            <?php if ($hoursUntilSession >= 24): ?>
+            <button onclick="confirmCancel(<?= $b['id'] ?>, 'confirmed', true)" class="btn-action ghost" style="color:#28a745; border-color:#28a745;">
+                <i class="bi bi-cash-stack"></i> Cancel (Full Refund)
+            </button>
+            <?php elseif ($hoursUntilSession > 0 && $hoursUntilSession < 24): ?>
+            <button onclick="confirmCancel(<?= $b['id'] ?>, 'confirmed', false)" class="btn-action ghost" style="color:#f59e0b; border-color:#f59e0b;">
+                <i class="bi bi-exclamation-triangle"></i> Cancel (No Refund)
+            </button>
+            <?php endif; ?>
+        </div>
     <?php else: ?>
         <span class="btn-action muted">
             <i class="bi bi-clock-history"></i> Session Ended
@@ -883,6 +897,7 @@ $is_completed = ($b['status'] === 'completed');
     <p>Please select a reason for cancelling:</p>
     <form id="cancelForm" method="POST" action="cancel_booking.php">
       <input type="hidden" name="booking_id" id="cancel_booking_id">
+      <input type="hidden" name="refund_type" id="refund_type">
       
       <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
@@ -965,8 +980,38 @@ document.addEventListener('click', function(e) {
   if (e.target === document.getElementById('cancelModal')) closeCancelModal();
 });
 
-function confirmCancel(id, status) {
+function confirmCancel(id, status, isFullRefund = null) {
+  // Store booking ID
   document.getElementById('cancel_booking_id').value = id;
+  
+  // Update modal title and message based on status and refund eligibility
+  const modalTitle = document.querySelector('#cancelModal h3');
+  const modalMessage = document.querySelector('#cancelModal p');
+  
+  if (status === 'confirmed') {
+      if (isFullRefund) {
+          modalTitle.innerHTML = '<i class="bi bi-cash-stack" style="color: #28a745;"></i> Cancel Confirmed Booking (Full Refund)';
+          if (modalMessage) {
+              modalMessage.innerHTML = '✅ You will receive a <strong style="color: #28a745;">FULL REFUND</strong> because you are cancelling more than 24 hours before the session.<br><br>Please select a reason for cancelling:';
+          }
+          // Store refund eligibility
+          document.getElementById('cancelForm').setAttribute('data-refund', 'full');
+      } else {
+          modalTitle.innerHTML = '<i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i> Cancel Confirmed Booking (No Refund)';
+          if (modalMessage) {
+              modalMessage.innerHTML = '<strong style="color: #f59e0b;">WARNING: No refund will be issued</strong> because you are cancelling less than 24 hours before the session.<br><br>Please select a reason for cancelling:';
+          }
+          // Store refund eligibility
+          document.getElementById('cancelForm').setAttribute('data-refund', 'none');
+      }
+  } else {
+      modalTitle.innerHTML = '<i class="bi bi-exclamation-triangle" style="color: #dc2626;"></i> Cancel Booking';
+      if (modalMessage) {
+          modalMessage.innerHTML = 'Please select a reason for cancelling:';
+      }
+      document.getElementById('cancelForm').removeAttribute('data-refund');
+  }
+  
   document.getElementById('cancelModal').classList.add('show');
 }
 
@@ -996,6 +1041,7 @@ document.getElementById('cancelForm')?.addEventListener('submit', function(e) {
     return;
   }
   
+  let cancelReason = selectedReason.value;
   if (selectedReason.value === 'Other') {
     const otherText = document.getElementById('otherReasonText').value.trim();
     if (!otherText) {
@@ -1003,8 +1049,16 @@ document.getElementById('cancelForm')?.addEventListener('submit', function(e) {
       alert('Please specify your reason');
       return;
     }
-    // Update the cancel_reason value with the full reason
-    selectedReason.value = 'Other: ' + otherText;
+    cancelReason = 'Other: ' + otherText;
+  }
+  
+  // Update the cancel_reason value
+  selectedReason.value = cancelReason;
+  
+  // Set refund type if available
+  const refundType = document.getElementById('cancelForm').getAttribute('data-refund');
+  if (refundType) {
+    document.getElementById('refund_type').value = refundType;
   }
 });
 

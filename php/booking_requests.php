@@ -1776,8 +1776,6 @@ function renderPendingTable(requests) {
     html += '</tbody></table>';
     container.innerHTML = html;
 }
-
-// ========== DISPUTES RENDER ==========
 function renderDisputesTable(disputes) {
     const container = document.getElementById('disputes-tab');
     if (!container) return;
@@ -1821,6 +1819,21 @@ function renderDisputesTable(disputes) {
         const issueLabel = issue_labels[dispute.issue_type] || dispute.issue_type.replace(/_/g, ' ');
         const shortMessage = dispute.message ? (dispute.message.length > 100 ? dispute.message.substring(0, 100) + '...' : dispute.message) : '<span style="color:#999;">No message provided</span>';
         
+        // Calculate hours old using JavaScript, not PHP
+        const disputeDate = new Date(dispute.dispute_date);
+        const now = new Date();
+        const hoursOld = (now - disputeDate) / (1000 * 60 * 60);
+        
+        let urgencyBadge = '';
+        if (hoursOld > 24) {
+            urgencyBadge = '<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">URGENT</span>';
+        } else if (hoursOld > 12) {
+            urgencyBadge = '<span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">Due Soon</span>';
+        }
+        
+        // Format the date in JavaScript
+        const formattedDate = disputeDate.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+        
         html += `
             <tr>
                 <td data-label="Student" class="student-cell">${escapeHtml(dispute.student_name)}</td>
@@ -1832,32 +1845,20 @@ function renderDisputesTable(disputes) {
                 </td>
                 <td data-label="Message" style="max-width: 250px;">${shortMessage}</td>
                 <td data-label="Reported On" style="white-space: nowrap;">
-    <?= date('d M Y', strtotime($dispute['dispute_date'])) ?>
-    <?php 
-    $hoursOld = (time() - strtotime($dispute['dispute_date'])) / 3600;
-    if ($hoursOld > 24): 
-    ?>
-        <span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">
-            URGENT
-        </span>
-    <?php elseif ($hoursOld > 12): ?>
-        <span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-left: 8px;">
-            Due Soon
-        </span>
-    <?php endif; ?>
-</td>
-                                        <td data-label="Actions">
-    <div class="action-buttons">
-        <a href="tutor_booking_detail.php?id=<?= $dispute['booking_id'] ?>" class="btn-view">
-            <i class="bi bi-eye"></i> View Details
-        </a>
-    </div>
-</td>
+                    ${formattedDate} ${urgencyBadge}
+                </td>
+                <td data-label="Actions">
+                    <div class="action-buttons">
+                        <a href="tutor_booking_detail.php?id=${dispute.booking_id}" class="btn-view">
+                            <i class="bi bi-eye"></i> View Details
+                        </a>
+                    </div>
+                </td>
             </tr>
         `;
     }
     
-    html += '</tbody><tr>';
+    html += '</tbody>\\n</table>';
     container.innerHTML = html;
 }
 

@@ -9,6 +9,7 @@ register_shutdown_function(function() {
         file_put_contents(__DIR__ . '/cron_error.log', date('Y-m-d H:i:s') . ' - ' . $error['message'] . PHP_EOL, FILE_APPEND);
     }
 });
+
 include __DIR__ . '/config.php';
 include __DIR__ . '/insert_notification.php';
 date_default_timezone_set('Asia/Kuala_Lumpur');

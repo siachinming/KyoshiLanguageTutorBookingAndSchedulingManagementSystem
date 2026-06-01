@@ -8,7 +8,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'tutor') {
     header("Location: login.php");
     exit();
 }
-
+$payoutMessage = null;
+$payoutMessageType = null;
 $userID = $_SESSION['user_id'];
 
 // Get tutor info
@@ -253,11 +254,62 @@ function formatMoney($amount) {
     return 'RM ' . number_format($amount, 2);
 }
 
+// Get all bank accounts from tutor_bank_details table
+$bankStmt = $conn->prepare("
+    SELECT id, bank_name, bank_account_number, bank_account_name, is_default 
+    FROM tutor_bank_details 
+    WHERE tutor_id = ? 
+    ORDER BY is_default DESC, id ASC
+");
+$bankStmt->bind_param("i", $userID);
+$bankStmt->execute();
+$bankAccounts = $bankStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$hasBankAccounts = count($bankAccounts) > 0;
+
+// Get the default bank account (or first if none marked as default)
+$defaultBank = null;
+if ($hasBankAccounts) {
+    foreach ($bankAccounts as $bank) {
+        if ($bank['is_default']) {
+            $defaultBank = $bank;
+            break;
+        }
+    }
+    if (!$defaultBank) {
+        $defaultBank = $bankAccounts[0];
+    }
+}
 // Handle payout request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
     $amount = floatval($_POST['amount'] ?? 0);
+    $selectedBankId = intval($_POST['selected_bank'] ?? 0);
     
-    if ($amount <= 0) {
+    // Get the selected bank details
+    $selectedBank = null;
+    foreach ($bankAccounts as $bank) {
+        if ($bank['id'] == $selectedBankId) {
+            $selectedBank = $bank;
+            break;
+        }
+    }
+    
+    // If no bank selected but has accounts, use default
+    if (!$selectedBank && $hasBankAccounts) {
+        $selectedBank = $defaultBank;
+    }
+    
+    $bankErrors = [];
+    
+    if (!$hasBankAccounts) {
+        $bankErrors[] = "Please add a bank account in your profile before requesting payout";
+    } elseif (!$selectedBank) {
+        $bankErrors[] = "Please select a bank account";
+    }
+    
+    if (!empty($bankErrors)) {
+        $payoutMessage = implode(", ", $bankErrors);
+        $payoutMessageType = "error";
+    } elseif ($amount <= 0) {
         $payoutMessage = "Please enter a valid amount";
         $payoutMessageType = "error";
     } elseif ($amount > $totalNet) {
@@ -276,6 +328,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 tutor_id INT NOT NULL,
                 amount DECIMAL(10,2) NOT NULL,
+                bank_account_id INT,
+                bank_name VARCHAR(100),
+                bank_account_number VARCHAR(50),
+                bank_account_name VARCHAR(100),
                 status ENUM('pending', 'approved', 'completed', 'rejected') DEFAULT 'pending',
                 requested_at DATETIME,
                 processed_at DATETIME,
@@ -283,15 +339,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
                 FOREIGN KEY (tutor_id) REFERENCES users(id)
             )
         ");
-        
+
+        // Insert payout request
         $stmt = $conn->prepare("
-            INSERT INTO payout_requests (tutor_id, amount, status, requested_at) 
-            VALUES (?, ?, 'pending', NOW())
+            INSERT INTO payout_requests (tutor_id, amount, bank_account_id, bank_name, bank_account_number, bank_account_name, status, requested_at) 
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())
         ");
-        $stmt->bind_param("id", $userID, $amount);
+        $stmt->bind_param("idisss", $userID, $amount, $selectedBank['id'], $selectedBank['bank_name'], $selectedBank['bank_account_number'], $selectedBank['bank_account_name']);
         
         if ($stmt->execute()) {
-            $payoutMessage = "Payout request submitted successfully! Admin will process within 3-5 business days.";
+            $payoutMessage = "Payout request submitted successfully!";
             $payoutMessageType = "success";
             
             header("Location: earnings.php?success=1");
@@ -301,6 +358,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
             $payoutMessageType = "error";
         }
     }
+}
+
+// SAVE BANK ACCOUNT - Direct handler in earnings.php
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_bank') {
+    $bankId = intval($_POST['bank_id'] ?? 0);
+    $bankName = trim($_POST['bank_name'] ?? '');
+    $bankAccountNumber = trim($_POST['bank_account_number'] ?? '');
+    $bankAccountName = trim($_POST['bank_account_name'] ?? '');
+    
+    $errors = [];
+    if (empty($bankName)) $errors[] = "Bank name is required";
+    if (empty($bankAccountNumber)) $errors[] = "Account number is required";
+    if (empty($bankAccountName)) $errors[] = "Account holder name is required";
+    
+    if (empty($errors)) {
+        // Check for duplicate account number
+        $dupStmt = $conn->prepare("
+            SELECT id FROM tutor_bank_details 
+            WHERE tutor_id = ? AND bank_account_number = ? AND id != ?
+        ");
+        $dupStmt->bind_param("isi", $userID, $bankAccountNumber, $bankId);
+        $dupStmt->execute();
+        $duplicate = $dupStmt->get_result()->fetch_assoc();
+        
+        if ($duplicate) {
+            $_SESSION['error_message'] = "This bank account number already exists!";
+        } else {
+            $checkCount = $conn->prepare("SELECT COUNT(*) as count FROM tutor_bank_details WHERE tutor_id = ?");
+            $checkCount->bind_param("i", $userID);
+            $checkCount->execute();
+            $count = $checkCount->get_result()->fetch_assoc()['count'];
+            
+            if ($bankId > 0) {
+                // Update existing
+                $stmt = $conn->prepare("
+                    UPDATE tutor_bank_details SET 
+                        bank_name = ?, bank_account_number = ?, bank_account_name = ? 
+                    WHERE id = ? AND tutor_id = ?
+                ");
+                $stmt->bind_param("sssii", $bankName, $bankAccountNumber, $bankAccountName, $bankId, $userID);
+            } else {
+                // Insert new - check limit
+                if ($count >= 3) {
+                    $_SESSION['error_message'] = "Maximum 3 bank accounts allowed.";
+                    header("Location: earnings.php");
+                    exit();
+                }
+                $isDefault = ($count == 0) ? 1 : 0;
+                $stmt = $conn->prepare("
+                    INSERT INTO tutor_bank_details (tutor_id, bank_name, bank_account_number, bank_account_name, is_default) 
+                    VALUES (?, ?, ?, ?, ?)
+                ");
+                $stmt->bind_param("isssi", $userID, $bankName, $bankAccountNumber, $bankAccountName, $isDefault);
+            }
+            
+            if ($stmt->execute()) {
+                $_SESSION['success_message'] = $bankId > 0 ? 'Bank account updated!' : 'Bank account added!';
+            } else {
+                $_SESSION['error_message'] = 'Error saving bank details.';
+            }
+        }
+    } else {
+        $_SESSION['error_message'] = implode(", ", $errors);
+    }
+    
+    header("Location: earnings.php?bank_added=1");
+    exit();
 }
 ?>
 
@@ -698,6 +822,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
             width: 400px;
             max-width: 90%;
         }
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #94a3b8;
+        }
+        .modal-close:hover {
+            color: #1d3156;
+        }
         .form-group {
             margin-bottom: 20px;
         }
@@ -797,6 +938,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
         </div>
     <?php endif; ?>
 
+    <?php if (isset($_SESSION['success_message'])): ?>
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle"></i>
+            <?= $_SESSION['success_message'] ?>
+        </div>
+        <?php unset($_SESSION['success_message']); ?>
+    <?php endif; ?>
+
+    <?php if (isset($_SESSION['error_message'])): ?>
+        <div class="alert alert-error">
+            <i class="bi bi-exclamation-circle"></i>
+            <?= $_SESSION['error_message'] ?>
+        </div>
+        <?php unset($_SESSION['error_message']); ?>
+    <?php endif; ?>
+
     <?php if ($tutorNoShowCount > 0): ?>
         <div class="alert alert-info">
             <i class="bi bi-info-circle"></i>
@@ -868,9 +1025,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
                 <tr>
                     <th>Date Requested</th>
                     <th>Amount</th>
+                    <th>Bank Account</th>
                     <th>Status</th>
                     <th>Processed Date</th>
-                    <th>Notes</th>
                 </tr>
             </thead>
             <tbody>
@@ -878,9 +1035,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
                 <tr>
                     <td><?= date('d M Y', strtotime($payout['requested_at'])) ?></td>
                     <td class="positive"><?= formatMoney($payout['amount']) ?></td>
+                    <td style="font-size: 11px;">
+                        <?= e($payout['bank_name']) ?><br>
+                        ****<?= substr(e($payout['bank_account_number']), -4) ?>
+                    </td>
                     <td><span class="status-<?= $payout['status'] ?>"><?= ucfirst($payout['status']) ?></span></td>
                     <td><?= $payout['processed_at'] ? date('d M Y', strtotime($payout['processed_at'])) : '-' ?></td>
-                    <td><?= e($payout['admin_notes'] ?? '-') ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -1092,28 +1252,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
             </tbody>
         </table>
     </div>
-
-    <!-- Payout Modal -->
-    <div id="payoutModal" class="modal-overlay">
-        <div class="modal-container">
-            <h3 style="margin-bottom: 16px;"><i class="bi bi-cash-stack"></i> Request Payout</h3>
+</div><!-- Payout Modal - Shows ALL bank accounts -->
+<div id="payoutModal" class="modal-overlay">
+    <div class="modal-container" style="max-width: 500px;">
+        <h3 style="margin-bottom: 16px;"><i class="bi bi-cash-stack"></i> Request Payout</h3>
+        <input type="hidden" name="return_to_payout" id="return_to_payout" value="0">
+        <?php if ($hasBankAccounts): ?>
             <form method="POST" action="">
                 <div class="form-group">
-                    <label>Enter Amount (RM)</label>
+                    <label>Select Bank Account</label>
+                    <select name="selected_bank" required style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px;">
+                        <?php foreach ($bankAccounts as $bank): ?>
+                            <option value="<?= $bank['id'] ?>" <?= ($bank['is_default']) ? 'selected' : '' ?>>
+                                <?= e($bank['bank_name']) ?> - ****<?= substr(e($bank['bank_account_number']), -4) ?>
+                                <?= $bank['is_default'] ? '(DEFAULT)' : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Payout Amount (RM)</label>
                     <input type="number" name="amount" id="payoutAmount" step="0.01" min="50" max="<?= $totalNet ?>" required>
                     <small style="font-size: 11px; color: #64748b;">Minimum: RM50 | Maximum: <?= formatMoney($totalNet) ?></small>
                 </div>
+                
                 <div class="modal-buttons">
                     <button type="button" class="btn-cancel" onclick="closePayoutModal()">Cancel</button>
                     <button type="submit" name="request_payout" class="btn-save">Submit Request</button>
+                </div>
+            </form>
+            
+            <?php if (count($bankAccounts) < 3): ?>
+                <div style="margin-top: 15px; text-align: center; padding-top: 12px; border-top: 1px solid #eef2f7;">
+                    <a href="#" onclick="event.preventDefault(); closePayoutModal(); openBankModal();" style="color: #E75A9B; font-size: 12px;">
+                        <i class="bi bi-plus-circle"></i> Add another bank account (<?= count($bankAccounts) ?>/3)
+                    </a>
+                </div>
+            <?php endif; ?>
+            
+        <?php else: ?>
+            <div style="background: #fef3c7; padding: 12px; border-radius: 12px; margin-bottom: 15px; color: #92400e; text-align: center;">
+                <i class="bi bi-info-circle-fill"></i>
+                <strong>No bank account added yet.</strong><br>
+                Your first bank account will be automatically set as DEFAULT.
+            </div>
+            
+            <!-- Bank Account Form (inline when no accounts) -->
+            <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600;">Bank Name</label>
+                    <select name="bank_name" id="modal_bank_name" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px;">
+                        <option value="">-- Select Bank --</option>
+                        <option value="Maybank">Maybank</option>
+                        <option value="CIMB Bank">CIMB Bank</option>
+                        <option value="Public Bank">Public Bank</option>
+                        <option value="RHB Bank">RHB Bank</option>
+                        <option value="Hong Leong Bank">Hong Leong Bank</option>
+                        <option value="AmBank">AmBank</option>
+                        <option value="Bank Islam">Bank Islam</option>
+                        <option value="Bank Rakyat">Bank Rakyat</option>
+                        <option value="BSN">BSN</option>
+                        <option value="OCBC Bank">OCBC Bank</option>
+                        <option value="UOB Bank">UOB Bank</option>
+                        <option value="Standard Chartered">Standard Chartered</option>
+                        <option value="HSBC Bank">HSBC Bank</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600;">Account Number</label>
+                    <input type="text" name="bank_account_number" id="modal_bank_account_number" placeholder="e.g., 112233445566" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px;">
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600;">Account Holder Name</label>
+                    <input type="text" name="bank_account_name" id="modal_bank_account_name" placeholder="As shown on bank statement" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px;">
+                </div>
+                <div>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+                        <input type="checkbox" id="modal_confirm_bank" required> I confirm the details are correct
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons" style="margin-top: 15px;">
+                <button type="button" class="btn-cancel" onclick="closePayoutModal()">Cancel</button>
+                <button type="button" class="btn-save" onclick="saveBankAndRequestPayout()">Add & Request Payout</button>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+    <!-- Bank Account Add/Edit Modal - SIMPLIFIED -->
+    <div id="bankModal" style="display: none;">
+        <div class="modal-container" style="max-width: 500px; width: 90%; margin: auto; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 24px; z-index: 1001; box-shadow: 0 20px 35px rgba(0,0,0,0.2);">
+            <div class="modal-header" style="padding: 20px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <h2 id="bankModalTitle" style="font-size: 20px; margin: 0;"><i class="bi bi-bank2"></i> Add Bank Account</h2>
+                <button class="modal-close" onclick="closeBankModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #94a3b8;">&times;</button>
+            </div>
+            <form method="POST" action="" id="bankForm">
+                <input type="hidden" name="action" value="save_bank">
+                <input type="hidden" name="bank_id" id="bank_id" value="0">
+                <div class="modal-body" style="padding: 24px;">
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">Bank Name</label>
+                        <select name="bank_name" id="bank_name" required style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px;">
+                            <option value="">-- Select Bank --</option>
+                            <option value="Maybank">Maybank</option>
+                            <option value="CIMB Bank">CIMB Bank</option>
+                            <option value="Public Bank">Public Bank</option>
+                            <option value="RHB Bank">RHB Bank</option>
+                            <option value="Hong Leong Bank">Hong Leong Bank</option>
+                            <option value="AmBank">AmBank</option>
+                            <option value="Bank Islam">Bank Islam</option>
+                            <option value="Bank Rakyat">Bank Rakyat</option>
+                            <option value="BSN">BSN</option>
+                            <option value="OCBC Bank">OCBC Bank</option>
+                            <option value="UOB Bank">UOB Bank</option>
+                            <option value="Standard Chartered">Standard Chartered</option>
+                            <option value="HSBC Bank">HSBC Bank</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">Account Number</label>
+                        <input type="text" name="bank_account_number" id="bank_account_number" placeholder="e.g., 112233445566" required pattern="[0-9]{8,20}" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px;">
+                        <small style="font-size: 11px; color: #64748b;">Numbers only, 8-20 digits</small>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">Account Holder Name</label>
+                        <input type="text" name="bank_account_name" id="bank_account_name" placeholder="As shown on bank statement" required style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px;">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" required style="width: 18px; height: 18px;"> 
+                            <span style="font-size: 12px;">I confirm that the bank details above are correct and belong to me.</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 16px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 12px;">
+                    <button type="button" class="btn-cancel" onclick="closeBankModal()" style="padding: 8px 20px; border-radius: 30px; border: 1px solid #cbd5e1; background: white; cursor: pointer;">Cancel</button>
+                    <button type="submit" class="btn-save" style="padding: 8px 20px; border-radius: 30px; background: #28a745; color: white; border: none; cursor: pointer;">Save Bank Account</button>
                 </div>
             </form>
         </div>
     </div>
 
     <?php endif; ?>
-</div>
 
+</div>
 <script>
 function toggleDropdown() {
     const d = document.getElementById('profileDropdown');
@@ -1127,6 +1417,64 @@ window.addEventListener('click', function(e) {
         dd.style.display = 'none';
     }
 });
+
+function saveBankAndRequestPayout() {
+    const bankName = document.getElementById('modal_bank_name').value;
+    const bankAccountNumber = document.getElementById('modal_bank_account_number').value;
+    const bankAccountName = document.getElementById('modal_bank_account_name').value;
+    const confirmCheckbox = document.getElementById('modal_confirm_bank');
+    
+    if (!bankName) {
+        alert('Please select a bank name');
+        return;
+    }
+    if (!bankAccountNumber) {
+        alert('Please enter account number');
+        return;
+    }
+    if (!bankAccountName) {
+        alert('Please enter account holder name');
+        return;
+    }
+    if (!confirmCheckbox.checked) {
+        alert('Please confirm the bank details are correct');
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+        <input type="hidden" name="action" value="save_bank">
+        <input type="hidden" name="bank_name" value="${bankName}">
+        <input type="hidden" name="bank_account_number" value="${bankAccountNumber}">
+        <input type="hidden" name="bank_account_name" value="${bankAccountName}">
+        <input type="hidden" name="amount" value="${document.getElementById('payoutAmount').value}">
+        <input type="hidden" name="request_payout" value="1">
+    `;
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function openBankModal() {
+    document.getElementById('bank_id').value = '0';
+    document.getElementById('bank_name').value = '';
+    document.getElementById('bank_account_number').value = '';
+    document.getElementById('bank_account_name').value = '';
+    
+    const modal = document.getElementById('bankModal');
+    if (modal) {
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeBankModal() {
+    const modal = document.getElementById('bankModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+}
 
 function openPayoutModal(maxAmount) {
     document.getElementById('payoutAmount').max = maxAmount;
@@ -1148,40 +1496,21 @@ if (monthlyCtx) {
                 label: 'Net Earnings (RM)',
                 data: <?= json_encode($chartNetEarnings) ?>,
                 borderColor: '#E75A9B',
-                backgroundColor: 'rgba(231, 90, 155, 0.1)',
+                backgroundColor: 'rgba(231,90,155,0.1)',
                 borderWidth: 3,
                 fill: true,
                 tension: 0.4,
                 pointBackgroundColor: '#E75A9B',
                 pointBorderColor: '#fff',
                 pointBorderWidth: 2,
-                pointRadius: 5,
-                pointHoverRadius: 7
+                pointRadius: 5
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            plugins: {
-                legend: { position: 'top' },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'RM ' + context.raw.toFixed(2);
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return 'RM ' + value;
-                        }
-                    }
-                }
-            }
+            plugins: { legend: { position: 'top' } },
+            scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return 'RM ' + value; } } } }
         }
     });
 }
@@ -1202,31 +1531,29 @@ if (pieCtx) {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            plugins: {
-                legend: { position: 'right' },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.label || '';
-                            const value = context.raw || 0;
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = ((value / total) * 100).toFixed(1);
-                            return `${label}: RM ${value.toFixed(2)} (${percentage}%)`;
-                        }
-                    }
-                }
-            }
+            plugins: { legend: { position: 'right' } }
         }
     });
 }
 
-// Close modal when clicking outside
 window.onclick = function(event) {
     const modal = document.getElementById('payoutModal');
     if (event.target === modal) {
         closePayoutModal();
     }
 }
+
+// Auto-open payout modal when bank_added parameter is present
+<?php if (isset($_GET['bank_added']) && $_GET['bank_added'] == 1): ?>
+setTimeout(function() {
+    openPayoutModal(<?= $totalNet ?>);
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: #28a745; color: white; padding: 12px 20px; border-radius: 8px; z-index: 9999;';
+    toast.innerHTML = '<i class="bi bi-check-circle"></i> Bank account added! Select it below for payout.';
+    document.body.appendChild(toast);
+    setTimeout(function() { if(toast) toast.remove(); }, 3000);
+}, 500);
+<?php endif; ?>
 </script>
 
 </body>

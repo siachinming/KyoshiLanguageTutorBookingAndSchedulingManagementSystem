@@ -1029,7 +1029,7 @@ body::before {
         <?php else: ?>
             <p style="font-size: 12px; color: #64748b; margin: 0; text-align: center;">
                 <i class="bi bi-info-circle"></i> No meeting activity recorded yet.
-                <?php if (!$is_session_past): ?>
+                <?php if (!$is_past_class): ?>
                     <br><small>Activity will appear after the session starts.</small>
                 <?php endif; ?>
             </p>
@@ -1069,23 +1069,23 @@ body::before {
         // 2. AND there's an active session (someone joined)
         // 3. AND session is not already completed
         $hasActiveSession = false;
-        if ($is_session_past && !$is_session_completed) {
+        if ($is_past_class && !$is_session_completed) {
             $activeCheck = $conn->prepare("SELECT id FROM meeting_logs WHERE booking_id = ? AND leave_time IS NULL LIMIT 1");
             $activeCheck->bind_param("i", $booking_id);
             $activeCheck->execute();
             $hasActiveSession = $activeCheck->get_result()->num_rows > 0;
         }
         
-        if ($is_session_past && $hasActiveSession && !$is_session_completed):
+        if ($is_past_class && $hasActiveSession && !$is_session_completed):
         ?>
         <button onclick="recordMeetingLeave(<?= $booking_id ?>)" class="btn-outline" style="width: auto; padding: 8px 20px; background: #dc3545; color: white; border: none; border-radius: 30px; cursor: pointer;">
             <i class="bi bi-box-arrow-right"></i> End Session & Record Leave
         </button>
-        <?php elseif ($is_session_past && !$is_session_completed): ?>
+        <?php elseif ($is_past_class && !$is_session_completed): ?>
         <button disabled style="width: auto; padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 30px; opacity: 0.6;">
             <i class="bi bi-clock"></i> Waiting for meeting activity...
         </button>
-        <?php elseif (!$is_session_past): ?>
+        <?php elseif (!$is_past_class): ?>
         <button disabled style="width: auto; padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 30px; opacity: 0.6;">
             <i class="bi bi-calendar-clock"></i> Available after session ends (<?= date('d M Y, g:i A', $session_time) ?>)
         </button>

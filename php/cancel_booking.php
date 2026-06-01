@@ -15,6 +15,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $userID = $_SESSION['user_id'];
 $bookingInput = $_POST['booking_id'] ?? $_GET['id'] ?? 0;
+$refundType = $_POST['refund_type'] ?? ''; // Get refund type for confirmed bookings
 
 if (!$bookingInput) {
     header("Location: booking_status.php");
@@ -34,6 +35,8 @@ if (strpos($bookingInput, ',') !== false) {
     $ids = explode(',', $bookingInput);
     $successCount = 0;
     $failedIds = [];
+    $fullRefundCount = 0;
+    $noRefundCount = 0;
     
     foreach ($ids as $id) {
         $id = intval(trim($id));
@@ -60,21 +63,43 @@ if (strpos($bookingInput, ',') !== false) {
             continue;
         }
         
-        // Check status - can cancel pending or accepted bookings
-        if (!in_array($booking['status'], ['pending', 'accepted'])) {
+        // Check if cancellation is allowed for this status
+        $allowedStatuses = ['pending', 'accepted', 'confirmed'];
+        if (!in_array($booking['status'], $allowedStatuses)) {
             $failedIds[] = $id;
             continue;
+        }
+        
+        // Determine new status based on booking status and refund eligibility
+        if ($booking['status'] === 'confirmed') {
+            // Calculate hours until session for confirmed bookings
+            $session_datetime = strtotime($booking['booking_date'] . ' ' . $booking['booking_time']);
+            $current_time = time();
+            $hoursUntilSession = ($session_datetime - $current_time) / 3600;
+            
+            if ($refundType === 'full' || $hoursUntilSession >= 24) {
+                $new_status = 'cancelled_refund';
+                $fullRefundCount++;
+                // Process refund
+                process_refund($conn, $booking['id'], $booking['total_amount'], $booking['student_email'], $booking['student_name']);
+            } else {
+                $new_status = 'cancelled_no_refund';
+                $noRefundCount++;
+            }
+        } else {
+            $new_status = 'cancelled';
         }
         
         // Update booking to cancelled
         $stmt = $conn->prepare("
             UPDATE bookings 
-            SET status = 'cancelled',
+            SET status = ?,
                 cancelled_by = 'student',
-                cancel_reason = ?
+                cancel_reason = ?,
+                cancelled_at = NOW()
             WHERE id = ? AND student_id = ?
         ");
-        $stmt->bind_param("sii", $cancelReason, $id, $userID);
+        $stmt->bind_param("ssii", $new_status, $cancelReason, $id, $userID);
         $stmt->execute();
         
         if ($stmt->affected_rows > 0) {
@@ -87,133 +112,53 @@ if (strpos($bookingInput, ',') !== false) {
             $date = date('l, d F Y', strtotime($booking['booking_date']));
             $time = date('g:i A', strtotime($booking['booking_time']));
             
+            // Add refund info to message if applicable
+            $refundMessage = '';
+            if ($booking['status'] === 'confirmed') {
+                if ($new_status === 'cancelled_refund') {
+                    $refundMessage = ' A full refund will be processed within 3-5 business days.';
+                } else {
+                    $refundMessage = ' No refund will be issued due to late cancellation (less than 24 hours notice).';
+                }
+            }
+            
             // Notify tutor via database notification
             insertNotification(
                 $conn,
                 $booking['tutor_id'],
                 "Booking Cancelled",
-                "$studentName cancelled their $language lesson on $date at $time. Reason: $cancelReason",
+                "$studentName cancelled their $language lesson on $date at $time. Reason: $cancelReason.$refundMessage",
                 "booking_cancelled",
                 "tutor_booking_detail.php?id=$id"
             );
             
-            // Send EMAIL to TUTOR (don't wait for response)
-            try {
-                $tutorMail = new PHPMailer(true);
-                $tutorMail->isSMTP();
-                $tutorMail->Host       = 'smtp.gmail.com';
-                $tutorMail->SMTPAuth   = true;
-                $tutorMail->Username   = SMTP_USER;
-                $tutorMail->Password   = SMTP_PASS;
-                $tutorMail->SMTPSecure = 'tls';
-                $tutorMail->Port       = 587;
-                $tutorMail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
-                $tutorMail->addAddress($booking['tutor_email'], $tutorName);
-                $tutorMail->isHTML(true);
-                $tutorMail->Subject = 'Booking Cancelled by Student - Kyoshi';
-                $tutorMail->Body    = "
-                    <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-                        <div style='text-align:center;margin-bottom:24px;'>
-                            <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking Cancelled</h2>
-                        </div>
-                        <p>Dear <strong>" . htmlspecialchars($tutorName) . "</strong>,</p>
-                        <p>A student has cancelled their booking. Please see details below:</p>
-                        <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:20px 0;'>
-                            <h3 style='margin:0 0 12px;color:#342635;'>Cancelled Session Details:</h3>
-                            <table style='width:100%;'>
-                                <tr><td style='padding:6px 0;'><strong>Student:</strong></td><td>" . htmlspecialchars($studentName) . "</td></tr>
-                                <tr><td style='padding:6px 0;'><strong>Language:</strong></td><td>" . htmlspecialchars($language) . "</td></tr>
-                                <tr><td style='padding:6px 0;'><strong>Date:</strong></td><td>" . $date . "</td></tr>
-                                <tr><td style='padding:6px 0;'><strong>Time:</strong></td><td>" . $time . "</td></tr>
-                                <tr><td style='padding:6px 0;'><strong>Cancellation Reason:</strong></td><td style='color:#dc3545;'>" . htmlspecialchars($cancelReason) . "</td></tr>
-                            </table>
-                        </div>
-                        <div style='text-align:center;margin:30px 0 20px;'>
-                            <a href='http://localhost/kyoshi/php/tutor_dashboard.php' 
-                               style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
-                                      color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
-                                View Dashboard →
-                            </a>
-                        </div>
-                        <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
-                        <p style='font-size:12px;color:#999;text-align:center;'>
-                            This is an automated message. Please do not reply to this email.<br>
-                            &copy; " . date('Y') . " Kyoshi Learning. All rights reserved.
-                        </p>
-                    </div>
-                ";
-                $tutorMail->send();
-            } catch (Exception $e) {
-                error_log("Bulk cancel tutor email failed for booking $id: " . $e->getMessage());
-            }
+            // Send EMAIL to TUTOR
+            sendTutorCancellationEmail($booking, $studentName, $tutorName, $language, $date, $time, $cancelReason, $refundMessage);
         }
         $stmt->close();
     }
     
     // Notify student once for all cancellations
     if ($successCount > 0) {
+        $refundSummary = '';
+        if ($fullRefundCount > 0) {
+            $refundSummary .= "\n- $fullRefundCount booking(s) will receive FULL refund.";
+        }
+        if ($noRefundCount > 0) {
+            $refundSummary .= "\n- $noRefundCount booking(s) will receive NO refund (late cancellation).";
+        }
+        
         insertNotification(
             $conn,
             $userID,
             "Bookings Cancelled",
-            "You have cancelled $successCount booking(s). Reason: $cancelReason",
+            "You have cancelled $successCount booking(s). Reason: $cancelReason.$refundSummary",
             "booking_cancelled",
             "booking_status.php"
         );
         
         // Send single email to student for all cancellations
-        try {
-            $studentMail = new PHPMailer(true);
-            $studentMail->isSMTP();
-            $studentMail->Host       = 'smtp.gmail.com';
-            $studentMail->SMTPAuth   = true;
-            $studentMail->Username   = SMTP_USER;
-            $studentMail->Password   = SMTP_PASS;
-            $studentMail->SMTPSecure = 'tls';
-            $studentMail->Port       = 587;
-            $studentMail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
-            
-            // Get student email from first booking
-            $firstBooking = $conn->prepare("SELECT s.email, s.fullname FROM bookings b JOIN users s ON s.id = b.student_id WHERE b.id = ? LIMIT 1");
-            $firstBooking->bind_param("i", $ids[0]);
-            $firstBooking->execute();
-            $studentInfo = $firstBooking->get_result()->fetch_assoc();
-            $firstBooking->close();
-            
-            if ($studentInfo) {
-                $studentMail->addAddress($studentInfo['email'], $studentInfo['fullname']);
-                $studentMail->isHTML(true);
-                $studentMail->Subject = $successCount . ' Booking(s) Cancelled - Kyoshi';
-                $studentMail->Body    = "
-                    <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-                        <div style='text-align:center;margin-bottom:24px;'>
-                            <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking(s) Cancelled</h2>
-                        </div>
-                        <p>Dear <strong>" . htmlspecialchars($studentInfo['fullname']) . "</strong>,</p>
-                        <p>You have successfully cancelled <strong>{$successCount}</strong> booking(s).</p>
-                        <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:20px 0;'>
-                            <p><strong>Cancellation Reason:</strong> <span style='color:#dc3545;'>" . htmlspecialchars($cancelReason) . "</span></p>
-                        </div>
-                        <p>If you have already made any payments, please contact support for refund.</p>
-                        <div style='text-align:center;margin:30px 0 20px;'>
-                            <a href='http://localhost/kyoshi/php/find_language.php' 
-                               style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
-                                      color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
-                                Book New Session →
-                            </a>
-                        </div>
-                        <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
-                        <p style='font-size:12px;color:#999;text-align:center;'>
-                            This is an automated message. Please do not reply to this email.<br>
-                            &copy; " . date('Y') . " Kyoshi Learning. All rights reserved.
-                        </p>
-                    </div>
-                ";
-                $studentMail->send();
-            }
-        } catch (Exception $e) {
-            error_log("Bulk cancel student email failed: " . $e->getMessage());
-        }
+        sendStudentBulkCancellationEmail($conn, $ids, $successCount, $cancelReason, $fullRefundCount, $noRefundCount);
     }
     
     if ($successCount > 0) {
@@ -224,7 +169,7 @@ if (strpos($bookingInput, ',') !== false) {
     exit();
 }
 
-// ========== SINGLE BOOKING CANCELLATION (Original Code) ==========
+// ========== SINGLE BOOKING CANCELLATION ==========
 $bookingId = intval($bookingInput);
 
 if (!$bookingId) {
@@ -253,21 +198,44 @@ if (!$booking) {
     exit();
 }
 
-// Check status - can cancel pending or accepted bookings
-if (!in_array($booking['status'], ['pending', 'accepted'])) {
+// Check status - can cancel pending, accepted, or confirmed bookings
+$allowedStatuses = ['pending', 'accepted', 'confirmed'];
+if (!in_array($booking['status'], $allowedStatuses)) {
     header("Location: booking_status.php?error=cannot_cancel");
     exit();
+}
+
+// Determine new status based on booking status and refund eligibility
+if ($booking['status'] === 'confirmed') {
+    // Calculate hours until session for confirmed bookings
+    $session_datetime = strtotime($booking['booking_date'] . ' ' . $booking['booking_time']);
+    $current_time = time();
+    $hoursUntilSession = ($session_datetime - $current_time) / 3600;
+    
+    if ($refundType === 'full' || $hoursUntilSession >= 24) {
+        $new_status = 'cancelled_refund';
+        // Process refund
+        process_refund($conn, $booking['id'], $booking['total_amount'], $booking['student_email'], $booking['student_name']);
+        $refundMessage = ' A full refund will be processed within 3-5 business days.';
+    } else {
+        $new_status = 'cancelled_no_refund';
+        $refundMessage = ' No refund will be issued due to late cancellation (less than 24 hours notice).';
+    }
+} else {
+    $new_status = 'cancelled';
+    $refundMessage = '';
 }
 
 // Update booking to cancelled with the provided reason
 $stmt = $conn->prepare("
     UPDATE bookings 
-    SET status = 'cancelled',
+    SET status = ?,
         cancelled_by = 'student',
-        cancel_reason = ?
+        cancel_reason = ?,
+        cancelled_at = NOW()
     WHERE id = ? AND student_id = ?
 ");
-$stmt->bind_param("sii", $cancelReason, $bookingId, $userID);
+$stmt->bind_param("ssii", $new_status, $cancelReason, $bookingId, $userID);
 $stmt->execute();
 
 if ($stmt->affected_rows === 0) {
@@ -289,7 +257,7 @@ insertNotification(
     $conn,
     $booking['tutor_id'],
     "Booking Cancelled",
-    "$studentName cancelled their $language lesson on $date at $time. Reason: $cancelReason",
+    "$studentName cancelled their $language lesson on $date at $time. Reason: $cancelReason.$refundMessage",
     "booking_cancelled",
     "tutor_booking_detail.php?id=$bookingId"
 );
@@ -299,113 +267,208 @@ insertNotification(
     $conn,
     $userID,
     "Booking Cancelled",
-    "You have cancelled your $language lesson with $tutorName on $date at $time. Reason: $cancelReason",
+    "You have cancelled your $language lesson with $tutorName on $date at $time. Reason: $cancelReason.$refundMessage",
     "booking_cancelled",
     "booking_status.php"
 );
 
 // Send EMAIL to STUDENT
-try {
-    $studentMail = new PHPMailer(true);
-    $studentMail->isSMTP();
-    $studentMail->Host       = 'smtp.gmail.com';
-    $studentMail->SMTPAuth   = true;
-    $studentMail->Username   = SMTP_USER;
-    $studentMail->Password   = SMTP_PASS;
-    $studentMail->SMTPSecure = 'tls';
-    $studentMail->Port       = 587;
-    $studentMail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
-    $studentMail->addAddress($booking['student_email'], $studentName);
-    $studentMail->isHTML(true);
-    $studentMail->Subject = 'Booking Cancelled - Kyoshi';
-    $studentMail->Body    = "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <div style='text-align:center;margin-bottom:24px;'>
-                <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking Cancelled</h2>
-            </div>
-            <p>Dear <strong>" . htmlspecialchars($studentName) . "</strong>,</p>
-            <p>Your booking has been <strong style='color:#dc3545;'>CANCELLED</strong> as requested.</p>
-            <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:20px 0;'>
-                <h3 style='margin:0 0 12px;color:#342635;'>Cancelled Session Details:</h3>
-                <table style='width:100%;'>
-                    <tr><td style='padding:6px 0;'><strong>Language:</strong></td><td>" . htmlspecialchars($language) . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Tutor:</strong></td><td>" . htmlspecialchars($tutorName) . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Date:</strong></td><td>" . $date . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Time:</strong></td><td>" . $time . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Cancellation Reason:</strong></td><td style='color:#dc3545;'>" . htmlspecialchars($cancelReason) . "</td></tr>
-                </table>
-            </div>
-            <p>If you have already made a payment, please contact support for refund.</p>
-            <div style='text-align:center;margin:30px 0 20px;'>
-                <a href='http://localhost/kyoshi/php/find_language.php' 
-                   style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
-                          color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
-                    Book New Session →
-                </a>
-            </div>
-            <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
-            <p style='font-size:12px;color:#999;text-align:center;'>
-                This is an automated message. Please do not reply to this email.<br>
-                &copy; " . date('Y') . " Kyoshi Learning. All rights reserved.
-            </p>
-        </div>
-    ";
-    $studentMail->send();
-} catch (Exception $e) {
-    error_log("Student email failed: " . $e->getMessage());
-}
+sendStudentCancellationEmail($booking, $studentName, $tutorName, $language, $date, $time, $cancelReason, $refundMessage);
 
 // Send EMAIL to TUTOR
-try {
-    $tutorMail = new PHPMailer(true);
-    $tutorMail->isSMTP();
-    $tutorMail->Host       = 'smtp.gmail.com';
-    $tutorMail->SMTPAuth   = true;
-    $tutorMail->Username   = SMTP_USER;
-    $tutorMail->Password   = SMTP_PASS;
-    $tutorMail->SMTPSecure = 'tls';
-    $tutorMail->Port       = 587;
-    $tutorMail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
-    $tutorMail->addAddress($booking['tutor_email'], $tutorName);
-    $tutorMail->isHTML(true);
-    $tutorMail->Subject = 'Booking Cancelled by Student - Kyoshi';
-    $tutorMail->Body    = "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <div style='text-align:center;margin-bottom:24px;'>
-                <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking Cancelled</h2>
-            </div>
-            <p>Dear <strong>" . htmlspecialchars($tutorName) . "</strong>,</p>
-            <p>A student has cancelled their booking. Please see details below:</p>
-            <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:20px 0;'>
-                <h3 style='margin:0 0 12px;color:#342635;'>Cancelled Session Details:</h3>
-                <table style='width:100%;'>
-                    <tr><td style='padding:6px 0;'><strong>Student:</strong></td><td>" . htmlspecialchars($studentName) . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Language:</strong></td><td>" . htmlspecialchars($language) . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Date:</strong></td><td>" . $date . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Time:</strong></td><td>" . $time . "</td></tr>
-                    <tr><td style='padding:6px 0;'><strong>Cancellation Reason:</strong></td><td style='color:#dc3545;'>" . htmlspecialchars($cancelReason) . "</td></tr>
-                </table>
-            </div>
-            <p>Your available time slots have been freed up for other students.</p>
-            <div style='text-align:center;margin:30px 0 20px;'>
-                <a href='http://localhost/kyoshi/php/tutor_dashboard.php' 
-                   style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
-                          color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
-                    View Dashboard →
-                </a>
-            </div>
-            <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
-            <p style='font-size:12px;color:#999;text-align:center;'>
-                This is an automated message. Please do not reply to this email.<br>
-                &copy; " . date('Y') . " Kyoshi Learning. All rights reserved.
-            </p>
-        </div>
-    ";
-    $tutorMail->send();
-} catch (Exception $e) {
-    error_log("Tutor email failed: " . $e->getMessage());
-}
+sendTutorCancellationEmail($booking, $studentName, $tutorName, $language, $date, $time, $cancelReason, $refundMessage);
 
 header("Location: booking_status.php?cancelled=1");
 exit();
+
+// ========== HELPER FUNCTIONS ==========
+
+function process_refund($conn, $booking_id, $amount, $student_email, $student_name) {
+    // Log refund request
+    error_log("REFUND NEEDED: Booking #$booking_id - Amount: RM $amount - Student: $student_name ($student_email)");
+    
+    // Insert into refunds table if it exists
+    $checkTable = $conn->query("SHOW TABLES LIKE 'refunds'");
+    if ($checkTable->num_rows > 0) {
+        $refundStmt = $conn->prepare("
+            INSERT INTO refunds (booking_id, amount, status, requested_at, student_email, student_name)
+            VALUES (?, ?, 'pending', NOW(), ?, ?)
+        ");
+        $refundStmt->bind_param("idss", $booking_id, $amount, $student_email, $student_name);
+        $refundStmt->execute();
+        $refundStmt->close();
+    }
+    
+    // Here you can integrate with payment gateway (Stripe, PayPal, etc.)
+    // For now, just log and notify admin
+}
+
+function sendStudentCancellationEmail($booking, $studentName, $tutorName, $language, $date, $time, $cancelReason, $refundMessage) {
+    try {
+        $mail = new PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port       = 587;
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($booking['student_email'], $studentName);
+        $mail->isHTML(true);
+        
+        $refundColor = strpos($refundMessage, 'full refund') !== false ? '#28a745' : (strpos($refundMessage, 'No refund') !== false ? '#f59e0b' : '#999');
+        
+        $mail->Subject = 'Booking Cancelled - Kyoshi';
+        $mail->Body    = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
+                <div style='text-align:center;margin-bottom:24px;'>
+                    <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking Cancelled</h2>
+                </div>
+                <p>Dear <strong>" . htmlspecialchars($studentName) . "</strong>,</p>
+                <p>Your booking has been <strong style='color:#dc3545;'>CANCELLED</strong> as requested.</p>
+                <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:20px 0;'>
+                    <h3 style='margin:0 0 12px;color:#342635;'>Cancelled Session Details:</h3>
+                    <table style='width:100%;'>
+                        <tr><td style='padding:6px 0;'><strong>Language:</strong></td><td>" . htmlspecialchars($language) . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Tutor:</strong></td><td>" . htmlspecialchars($tutorName) . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Date:</strong></td><td>" . $date . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Time:</strong></td><td>" . $time . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Cancellation Reason:</strong></td><td style='color:#dc3545;'>" . htmlspecialchars($cancelReason) . "</td></tr>
+                    </table>
+                </div>
+                " . ($refundMessage ? "<div style='background:#e8f5e9;padding:12px;border-radius:12px;margin:15px 0;text-align:center;'><strong style='color:$refundColor;'>$refundMessage</strong></div>" : "") . "
+                <div style='text-align:center;margin:30px 0 20px;'>
+                    <a href='http://localhost/kyoshi/php/find_language.php' 
+                       style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
+                              color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
+                        Book New Session →
+                    </a>
+                </div>
+                <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
+                <p style='font-size:12px;color:#999;text-align:center;'>
+                    This is an automated message. Please do not reply to this email.<br>
+                    &copy; " . date('Y') . " Kyoshi Learning. All rights reserved.
+                </p>
+            </div>
+        ";
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("Student cancellation email failed: " . $e->getMessage());
+    }
+}
+
+function sendTutorCancellationEmail($booking, $studentName, $tutorName, $language, $date, $time, $cancelReason, $refundMessage) {
+    try {
+        $mail = new PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port       = 587;
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($booking['tutor_email'], $tutorName);
+        $mail->isHTML(true);
+        $mail->Subject = 'Booking Cancelled by Student - Kyoshi';
+        $mail->Body    = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
+                <div style='text-align:center;margin-bottom:24px;'>
+                    <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking Cancelled</h2>
+                </div>
+                <p>Dear <strong>" . htmlspecialchars($tutorName) . "</strong>,</p>
+                <p>A student has cancelled their booking. Please see details below:</p>
+                <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:20px 0;'>
+                    <h3 style='margin:0 0 12px;color:#342635;'>Cancelled Session Details:</h3>
+                    <table style='width:100%;'>
+                        <tr><td style='padding:6px 0;'><strong>Student:</strong></td><td>" . htmlspecialchars($studentName) . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Language:</strong></td><td>" . htmlspecialchars($language) . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Date:</strong></td><td>" . $date . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Time:</strong></td><td>" . $time . "</td></tr>
+                        <tr><td style='padding:6px 0;'><strong>Cancellation Reason:</strong></td><td style='color:#dc3545;'>" . htmlspecialchars($cancelReason) . "</td></tr>
+                    </table>
+                </div>
+                <p>Your available time slots have been freed up for other students.</p>
+                <div style='text-align:center;margin:30px 0 20px;'>
+                    <a href='http://localhost/kyoshi/php/tutor_dashboard.php' 
+                       style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
+                              color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
+                        View Dashboard →
+                    </a>
+                </div>
+                <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
+                <p style='font-size:12px;color:#999;text-align:center;'>
+                    This is an automated message. Please do not reply to this email.<br>
+                    &copy; " . date('Y') . " Kyoshi Learning. All rights reserved.
+                </p>
+            </div>
+        ";
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("Tutor cancellation email failed: " . $e->getMessage());
+    }
+}
+
+function sendStudentBulkCancellationEmail($conn, $bookingIds, $count, $cancelReason, $fullRefundCount, $noRefundCount) {
+    try {
+        // Get student email from first booking
+        $firstBooking = $conn->prepare("SELECT s.email, s.fullname FROM bookings b JOIN users s ON s.id = b.student_id WHERE b.id = ? LIMIT 1");
+        $firstBooking->bind_param("i", $bookingIds[0]);
+        $firstBooking->execute();
+        $studentInfo = $firstBooking->get_result()->fetch_assoc();
+        $firstBooking->close();
+        
+        if (!$studentInfo) return;
+        
+        $refundSummary = '';
+        if ($fullRefundCount > 0) {
+            $refundSummary .= "<li style='color:#28a745;'>$fullRefundCount booking(s) will receive FULL refund</li>";
+        }
+        if ($noRefundCount > 0) {
+            $refundSummary .= "<li style='color:#f59e0b;'>$noRefundCount booking(s) will receive NO refund (late cancellation)</li>";
+        }
+        
+        $mail = new PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port       = 587;
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($studentInfo['email'], $studentInfo['fullname']);
+        $mail->isHTML(true);
+        $mail->Subject = $count . ' Booking(s) Cancelled - Kyoshi';
+        $mail->Body    = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
+                <div style='text-align:center;margin-bottom:24px;'>
+                    <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking(s) Cancelled</h2>
+                </div>
+                <p>Dear <strong>" . htmlspecialchars($studentInfo['fullname']) . "</strong>,</p>
+                <p>You have successfully cancelled <strong>{$count}</strong> booking(s).</p>
+                <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:20px 0;'>
+                    <p><strong>Cancellation Reason:</strong> <span style='color:#dc3545;'>" . htmlspecialchars($cancelReason) . "</span></p>
+                    " . ($refundSummary ? "<ul style='margin-top:10px;'>$refundSummary</ul>" : "") . "
+                </div>
+                <div style='text-align:center;margin:30px 0 20px;'>
+                    <a href='http://localhost/kyoshi/php/find_language.php' 
+                       style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
+                              color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
+                        Book New Session →
+                    </a>
+                </div>
+                <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
+                <p style='font-size:12px;color:#999;text-align:center;'>
+                    This is an automated message. Please do not reply to this email.<br>
+                    &copy; " . date('Y') . " Kyoshi Learning. All rights reserved.
+                </p>
+            </div>
+        ";
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("Bulk cancellation email failed: " . $e->getMessage());
+    }
+}
 ?>

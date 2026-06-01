@@ -477,7 +477,7 @@ $allModes = ['online', 'face_to_face'];
         <a href="booking_status.php">My Bookings</a>
         <a href="my_payments.php">My Payments</a>
         <a href="my_materials.php">My Materials</a>
-        <a href="my_assignmentss.php">My Assignments</a>
+        <a href="my_assignments.php">My Assignments</a>
 
       </div>
       <div class="nav-actions">

@@ -683,8 +683,35 @@ let selectedTime = null;
     while(cur<=rangeEnd){const ds=dateStr(cur);if(isAvail(cur)&&!isPast(cur)&&!sessions[ds])sessions[ds]={dayName:dayName(cur),slots:new Set()};cur.setDate(cur.getDate()+1);}
     renderDayPanels();updateSummary();
   }
+  
+// Check if student already has another booking at this date/time with ANY tutor
+async function checkStudentOwnSchedule(date, time) {
+    try {
+        const response = await fetch('check_student_schedule.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                date: date, 
+                time: time,
+                exclude_booking_id: bookingID
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.hasConflict) {
+            showToast(`You already have a session with ${data.tutor_name} at ${time.substring(0,5)} on this date. Please choose a different time.`);
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('Error checking schedule:', error);
+        showToast('Unable to check schedule. Please try again.');
+        return false;
+    }
+}
 
-  function renderDayPanels(){
+function renderDayPanels(){
   const container = document.getElementById('daySlotPanels');
   container.innerHTML = '';
 
@@ -728,26 +755,63 @@ let selectedTime = null;
     } else {
         btn.className = 'time-slot' + (selectedTime === timeVal ? ' active' : '');
         btn.textContent = fmt(h,0) + ' – ' + fmt(h+1,0);
-        btn.onclick = () => {
-            selectedTime = timeVal;
-            renderDayPanels();
-            updateSummary();
+        
+        // Add loading state and check student's own schedule
+        btn.onclick = async () => {
+            // Show loading state
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Checking...';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            
+            // Check if student has another booking at same time with different tutor
+            const hasConflict = await checkStudentOwnSchedule(selectedDate, timeVal);
+            
+            if (!hasConflict) {
+                selectedTime = timeVal;
+                renderDayPanels();
+                updateSummary();
+                showToast('Time slot selected!');
+            }
+            
+            // Reset button (will be recreated by renderDayPanels)
         };
     }
 
     wrap.appendChild(btn);
     cur += 60;
-}
+  }
 
   panel.appendChild(wrap);
   container.appendChild(panel);
 }
+
 function handleDateClick(date) {
     selectedDate = dateStr(date);
     selectedTime = null;
     renderCalendar();
     renderDayPanels();
     updateSummary();
+}
+
+// When selecting a time slot, add this check
+function selectTimeSlot(timeVal) {
+    // First check if slot is booked by other student (already in bookedSlots)
+    const isBooked = bookedSlots[selectedDate] && bookedSlots[selectedDate].includes(timeVal);
+    if (isBooked) {
+        showToast('This time slot is already booked by another student.');
+        return;
+    }
+    
+    // Then check if student has another booking at same time with different tutor
+    checkStudentOwnSchedule(selectedDate, timeVal).then(hasConflict => {
+        if (!hasConflict) {
+            selectedTime = timeVal;
+            renderDayPanels();  // Re-render to show selected
+            updateSummary();
+            showToast('Time slot selected!');
+        }
+    });
 }
 
   function toggleSlot(ds,timeVal,btn){
@@ -811,19 +875,61 @@ function handleDateClick(date) {
     }
 }
 
-  function goStep(n){
+function goStep(n){
     if(n===3){
-      if(!selectedDate || !selectedTime){
-  showToast('Please select date and time');
-  return;
-}
-      populateReview();
+        if(!selectedDate || !selectedTime){
+            showToast('Please select date and time');
+            return;
+        }
+        
+        // Show loading indicator
+        const btn = document.querySelector('#step3 .btn-next');
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Checking availability...';
+        btn.disabled = true;
+        
+        // Double-check both conflicts before proceeding
+        const isBooked = bookedSlots[selectedDate] && bookedSlots[selectedDate].includes(selectedTime);
+        
+        if (isBooked) {
+            showToast('❌ Sorry, this time slot was just booked by another student. Please choose another time.');
+            btn.textContent = originalText;
+            btn.disabled = false;
+            goStep(2);
+            return;
+        }
+        
+        // Check student's own schedule
+        checkStudentOwnSchedule(selectedDate, selectedTime).then(hasConflict => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            
+            if (hasConflict) {
+                goStep(2);
+            } else {
+                populateReview();
+                currentStep = n;
+                document.querySelectorAll('.form-section').forEach((s,i)=>s.classList.toggle('active',i+1===n));
+                [1,2,3].forEach(i=>{
+                    const dot=document.getElementById('dot'+i);
+                    dot.className='step-dot '+(i<n?'done':i===n?'active':'inactive');
+                    dot.textContent=i<n?'✓':i;
+                });
+                window.scrollTo({top:0,behavior:'smooth'});
+            }
+        });
+        return;
     }
+    
     currentStep=n;
     document.querySelectorAll('.form-section').forEach((s,i)=>s.classList.toggle('active',i+1===n));
-    [1,2,3].forEach(i=>{const dot=document.getElementById('dot'+i);dot.className='step-dot '+(i<n?'done':i===n?'active':'inactive');dot.textContent=i<n?'✓':i;});
+    [1,2,3].forEach(i=>{
+        const dot=document.getElementById('dot'+i);
+        dot.className='step-dot '+(i<n?'done':i===n?'active':'inactive');
+        dot.textContent=i<n?'✓':i;
+    });
     window.scrollTo({top:0,behavior:'smooth'});
-  }
+}
 
   function submitReschedule() {
     const lang = document.getElementById('selectedLang').value;
@@ -958,6 +1064,7 @@ function closeRescheduleRulesModal() {
         closeRescheduleRulesModal();
     }
 }
+
 </script>
 <script>
     console.log('=== RESCHEDULE PAGE LOADED ===');

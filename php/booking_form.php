@@ -903,66 +903,49 @@ function renderDayPanels() {
     });
 }
 function toggleSlot(ds, timeVal, btn) {
-  const sess = sessions[ds];
-  if (!sess) return;
+    const sess = sessions[ds];
+    if (!sess) return;
 
-  // Get MY existing booked count for this day (not all students)
-  const myExistingBookedCount = (typeof myBookedCountPerDay !== 'undefined' && myBookedCountPerDay[ds]) ? myBookedCountPerDay[ds] : 0;
-  const currentSelectedCount = sess.slots.size;
-  
-  if (sess.slots.has(timeVal)) {
-    // Deselect
-    sess.slots.delete(timeVal);
-    btn.classList.remove('active');
-  } else {
     // Check if this slot is already booked by ANY student
     const isBookedByOther = bookedSlots[ds] && bookedSlots[ds].includes(timeVal);
     if (isBookedByOther) {
-      showToast('This time slot is already booked by another student.');
-      return;
+        showToast('This time slot is already booked by another student.');
+        return;
     }
-    
-    // Calculate total after adding this slot (MY bookings + current selections)
-    const totalAfterSelection = myExistingBookedCount + currentSelectedCount + 1;
-    
-    // Check max 2 per day for THIS STUDENT only
-    if (totalAfterSelection > MAX_SLOTS_PER_DAY) {
-      const remainingSlots = MAX_SLOTS_PER_DAY - myExistingBookedCount;
-      if (remainingSlots <= 0) {
-        showToast('You already have ' + myExistingBookedCount + ' session(s) booked on this day. Maximum ' + MAX_SLOTS_PER_DAY + ' sessions per day allowed.');
-      } else {
-        showToast('You can only select ' + remainingSlots + ' more slot(s) on this day. You already have ' + myExistingBookedCount + ' booked.');
-      }
-      return;
-    }
-    sess.slots.add(timeVal);
-    btn.classList.add('active');
-  }
 
-  const sub = document.getElementById('subtotal-' + ds);
-  if (sub) {
-    const newSelectedCount = sess.slots.size;
-    const totalSlotsAfter = existingBookedCount + newSelectedCount;
-    const remainingAllowed = MAX_SLOTS_PER_DAY - existingBookedCount;
-    
-    if (newSelectedCount > 0) {
-      sub.textContent = newSelectedCount + ' slot' + (newSelectedCount > 1 ? 's' : '') + ' selected · RM ' + (newSelectedCount * tutorRate);
-      if (totalSlotsAfter >= MAX_SLOTS_PER_DAY) {
-        sub.textContent += ' (max reached)';
-        sub.style.color = '#A35F3F';
-      } else {
-        sub.style.color = 'var(--pink-dark)';
-      }
-    } else {
-      sub.textContent = 'No slots selected yet';
-      sub.style.color = 'var(--pink-dark)';
-    }
-  }
-
-  const calDay = document.querySelector('[data-date="' + ds + '"]');
-  if (calDay) calDay.classList.toggle('has-slots', sess.slots.size > 0);
-
-  updateRunningTotal();
+    // NEW: Check if THIS student has a booking at same date/time with ANY tutor
+    fetch('check_student_bookings.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: ds, time: timeVal })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.hasConflict) {
+            showToast(`You already have a session at this time on ${ds} with another tutor.`);
+            return;
+        }
+        
+        // Proceed with selection
+        if (sess.slots.has(timeVal)) {
+            sess.slots.delete(timeVal);
+            btn.classList.remove('active');
+        } else {
+            // Check max 2 per day limit
+            const existingBookedCount = myBookedCountPerDay[ds] || 0;
+            const currentSelectedCount = sess.slots.size;
+            
+            if (existingBookedCount + currentSelectedCount + 1 > MAX_SLOTS_PER_DAY) {
+                showToast(`You can only book up to ${MAX_SLOTS_PER_DAY} sessions per day. Give yourself a break`);
+                return;
+            }
+            
+            sess.slots.add(timeVal);
+            btn.classList.add('active');
+        }
+        
+        updateAfterSlotChange(ds);
+    });
 }
 
   function removeDay(ds) {
@@ -1369,6 +1352,21 @@ const fields = {
   checkModeLocation();
   updateSummary();
   renderCalendar();
+function checkStudentConflict(date, time) {
+    fetch('check_student_bookings.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: date, time: time })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.hasConflict) {
+            showToast(`You already have a session at ${time} on this day with another tutor.`);
+            return false;
+        }
+        return true;
+    });
+}
 </script>
 // Prefill from rebook
 <?php

@@ -1,1479 +1,1037 @@
 <?php
 session_start();
-include "config.php";
+include 'config.php';
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'admin') {
-    header("Location: ../login.php");
+$assetBase = '../assets/img';
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+    header("Location: login.php");
     exit();
 }
 
+$adminID = $_SESSION['user_id'];
 
-$displayName = $_SESSION['fullname'] ?? 'Admin';
+// Get admin info
+$stmt = $conn->prepare("SELECT * FROM users WHERE id = ? AND role = 'admin'");
+$stmt->bind_param("i", $adminID);
+$stmt->execute();
+$admin = $stmt->get_result()->fetch_assoc();
 
-$tutorQuery = mysqli_query($conn,
-    "SELECT COUNT(*) AS total
-     FROM users
-     WHERE role='tutor'
-     AND status='pending'"
-);
+if (!$admin) {
+    header("Location: login.php");
+    exit();
+}
 
-$tutorData = mysqli_fetch_assoc($tutorQuery);
-$pendingTutors = $tutorData['total'];
+$displayName = $admin['fullname'];
+$profilePic = !empty($admin['profile_pic'])
+    ? '../uploads/profiles/' . $admin['profile_pic']
+    : $assetBase . '/profile-admin.png';
 
-$studentQuery = mysqli_query($conn,
-    "SELECT COUNT(*) AS total
-     FROM users
-     WHERE role='student'"
-);
+// Get all stats for dashboard overview
+$totalTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor'")->fetch_assoc()['count'];
+$pendingTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor' AND status = 'pending'")->fetch_assoc()['count'];
+$approvedTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor' AND status = 'active'")->fetch_assoc()['count'];
+$totalStudents = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'student'")->fetch_assoc()['count'];
+$totalBookings = $conn->query("SELECT COUNT(*) as count FROM bookings")->fetch_assoc()['count'];
+$pendingBookings = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE status = 'pending'")->fetch_assoc()['count'];
+$confirmedBookings = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE status = 'confirmed'")->fetch_assoc()['count'];
+$completedBookings = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE status = 'completed'")->fetch_assoc()['count'];
+$cancelledBookings = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE status = 'cancelled'")->fetch_assoc()['count'];
 
-$studentData = mysqli_fetch_assoc($studentQuery);
-$totalStudents = $studentData['total'];
+$totalPayments = $conn->query("SELECT COUNT(*) as count FROM payments")->fetch_assoc()['count'];
+$verifiedPayments = $conn->query("SELECT COUNT(*) as count FROM payments WHERE status = 'verified'")->fetch_assoc()['count'];
+$pendingPayments = $conn->query("SELECT COUNT(*) as count FROM payments WHERE status = 'pending'")->fetch_assoc()['count'];
+$totalRevenue = $conn->query("SELECT SUM(amount) as total FROM payments WHERE status = 'verified'")->fetch_assoc()['total'] ?? 0;
 
+$totalDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes")->fetch_assoc()['count'];
+$pendingDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'pending'")->fetch_assoc()['count'];
+$resolvedDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'resolved'")->fetch_assoc()['count'];
+
+$totalRatings = $conn->query("SELECT COUNT(*) as count FROM ratings")->fetch_assoc()['count'];
+$avgRating = $conn->query("SELECT AVG(rating) as avg FROM ratings")->fetch_assoc()['avg'] ?? 0;
+
+$totalPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests")->fetch_assoc()['count'] ?? 0;
+$pendingPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests WHERE status = 'pending'")->fetch_assoc()['count'] ?? 0;
+
+// Monthly bookings for chart
+$monthlyData = [];
+for ($i = 5; $i >= 0; $i--) {
+    $month = date('Y-m', strtotime("-$i months"));
+    $monthName = date('M', strtotime("-$i months"));
+    $count = $conn->query("SELECT COUNT(*) as c FROM bookings WHERE DATE_FORMAT(created_at, '%Y-%m') = '$month'")->fetch_assoc()['c'];
+    $monthlyData[] = ['month' => $monthName, 'count' => $count];
+}
+
+function e($value) {
+    return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+}
+
+function formatMoney($amount) {
+    return 'RM ' . number_format($amount, 2);
+}
 ?>
-
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kyoshi Admin Dashboard</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-
-  <style>
-    :root{
-      --bg:#f6fbff;
-      --paper:#ffffff;
-      --ink:#132238;
-      --muted:#6b7d92;
-      --blue:#36b8ff;
-      --blue-soft:#eaf7ff;
-      --line:#e4edf5;
-      --shadow:0 16px 38px rgba(19,34,56,.06);
-      --radius-xl:34px;
-      --radius-lg:26px;
-      --radius-md:20px;
-      --yellow:#fff4da;
-      --green:#e6f8ee;
-      --red:#ffe8e8;
-    }
-
-    *{ box-sizing:border-box; }
-
-    html{ scroll-behavior:smooth; }
-
-    body{
-      margin:0;
-      font-family:"Segoe UI", Arial, sans-serif;
-      color:var(--ink);
-      background:
-        radial-gradient(circle at top left, rgba(54,184,255,.10), transparent 24%),
-        radial-gradient(circle at 92% 4%, rgba(255,224,163,.22), transparent 22%),
-        var(--bg);
-    }
-
-    a{ text-decoration:none; color:inherit; }
-    button,input{ font-family:inherit; }
-
-    .container{
-      width:min(1380px, calc(100% - 48px));
-      margin:0 auto;
-    }
-
-    /* top nav */
-
-    .top-shell{
-      position:sticky;
-      top:0;
-      z-index:50;
-      background:rgba(246,251,255,.86);
-      backdrop-filter:blur(16px);
-      border-bottom:1px solid rgba(228,237,245,.85);
-    }
-
-    .topnav{
-      min-height:84px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:18px;
-    }
-
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      flex:0 0 auto;
-    }
-
-    .brand img{
-      width:62px;
-      height:auto;
-      display:block;
-    }
-
-    .brand-text strong{
-      display:block;
-      font-size:17px;
-      line-height:1.1;
-    }
-
-    .brand-text span{
-      display:block;
-      margin-top:4px;
-      font-size:12px;
-      color:var(--muted);
-    }
-
-    .nav-links{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      flex-wrap:wrap;
-      justify-content:center;
-    }
-
-    .nav-links a{
-      color:#5e7188;
-      font-size:14px;
-      font-weight:600;
-      padding:10px 14px;
-      border-radius:999px;
-      transition:.18s ease;
-    }
-
-    .nav-links a:hover,
-    .nav-links a.active{
-      background:var(--blue-soft);
-      color:#0f8ed8;
-    }
-
-    .nav-actions{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      flex:0 0 auto;
-    }
-
-    .search{
-      position:relative;
-    }
-
-    .search i{
-      position:absolute;
-      left:15px;
-      top:50%;
-      transform:translateY(-50%);
-      color:#98a8b9;
-      font-size:14px;
-    }
-
-    .search input{
-      border:0;
-      outline:none;
-      width:240px;
-      background:white;
-      border-radius:999px;
-      padding:12px 16px 12px 40px;
-      box-shadow:0 8px 20px rgba(19,34,56,.05);
-    }
-
-    .icon-btn{
-      border:0;
-      background:white;
-      width:44px;
-      height:44px;
-      border-radius:16px;
-      box-shadow:0 8px 20px rgba(19,34,56,.05);
-      cursor:pointer;
-      position:relative;
-      color:#425770;
-    }
-
-    .icon-dot{
-      position:absolute;
-      width:8px;
-      height:8px;
-      border-radius:50%;
-      background:#ff6b6b;
-      top:11px;
-      right:11px;
-      border:2px solid #fff;
-    }
-
-    .profile{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      border:0;
-      padding:6px 10px 6px 6px;
-      border-radius:999px;
-      background:white;
-      box-shadow:0 8px 20px rgba(19,34,56,.05);
-      cursor:pointer;
-    }
-
-    .profile img{
-      width:34px;
-      height:34px;
-      object-fit:cover;
-      border-radius:50%;
-      display:block;
-    }
-
-    .profile span{
-      font-size:13px;
-      font-weight:700;
-      color:#425770;
-      white-space:nowrap;
-    }
-
-    /* page heading */
-
-    .hero{
-      padding:28px 0 10px;
-    }
-
-    .hero-grid{
-      display:grid;
-      grid-template-columns:1.25fr .75fr;
-      gap:22px;
-      align-items:stretch;
-    }
-
-    .hero-card{
-      min-height:220px;
-      border-radius:var(--radius-xl);
-      background:
-        linear-gradient(115deg, rgba(255,255,255,.96), rgba(255,255,255,.76)),
-        url("../assets/img/herobg.png");
-      background-size:cover;
-      background-position:center;
-      box-shadow:var(--shadow);
-      padding:30px;
-      display:flex;
-      flex-direction:column;
-      justify-content:space-between;
-      overflow:hidden;
-    }
-
-    .eyebrow{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      color:var(--muted);
-      font-size:13px;
-      font-weight:600;
-    }
-
-    .pulse{
-      width:10px;
-      height:10px;
-      border-radius:50%;
-      background:#32d47f;
-      box-shadow:0 0 0 6px rgba(50,212,127,.13);
-    }
-
-    .hero-copy h1{
-      margin:12px 0 0;
-      font-size:clamp(34px, 5vw, 54px);
-      line-height:.98;
-      letter-spacing:-1.6px;
-      font-weight:700;
-    }
-
-    .hero-copy p{
-      margin:16px 0 0;
-      max-width:560px;
-      font-size:15px;
-      line-height:1.55;
-      color:#576a80;
-    }
-
-    .hero-actions{
-      display:flex;
-      flex-wrap:wrap;
-      gap:10px;
-      margin-top:24px;
-    }
-
-    .btn-primary,
-    .btn-ghost,
-    .btn-text{
-      border:0;
-      border-radius:999px;
-      padding:11px 16px;
-      font-size:13px;
-      font-weight:700;
-      cursor:pointer;
-      transition:.18s ease;
-    }
-    .btn-logout{
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  text-decoration:none;
-  width:100%;
-  border-radius:999px;
-  padding:12px 14px;
-  font-weight:800;
-  font-size:13px;
-  background:#ff3b3b;
-  color:white;
-  box-shadow:0 10px 24px rgba(255,59,59,.25);
-  transition:.2s ease;
-}
-
-.btn-logout:hover{
-  background:#e60000;
-  transform:translateY(-1px);
-}
-
-    .btn-primary{
-      background:var(--blue);
-      color:white;
-      box-shadow:0 10px 24px rgba(54,184,255,.22);
-    }
-
-    .btn-ghost{
-      background:#fff;
-      color:#35516a;
-      box-shadow:0 8px 20px rgba(19,34,56,.05);
-    }
-
-    .btn-text{
-      background:transparent;
-      color:#1a91ce;
-      padding-left:0;
-      padding-right:0;
-    }
-
-    .btn-primary:hover,.btn-ghost:hover,.btn-text:hover,.icon-btn:hover,.profile:hover{
-      transform:translateY(-1px);
-    }
-
-    .hero-side{
-      background:#fff;
-      border-radius:var(--radius-xl);
-      box-shadow:var(--shadow);
-      padding:28px;
-      display:flex;
-      flex-direction:column;
-      justify-content:space-between;
-      min-height:220px;
-    }
-
-    .clock{
-      font-size:44px;
-      line-height:1;
-      letter-spacing:-1.4px;
-      font-weight:700;
-    }
-
-    .date-line{
-      margin-top:8px;
-      color:var(--muted);
-      font-size:14px;
-      line-height:1.45;
-    }
-
-    .side-note{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:18px;
-      margin-top:24px;
-      padding:16px;
-      border-radius:24px;
-      background:linear-gradient(135deg, #eff8ff, #ffffff);
-    }
-
-    .side-note p{
-      margin:0;
-      font-size:13px;
-      color:#4c6178;
-      line-height:1.45;
-    }
-
-    .side-note strong{
-      display:block;
-      margin-bottom:4px;
-      font-size:14px;
-    }
-
-    /* common sections */
-
-    section.block{
-      margin-top:28px;
-    }
-
-    .section-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:end;
-      gap:20px;
-      margin-bottom:16px;
-    }
-
-    .section-head h2{
-      margin:0;
-      font-size:25px;
-      letter-spacing:-.5px;
-      font-weight:700;
-    }
-
-    .section-head p{
-      margin:5px 0 0;
-      color:var(--muted);
-      font-size:14px;
-    }
-
-    .section-head .right-action{
-      color:#1b91cd;
-      font-weight:700;
-      font-size:14px;
-      white-space:nowrap;
-    }
-
-    /* horizontal stats */
-
-    .stats-scroll{
-      display:flex;
-      gap:16px;
-      overflow-x:auto;
-      padding:4px 2px 6px;
-      scrollbar-width:thin;
-    }
-
-    .stat-card{
-      flex:0 0 250px;
-      min-height:155px;
-      background:#fff;
-      border-radius:30px;
-      box-shadow:var(--shadow);
-      padding:22px;
-      position:relative;
-      overflow:hidden;
-    }
-
-    .stat-card::after{
-      content:"";
-      position:absolute;
-      width:96px;
-      height:96px;
-      border-radius:50%;
-      right:-24px;
-      bottom:-20px;
-      background:var(--blue-soft);
-    }
-
-    .stat-card.yellow::after{ background:#fff1ca; }
-    .stat-card.green::after{ background:#dcf7e7; }
-    .stat-card.pink::after{ background:#ffe7ef; }
-
-    .stat-card span{
-      display:block;
-      color:#63768d;
-      font-size:13px;
-      font-weight:600;
-    }
-
-    .stat-card strong{
-      display:block;
-      margin-top:12px;
-      font-size:36px;
-      line-height:1;
-      letter-spacing:-1px;
-    }
-
-    .stat-card small{
-      display:block;
-      margin-top:14px;
-      color:#4e637b;
-      font-size:13px;
-    }
-
-    /* queue + activity */
-
-    .two-col{
-      display:grid;
-      grid-template-columns:1.25fr .75fr;
-      gap:22px;
-      align-items:start;
-    }
-
-    .panel{
-      background:#fff;
-      border-radius:var(--radius-xl);
-      box-shadow:var(--shadow);
-      padding:24px;
-    }
-
-    .panel-top{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:16px;
-      margin-bottom:16px;
-    }
-
-    .panel-top h3{
-      margin:0;
-      font-size:22px;
-      letter-spacing:-.3px;
-      font-weight:700;
-    }
-
-    .chips{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-    }
-
-    .chip{
-      border:0;
-      background:#eef8ff;
-      color:#278ec7;
-      border-radius:999px;
-      padding:8px 13px;
-      font-size:12px;
-      font-weight:700;
-      cursor:pointer;
-    }
-
-    .chip.active{
-      background:var(--blue);
-      color:#fff;
-    }
-
-    .queue-list{
-      display:flex;
-      flex-direction:column;
-      gap:12px;
-    }
-
-    .queue-item{
-      display:grid;
-      grid-template-columns:auto 1fr auto;
-      align-items:center;
-      gap:16px;
-      background:#fbfdff;
-      border-radius:24px;
-      padding:14px;
-      transition:.18s ease;
-    }
-
-    .queue-item:hover{
-      background:#f3fbff;
-      transform:translateY(-1px);
-    }
-
-    .avatar{
-      width:56px;
-      height:56px;
-      object-fit:cover;
-      border-radius:18px;
-      background:#e8f5fb;
-      display:block;
-    }
-
-    .queue-main strong{
-      display:block;
-      font-size:15px;
-    }
-
-    .queue-main p{
-      margin:5px 0 0;
-      color:#6b7d92;
-      font-size:13px;
-      line-height:1.4;
-    }
-
-    .queue-actions{
-      display:flex;
-      align-items:center;
-      gap:8px;
-    }
-
-    .status{
-      display:inline-flex;
-      align-items:center;
-      padding:7px 11px;
-      border-radius:999px;
-      font-size:12px;
-      font-weight:700;
-      white-space:nowrap;
-    }
-
-    .status.pending{ background:var(--yellow); color:#9d6900; }
-    .status.done{ background:var(--green); color:#178248; }
-    .status.rejected{ background:var(--red); color:#bf3e3e; }
-
-    .round-btn{
-      border:0;
-      width:38px;
-      height:38px;
-      border-radius:14px;
-      background:#fff;
-      box-shadow:0 8px 16px rgba(19,34,56,.05);
-      color:#40546d;
-      cursor:pointer;
-    }
-
-    .timeline{
-      display:flex;
-      flex-direction:column;
-      gap:14px;
-    }
-
-    .timeline-item{
-      display:flex;
-      gap:14px;
-      padding:14px 0;
-      border-bottom:1px solid rgba(228,237,245,.9);
-    }
-
-    .timeline-item:last-child{ border-bottom:0; }
-
-    .timeline-dot{
-      width:12px;
-      height:12px;
-      border-radius:50%;
-      background:var(--blue);
-      box-shadow:0 0 0 6px rgba(54,184,255,.12);
-      margin-top:6px;
-      flex:0 0 auto;
-    }
-
-    .timeline-item time{
-      display:block;
-      color:#1a91ce;
-      font-size:12px;
-      font-weight:800;
-      margin-bottom:4px;
-    }
-
-    .timeline-item p{
-      margin:0;
-      color:#43576e;
-      font-size:14px;
-      line-height:1.45;
-    }
-
-    /* payment cards */
-
-    .payment-grid{
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0,1fr));
-      gap:18px;
-    }
-
-    .payment-card{
-      background:#fff;
-      border-radius:30px;
-      box-shadow:var(--shadow);
-      padding:20px;
-    }
-
-    .payment-card img{
-      width:100%;
-      height:122px;
-      object-fit:cover;
-      display:block;
-      border-radius:24px;
-      background:#eef7fc;
-      margin-bottom:16px;
-    }
-
-    .line{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:14px;
-      margin:8px 0;
-      font-size:14px;
-    }
-
-    .line span{
-      color:#74859a;
-    }
-
-    .amount{
-      margin-top:10px;
-      font-size:24px;
-      font-weight:700;
-      letter-spacing:-.5px;
-    }
-
-    .pay-actions{
-      display:flex;
-      gap:10px;
-      margin-top:16px;
-    }
-
-    .pay-actions button{
-      flex:1;
-      border:0;
-      border-radius:999px;
-      padding:11px 12px;
-      font-weight:700;
-      font-size:13px;
-      cursor:pointer;
-    }
-
-    .approve{ background:var(--blue); color:#fff; }
-    .soft{ background:#edf8ff; color:#228cc5; }
-
-    /* lower sections */
-    .lower-grid{
-      display:grid;
-      grid-template-columns:1.05fr .95fr;
-      gap:22px;
-      align-items:start;
-    }
-
-    .chart-panel{
-      min-height:390px;
-    }
-
-    .bars{
-      height:250px;
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:14px;
-      padding-top:14px;
-    }
-
-    .bar-wrap{
-      flex:1;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      gap:10px;
-    }
-
-    .bar{
-      width:100%;
-      max-width:44px;
-      border-radius:999px 999px 12px 12px;
-      background:linear-gradient(180deg, #39b9ff, #bfe9fb);
-      cursor:pointer;
-      transition:.18s ease;
-      min-height:30px;
-    }
-
-    .bar:hover{ transform:translateY(-4px); }
-    .bar-wrap span{
-      font-size:12px;
-      color:#65788d;
-      font-weight:700;
-    }
-
-    .people-list{
-      display:flex;
-      flex-direction:column;
-      gap:14px;
-    }
-
-    .person{
-      display:flex;
-      align-items:center;
-      gap:13px;
-      background:#fbfdff;
-      border-radius:22px;
-      padding:12px;
-    }
-
-    .person img{
-      width:52px;
-      height:52px;
-      object-fit:cover;
-      border-radius:18px;
-      display:block;
-    }
-
-    .person strong{
-      display:block;
-      font-size:14px;
-    }
-
-    .person span{
-      display:block;
-      margin-top:4px;
-      font-size:12px;
-      color:#6e8094;
-    }
-
-    .tag{
-      margin-left:auto;
-      background:#eef8ff;
-      color:#198eca;
-      padding:8px 11px;
-      border-radius:999px;
-      font-size:12px;
-      font-weight:800;
-      white-space:nowrap;
-    }
-
-    .notes-panel .queue-item{
-      background:#f9fcff;
-    }
-
-    /* drawer + toast */
-
-    .drawer-backdrop{
-      position:fixed;
-      inset:0;
-      background:rgba(19,34,56,.25);
-      opacity:0;
-      pointer-events:none;
-      transition:.2s ease;
-      z-index:80;
-    }
-
-    .drawer-backdrop.show{
-      opacity:1;
-      pointer-events:auto;
-    }
-
-    .drawer{
-      position:fixed;
-      top:0;
-      right:0;
-      height:100vh;
-      width:min(440px, 92vw);
-      background:#fff;
-      box-shadow:-24px 0 60px rgba(19,34,56,.14);
-      transform:translateX(102%);
-      transition:.25s ease;
-      z-index:81;
-      overflow-y:auto;
-      padding:26px;
-    }
-
-    .drawer.show{ transform:translateX(0); }
-
-    .drawer-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:14px;
-      margin-bottom:20px;
-    }
-
-    .drawer-head h3{
-      margin:0;
-      font-size:24px;
-      letter-spacing:-.4px;
-    }
-
-    .close-btn{
-      border:0;
-      width:42px;
-      height:42px;
-      border-radius:15px;
-      background:#f3f8fc;
-      cursor:pointer;
-    }
-
-    .drawer-card{
-      background:#f8fcff;
-      border-radius:24px;
-      padding:18px;
-      margin-bottom:14px;
-    }
-
-    .drawer-card small{
-      display:block;
-      color:#718299;
-      font-weight:700;
-      margin-bottom:8px;
-    }
-
-    .drawer-card p{
-      margin:0;
-      color:#455971;
-      line-height:1.55;
-      font-size:14px;
-    }
-
-    .drawer-actions{
-      display:flex;
-      gap:10px;
-      margin-top:20px;
-    }
-
-    .drawer-actions button{
-      flex:1;
-      border:0;
-      border-radius:999px;
-      padding:12px 14px;
-      font-weight:800;
-      cursor:pointer;
-    }
-
-    .toast{
-      position:fixed;
-      left:50%;
-      bottom:28px;
-      transform:translate(-50%, 18px);
-      opacity:0;
-      pointer-events:none;
-      z-index:90;
-      background:#132238;
-      color:#fff;
-      border-radius:999px;
-      padding:12px 18px;
-      font-size:13px;
-      font-weight:700;
-      transition:.2s ease;
-    }
-
-    .toast.show{
-      opacity:1;
-      transform:translate(-50%,0);
-    }
-
-    /* responsive */
-
-    @media (max-width: 1200px){
-      .hero-grid,
-      .two-col,
-      .lower-grid{
-        grid-template-columns:1fr;
-      }
-
-      .payment-grid{
-        grid-template-columns:repeat(2, minmax(0,1fr));
-      }
-
-      .topnav{
-        flex-wrap:wrap;
-        padding:10px 0;
-      }
-
-      .nav-links{
-        order:3;
-        width:100%;
-        justify-content:flex-start;
-        overflow:auto;
-        white-space:nowrap;
-        padding-bottom:4px;
-      }
-    }
-
-    @media (max-width: 760px){
-      .container{
-        width:min(100% - 24px, 100%);
-      }
-
-      .search{
-        display:none;
-      }
-
-      .hero-card,.hero-side,.panel,.payment-card,.stat-card{
-        border-radius:24px;
-      }
-
-      .payment-grid{
-        grid-template-columns:1fr;
-      }
-
-      .queue-item{
-        grid-template-columns:auto 1fr;
-      }
-
-      .queue-actions{
-        grid-column:1 / -1;
-        justify-content:flex-end;
-      }
-
-      .brand-text span,
-      .profile span{
-        display:none;
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Kyoshi | Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&family=Open+Sans&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: "Montserrat", "Open Sans", sans-serif;
+            background: url('../assets/img/background3.jpg') no-repeat center top;
+            background-size: cover;
+            min-height: 100vh;
+            position: relative;
+            color: #1E1B2E;
+            line-height: 1.45;
+            overflow-x: hidden;
+        }
+
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 230px;
+            height: 100%;
+            background: #272754;
+            color: #E8E4F0;
+            overflow-y: auto;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            transform: translateX(0);
+            display:flex;
+            flex-direction: column;
+        }
+        
+        .sidebar.closed {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar-header {
+            padding: 28px 20px;
+            flex-shrink: 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        
+        .sidebar-header p {
+            font-size: 0.65rem;
+            color: rgba(255,255,255,0.5);
+            margin-top: 4px;
+        }
+        
+        .nav-menu {
+            padding: 16px 0;
+            flex:1;
+            justify-content: center;
+            flex-direction: column;
+            display:flex;
+            min-height:0;
+        }
+        
+        .nav-item {
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #D4CFE8;
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+            font-size: 0.85rem;
+        }
+        
+        .nav-item:hover {
+            background: rgba(255,255,255,0.08);
+            color: white;
+        }
+        
+        .nav-item.active {
+            background: rgba(255,255,255,0.1);
+            border-left-color: #B26EA7;
+            color: white;
+        }
+        
+        .nav-item i {
+            width: 20px;
+            font-size: 1.1rem;
+        }
+        
+        /* Main Content */
+        .main-content {
+            margin-left: 220px;
+            padding: 20px 24px;
+            transition: margin-left 0.3s ease;
+        }
+        
+        .main-content.expanded {
+            margin-left: 0;
+        }
+        
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+        }
+        
+        .page-title h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #302E63;
+        }
+        
+        .page-title p {
+            font-size: 0.75rem;
+            color: #7B6E8F;
+            margin-top: 4px;
+        }
+        
+        .menu-toggle {
+            background: #272754;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: none;
+            font-size: 1.1rem;
+        }
+        
+        .admin-profile {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            padding: 6px 14px 6px 10px;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            border: 1px solid #E4DCF0;
+        }
+        
+        .admin-profile img {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        
+        .admin-profile span {
+            font-weight: 600;
+            font-size: 0.8rem;
+            color: #302E63;
+        }
+        
+        .admin-profile i {
+            font-size: 11px;
+            color: #A59BB5;
+        }
+        
+        /* Stats Grid - Responsive */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 20px;
+            padding: 18px;
+            border: 1px solid #E4DCF0;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(48, 46, 99, 0.08);
+        }
+
+       .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .admin-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .footer-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .admin-details {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .admin-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .admin-role {
+            font-size: 0.6rem;
+            color: #B26EA7;
+            margin-top: 2px;
+        }
+
+        .logout-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: rgba(220, 38, 38, 0.15);
+            border-radius: 10px;
+            color: #FFA3A3;
+            text-decoration: none;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .logout-icon:hover {
+            background: rgba(220, 38, 38, 0.4);
+            color: white;
+            transform: scale(1.05);
+        }
+
+        .logout-icon i {
+            font-size: 1.2rem;
+        }
+
+        .stat-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .stat-icon {
+            width: 44px;
+            height: 44px;
+            background: rgba(135, 93, 156, 0.1);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .stat-icon i {
+            font-size: 22px;
+            color: #875D9C;
+        }
+
+        .stat-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #7B6E8F;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-sub {
+            font-size: 0.65rem;
+            color: #A59BB5;
+            margin-top: 4px;
+        }
+
+        .stat-right {
+            text-align: right;
+        }
+
+        .stat-value {
+            font-size: 26px;
+            font-weight: 800;
+            color: #302E63;
+            line-height: 1.2;
+        }
+
+        /* Alerts - Responsive */
+        .alert-card {
+            background: #FEF3C7;
+            border-left: 4px solid #F59E0B;
+            border-radius: 14px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        
+        .alert-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .alert-content i {
+            font-size: 22px;
+            color: #F59E0B;
+        }
+        
+        .alert-content strong {
+            color: #92400E;
+            font-size: 0.85rem;
+        }
+        
+        .alert-content p {
+            color: #B45309;
+            font-size: 12px;
+            margin-top: 2px;
+        }
+        
+        .alert-btn {
+            background: #F59E0B;
+            color: white;
+            padding: 6px 18px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        
+        /* Charts Row - Responsive */
+        .charts-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 28px;
+        }
+        
+        .chart-card {
+            background: white;
+            border-radius: 20px;
+            padding: 18px;
+            border: 1px solid #E4DCF0;
+        }
+        
+        .chart-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #302E63;
+            margin-bottom: 14px;
+        }
+        
+        canvas {
+            max-height: 240px;
+            width: 100%;
+        }
+        
+        /* Quick Stats Row - Responsive */
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+        
+        .quick-stat {
+            background: white;
+            border-radius: 14px;
+            padding: 14px;
+            text-align: center;
+            border: 1px solid #E4DCF0;
+        }
+        
+        .quick-stat .number {
+            font-size: 20px;
+            font-weight: 800;
+            color: #875D9C;
+        }
+        
+        .quick-stat .label {
+            font-size: 0.65rem;
+            color: #7B6E8F;
+            margin-top: 4px;
+        }
+        
+        .dropdown {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 200px;
+            background: white;
+            border-radius: 14px;
+            overflow: hidden;
+            display: none;
+            border: 1px solid #E4DCF0;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+            z-index: 1000;
+        }
+        
+        .dropdown a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            text-decoration: none;
+            color: #1E1B2E;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .dropdown a:hover {
+            background: #F4F0F8;
+        }
+        
+        .dropdown hr {
+            border: none;
+            border-top: 1px solid #E4DCF0;
+            margin: 0;
+        }
+        
+        .relative {
+            position: relative;
+        }
+        
+        footer {
+            margin-top: 28px;
+            text-align: center;
+            font-size: 0.65rem;
+            color: #A59BB5;
+            border-top: 1px solid #E4DCF0;
+            padding-top: 18px;
+        }
+        
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+            .quick-stats {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .menu-toggle {
+                display: block;
+            }
+            
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 16px;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+            }
+            
+            .charts-row {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            
+            .quick-stats {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+            }
+            
+            .stat-card {
+                padding: 14px;
+            }
+            
+            .stat-value {
+                font-size: 22px;
+            }
+            
+            .stat-icon {
+                width: 38px;
+                height: 38px;
+            }
+            
+            .stat-icon i {
+                font-size: 18px;
+            }
+            
+            .alert-card {
+                padding: 12px 16px;
+            }
+            
+            .alert-content {
+                gap: 10px;
+            }
+            
+            .page-title h1 {
+                font-size: 1.2rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .quick-stats {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .top-bar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .admin-profile {
+                align-self: flex-end;
+            }
+            
+            .alert-card {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .alert-btn {
+                width: 100%;
+                text-align: center;
+            }
+            
+            .alert-content {
+                justify-content: center;
+            }
+        }
+
+        .brand-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+        }
+
+        .brand-title {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-title h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff, #B26EA7);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .admin-space-text {
+            font-size: 0.6rem;
+            color: #e7c7f7;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        /* Mobile adjustments */
+        @media (max-width: 768px) {
+            .sidebar-header {
+                padding: 20px 16px;
+            }
+            .brand-icon {
+                width: 38px;
+                height: 38px;
+            }
+            .brand-title h1 {
+                font-size: 1.1rem;
+            }
+            .admin-space-text {
+                font-size: 0.55rem;
+            }
+        }
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(126, 96, 223, 0.5);
+            z-index: 999;
+            display: none;
+        }
+        
+        .sidebar-overlay.active {
+            display: block;
+        }
+    </style>
 </head>
 <body>
 
-  <div class="top-shell">
-    <div class="container">
-      <header class="topnav">
-        <a href="admin_dashboard.php" class="brand">
-          <img src="../assets/img/Logo.png" alt="Kyoshi logo">
-          <div class="brand-text">
-            <strong>Kyoshi</strong>
-            <span>Admin space</span>
-          </div>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="brand-wrapper">
+            <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="brand-icon">
+            <div class="brand-title">
+                <h1>Kyoshi</h1>
+                <span class="admin-space-text">Admin Space</span>
+            </div>
+        </div>
+    </div>
+    
+    <nav class="nav-menu">
+        <a href="admin_dashboard.php" class="nav-item active">
+            <i class="bi bi-speedometer2"></i><span>Dashboard</span>
         </a>
-
-        <nav class="nav-links">
-          <a class="active" href="#overview">Overview</a>
-          <a href="#queue">Review Queue</a>
-          <a href="#payments">Payments</a>
-          <a href="#bookings">Bookings</a>
-          <a href="#users">Users</a>
-          <a href="#reports">Reports</a>
-          <a href="#settings">Settings</a>
-        </nav>
-
-        <div class="nav-actions">
-          <div class="search">
-            <i class="bi bi-search"></i>
-            <input id="globalSearch" type="text" placeholder="Search tutor, payment, booking...">
-          </div>
-
-          <button class="icon-btn" onclick="openDrawer('Notifications','New tutor applications, payment proof uploads, and booking updates are waiting for review.')">
-            <i class="bi bi-bell"></i>
-            <span class="icon-dot"></span>
-          </button>
-
-          <button class="profile" onclick="openDrawer('Admin profile','Signed in as <?php echo htmlspecialchars($displayName); ?>. Later, this can be connected to your PHP session and database.')">
-            <img src="../assets/img/student.jpg" alt="Admin avatar">
-            <span><?php echo htmlspecialchars($displayName); ?></span>
-          </button>
+        <a href="admin_tutors.php" class="nav-item">
+            <i class="bi bi-person-badge"></i><span>Tutor Applications</span>
+        </a>
+        <a href="admin_qualifications.php" class="nav-item">
+            <i class="bi bi-file-earmark-text"></i><span>Qualifications</span>
+        </a>
+        <a href="admin_payments.php" class="nav-item">
+            <i class="bi bi-credit-card"></i><span>Payment Verification</span>
+        </a>
+        <a href="admin_bookings.php" class="nav-item">
+            <i class="bi bi-calendar-check"></i><span>Bookings</span>
+        </a>
+        <a href="admin_disputes.php" class="nav-item">
+            <i class="bi bi-scale"></i><span>Disputes</span>
+        </a>
+        <a href="admin_feedback.php" class="nav-item">
+            <i class="bi bi-chat-dots"></i><span>Feedback Moderation</span>
+        </a>
+        <a href="admin_users.php" class="nav-item">
+            <i class="bi bi-people"></i><span>Users</span>
+        </a>
+        <a href="admin_payouts.php" class="nav-item">
+            <i class="bi bi-cash-stack"></i><span>Payout Requests</span>
+        </a>
+        <a href="admin_reports.php" class="nav-item">
+            <i class="bi bi-graph-up"></i><span>Reports & Analytics</span>
+        </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+    <div class="admin-info">
+        <img src="<?= e($profilePic) ?>" alt="Admin" class="footer-avatar">
+        <div class="admin-details">
+            <span class="admin-name"><?= e($displayName) ?></span>
         </div>
-      </header>
     </div>
-  </div>
-
-  <main class="container">
-    <section class="hero" id="overview">
-      <div class="hero-grid">
-        <article class="hero-card">
-          <div class="hero-copy">
-            <div class="eyebrow"><span class="pulse"></span><span>Everything is live</span></div>
-            <h1>Admin</h1>
-            <p>Short queue, clean records, no mysterious screenshots. A good day.</p>
-          </div>
-
-          <div class="hero-actions">
-            <button class="btn-primary" onclick="scrollToSection('queue')">Review queue</button>
-            <button class="btn-ghost" onclick="scrollToSection('payments')">Check payments</button>
-            <button class="btn-text" onclick="showToast('Export report is a demo action for now')">Export report</button>
-          </div>
-        </article>
-
-        <aside class="hero-side">
-          <div>
-            <div class="clock" id="clock">--:--</div>
-            <div class="date-line" id="dateText">Loading date...</div>
-          </div>
-
-          <div class="side-note">
-            <div>
-              <strong>Quick note</strong>
-              <p>6 tutor applications and 9 payment proofs are waiting today.</p>
-            </div>
-            <button class="btn-ghost" onclick="openDrawer('Quick note','Tutor applications and payment proofs are waiting for review. This card can later pull real counts from your database.')">Open</button>
-          </div>
-        </aside>
-      </div>
-    </section>
-
-    <section class="block">
-      <div class="section-head">
-        <div>
-          <h2>Snapshot</h2>
-          <p>Only the numbers you probably care about.</p>
-        </div>
-      </div>
-
-      <div class="stats-scroll">
-        <article class="stat-card">
-          <span>Pending tutors</span>
-          <strong><?php echo $pendingTutors; ?></strong>
-          <small>2 new today</small>
-        </article>
-        <article class="stat-card yellow">
-          <span>Payment checks</span>
-          <strong>9</strong>
-          <small>Proofs waiting</small>
-        </article>
-        <article class="stat-card green">
-          <span>Bookings today</span>
-          <strong>14</strong>
-          <small>8 completed</small>
-        </article>
-        <article class="stat-card pink">
-          <span>Active students</span>
-          <strong><?php echo $totalStudents; ?></strong>
-          <small>This week</small>
-        </article>
-        <article class="stat-card">
-          <span>Monthly sales</span>
-          <strong>RM 2.4k</strong>
-          <small>Manual payment</small>
-        </article>
-      </div>
-    </section>
-
-    <section class="block two-col" id="queue">
-      <div class="panel">
-        <div class="panel-top">
-          <h3>Review queue</h3>
-          <div class="chips">
-            <button class="chip active" data-filter="all">All</button>
-            <button class="chip" data-filter="tutor">Tutors</button>
-            <button class="chip" data-filter="payment">Payments</button>
-            <button class="chip" data-filter="booking">Bookings</button>
-          </div>
-        </div>
-
-        <div class="queue-list" id="queueList">
-          <div class="queue-item tutor searchable">
-            <img class="avatar" src="../assets/img/japanese.webp" alt="Tutor">
-            <div class="queue-main">
-              <strong>Haruka Tan</strong>
-              <p>Japanese tutor application · Certificate uploaded</p>
-            </div>
-            <div class="queue-actions">
-              <span class="status pending">Pending</span>
-              <button class="round-btn" onclick="openDrawer('Haruka Tan','Japanese tutor application. Review document, tutor bio, hourly rate, and language level before approval.')"><i class="bi bi-arrow-right"></i></button>
-            </div>
-          </div>
-
-          <div class="queue-item payment searchable">
-            <img class="avatar" src="../assets/img/student.jpg" alt="Student">
-            <div class="queue-main">
-              <strong>Chin Ming</strong>
-              <p>Payment proof · Japanese Beginner · RM 45.00</p>
-            </div>
-            <div class="queue-actions">
-              <span class="status pending">Need check</span>
-              <button class="round-btn" onclick="openDrawer('Payment proof','Student: Chin Ming. Booking: Japanese Beginner. Amount: RM 45.00. Check proof image before verifying.')"><i class="bi bi-arrow-right"></i></button>
-            </div>
-          </div>
-
-          <div class="queue-item tutor searchable">
-            <img class="avatar" src="../assets/img/korean.jpg" alt="Tutor">
-            <div class="queue-main">
-              <strong>Kim Jisoo</strong>
-              <p>Korean tutor verification · Waiting for admin</p>
-            </div>
-            <div class="queue-actions">
-              <span class="status pending">Pending</span>
-              <button class="round-btn" onclick="openDrawer('Kim Jisoo','Korean tutor verification. Certificate and tutor profile are ready for review.')"><i class="bi bi-arrow-right"></i></button>
-            </div>
-          </div>
-
-          <div class="queue-item booking searchable">
-            <img class="avatar" src="../assets/img/english.webp" alt="Booking">
-            <div class="queue-main">
-              <strong>Kay Hueen</strong>
-              <p>Booking confirmed · English speaking class</p>
-            </div>
-            <div class="queue-actions">
-              <span class="status done">Confirmed</span>
-              <button class="round-btn" onclick="openDrawer('Booking confirmed','English speaking class has been confirmed. This area can later show the full booking details.')"><i class="bi bi-arrow-right"></i></button>
-            </div>
-          </div>
-
-          <div class="queue-item payment searchable">
-            <img class="avatar" src="../assets/img/malay.jpg" alt="Payment">
-            <div class="queue-main">
-              <strong>Taarunesh</strong>
-              <p>Malay Writing · Payment rejected</p>
-            </div>
-            <div class="queue-actions">
-              <span class="status rejected">Rejected</span>
-              <button class="round-btn" onclick="openDrawer('Rejected payment','Payment proof was rejected. Later you can add a rejection reason form here.')"><i class="bi bi-arrow-right"></i></button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <aside class="panel">
-        <div class="panel-top">
-          <h3>Today</h3>
-          <a href="#reports" class="right-action">View all</a>
-        </div>
-
-        <div class="timeline">
-          <div class="timeline-item">
-            <span class="timeline-dot"></span>
-            <div>
-              <time>09:30</time>
-              <p>2 tutor applications received</p>
-            </div>
-          </div>
-
-          <div class="timeline-item">
-            <span class="timeline-dot"></span>
-            <div>
-              <time>11:10</time>
-              <p>Payment proof uploaded</p>
-            </div>
-          </div>
-
-          <div class="timeline-item">
-            <span class="timeline-dot"></span>
-            <div>
-              <time>14:00</time>
-              <p>Booking report exported</p>
-            </div>
-          </div>
-
-          <div class="timeline-item">
-            <span class="timeline-dot"></span>
-            <div>
-              <time>16:40</time>
-              <p>New session marked completed</p>
-            </div>
-          </div>
-        </div>
-      </aside>
-    </section>
-
-    <section class="block" id="payments" style="margin-top:34px; margin-bottom:42px;">
-      <div class="section-head">
-        <div>
-          <h2>Payment review</h2>
-          <p>Small queue. Big responsibility.</p>
-        </div>
-
-        <button class="btn-ghost" onclick="showToast('Payment report prepared')">Prepare report</button>
-      </div>
-
-      <div class="payment-grid">
-        <article class="payment-card searchable">
-          <img src="../assets/img/penang.jpg" alt="Payment proof preview">
-          <div class="line"><span>Student</span><strong>Chin Ming</strong></div>
-          <div class="line"><span>Class</span><strong>Japanese</strong></div>
-          <div class="amount">RM 45.00</div>
-          <div class="pay-actions">
-            <button class="approve" onclick="showToast('Payment approved')">Approve</button>
-            <button class="soft" onclick="openDrawer('Payment proof','Demo preview only. Later you can connect this button to uploaded payment proof from your database.')">View</button>
-          </div>
-        </article>
-
-        <article class="payment-card searchable">
-          <img src="../assets/img/english.webp" alt="Payment proof preview">
-          <div class="line"><span>Student</span><strong>Kay Hueen</strong></div>
-          <div class="line"><span>Class</span><strong>English</strong></div>
-          <div class="amount">RM 50.00</div>
-          <div class="pay-actions">
-            <button class="approve" onclick="showToast('Payment approved')">Approve</button>
-            <button class="soft" onclick="openDrawer('Payment proof','English class payment proof preview.')">View</button>
-          </div>
-        </article>
-
-        <article class="payment-card searchable">
-          <img src="../assets/img/malay.jpg" alt="Payment proof preview">
-          <div class="line"><span>Student</span><strong>Taarunesh</strong></div>
-          <div class="line"><span>Class</span><strong>Malay</strong></div>
-          <div class="amount">RM 40.00</div>
-          <div class="pay-actions">
-            <button class="approve" onclick="showToast('Payment approved')">Approve</button>
-            <button class="soft" onclick="openDrawer('Payment proof','Malay class payment proof preview.')">View</button>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section class="block lower-grid" id="bookings">
-      <div class="panel chart-panel">
-        <div class="panel-top">
-          <h3>Weekly bookings</h3>
-          <button class="btn-text" onclick="showToast('Chart is static in the HTML version')">Details</button>
-        </div>
-
-        <div class="bars">
-          <div class="bar-wrap"><div class="bar" style="height:92px;"></div><span>Mon</span></div>
-          <div class="bar-wrap"><div class="bar" style="height:142px;"></div><span>Tue</span></div>
-          <div class="bar-wrap"><div class="bar" style="height:76px;"></div><span>Wed</span></div>
-          <div class="bar-wrap"><div class="bar" style="height:168px;"></div><span>Thu</span></div>
-          <div class="bar-wrap"><div class="bar" style="height:126px;"></div><span>Fri</span></div>
-          <div class="bar-wrap"><div class="bar" style="height:196px;"></div><span>Sat</span></div>
-          <div class="bar-wrap"><div class="bar" style="height:112px;"></div><span>Sun</span></div>
-        </div>
-      </div>
-
-      <div class="panel" id="users">
-        <div class="panel-top">
-          <h3>Recently joined</h3>
-          <a href="#reports" class="right-action">Open</a>
-        </div>
-
-        <div class="people-list">
-          <div class="person searchable">
-            <img src="../assets/img/student.jpg" alt="User">
-            <div>
-              <strong>Chin Ming</strong>
-              <span>Student · Japanese</span>
-            </div>
-            <div class="tag">Student</div>
-          </div>
-
-          <div class="person searchable">
-            <img src="../assets/img/tutor.jpg" alt="User">
-            <div>
-              <strong>Daniel Lee</strong>
-              <span>Tutor · English</span>
-            </div>
-            <div class="tag">Tutor</div>
-          </div>
-
-          <div class="person searchable">
-            <img src="../assets/img/jb.jpg" alt="User">
-            <div>
-              <strong>Alicia Wong</strong>
-              <span>Tutor · Mandarin</span>
-            </div>
-            <div class="tag">Tutor</div>
-          </div>
-
-          <div class="person searchable">
-            <img src="../assets/img/kk.jpg" alt="User">
-            <div>
-              <strong>Nur Aina</strong>
-              <span>Student · Malay</span>
-            </div>
-            <div class="tag">Student</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="block panel notes-panel" id="reports" style="margin-top:30px; margin-bottom:42px;">
-      <div class="panel-top">
-        <h3>System notes</h3>
-        <button class="btn-ghost" onclick="showToast('Note saved')">Save note</button>
-      </div>
-
-      <div class="queue-list">
-        <div class="queue-item searchable">
-          <img class="avatar" src="../assets/img/mandarin.png" alt="Note">
-          <div class="queue-main">
-            <strong>Mandarin demand is up</strong>
-            <p>More students searched for Mandarin tutors this week.</p>
-          </div>
-          <div class="queue-actions">
-            <span class="status done">Insight</span>
-          </div>
-        </div>
-
-        <div class="queue-item searchable">
-          <img class="avatar" src="../assets/img/login.jpg" alt="Note">
-          <div class="queue-main">
-            <strong>Password reset page</strong>
-            <p>Keep this clean and simple when converting to PHP.</p>
-          </div>
-          <div class="queue-actions">
-            <span class="status pending">Todo</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="block panel" id="settings" style="margin-bottom:60px;">
-      <div class="panel-top">
-        <h3>Quick actions</h3>
-        <button class="btn-text" onclick="showToast('More actions coming later')">More</button>
-      </div>
-
-      <div class="hero-actions">
-        <button class="btn-primary" onclick="showToast('Tutor verification opened')">Verify tutors</button>
-        <button class="btn-ghost" onclick="showToast('Payment screen opened')">Check payments</button>
-        <button class="btn-ghost" onclick="showToast('Report export queued')">Export reports</button>
-      </div>
-    </section>
-  </main>
-
-  <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
-
-  <aside class="drawer" id="drawer">
-    <div class="drawer-head">
-      <h3 id="drawerTitle">Details</h3>
-      <button class="close-btn" onclick="closeDrawer()"><i class="bi bi-x-lg"></i></button>
-    </div>
-
-    <div class="drawer-card">
-      <small>Status</small>
-      <p id="drawerText">Details appear here.</p>
-    </div>
-    <div class="drawer-actions">
-  <a href="logout.php" class="btn-logout">Logout</a>
+    <a href="logout.php" class="logout-icon" title="Logout">
+        <i class="bi bi-box-arrow-right"></i>
+    </a>
 </div>
-  </aside>
+</aside>
 
-  <div class="toast" id="toast">Saved</div>
+<!-- Main Content -->
+<div class="main-content" id="mainContent">
+    <div class="top-bar">
+        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
+        <div class="page-title">
+            <h1>Dashboard Overview</h1>
+        </div>
+        <div class="relative">
+            <button class="admin-profile" onclick="toggleDropdown()">
+                <img src="<?= e($profilePic) ?>" alt="Admin">
+                <span><?= e($displayName) ?></span>
+                <i class="bi bi-chevron-down"></i>
+            </button>
+            <div class="dropdown" id="profileDropdown">
+                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                <hr>
+                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+            </div>
+        </div>
+    </div>
 
-  <script>
-    const clock = document.getElementById("clock");
-    const dateText = document.getElementById("dateText");
+    <!-- Alerts for pending items -->
+    <?php if ($pendingTutors > 0): ?>
+    <div class="alert-card">
+        <div class="alert-content">
+            <i class="bi bi-person-plus"></i>
+            <div>
+                <strong><?= $pendingTutors ?> new tutor application<?= $pendingTutors > 1 ? 's' : '' ?></strong>
+                <p>Review and approve qualified tutors to join the platform</p>
+            </div>
+        </div>
+        <a href="admin_tutors.php" class="alert-btn">Review Now</a>
+    </div>
+    <?php endif; ?>
 
-    function updateDateTime(){
-      const now = new Date();
+    <?php if ($pendingPayments > 0): ?>
+    <div class="alert-card">
+        <div class="alert-content">
+            <i class="bi bi-exclamation-triangle"></i>
+            <div>
+                <strong><?= $pendingPayments ?> pending payment verification<?= $pendingPayments > 1 ? 's' : '' ?></strong>
+                <p>Manual payments need to be verified before sessions are confirmed</p>
+            </div>
+        </div>
+        <a href="admin_payments.php" class="alert-btn">Verify Now</a>
+    </div>
+    <?php endif; ?>
 
-      clock.textContent = now.toLocaleTimeString("en-MY", {
-        hour:"2-digit",
-        minute:"2-digit"
-      });
+    <?php if ($pendingDisputes > 0): ?>
+    <div class="alert-card">
+        <div class="alert-content">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <div>
+                <strong><?= $pendingDisputes ?> open dispute<?= $pendingDisputes > 1 ? 's' : '' ?></strong>
+                <p>Requires immediate attention for fair resolution</p>
+            </div>
+        </div>
+        <a href="admin_disputes.php" class="alert-btn">View Disputes</a>
+    </div>
+    <?php endif; ?>
 
-      dateText.textContent = now.toLocaleDateString("en-MY", {
-        weekday:"long",
-        day:"numeric",
-        month:"long",
-        year:"numeric"
-      });
+    <!-- Main Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-left">
+            <div class="stat-icon"><i class="bi bi-people"></i></div>
+            <div class="stat-info">
+                <div class="stat-label">Total Users</div>
+                <div class="stat-sub"><?= $totalStudents ?> students · <?= $totalTutors ?> tutors</div>
+            </div>
+        </div>
+        <div class="stat-right">
+            <div class="stat-value"><?= $totalStudents + $totalTutors ?></div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-left">
+            <div class="stat-icon"><i class="bi bi-person-badge"></i></div>
+            <div class="stat-info">
+                <div class="stat-label">Active Tutors</div>
+                <div class="stat-sub"><?= $pendingTutors ?> pending approval</div>
+            </div>
+        </div>
+        <div class="stat-right">
+            <div class="stat-value"><?= $totalTutors ?></div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-left">
+            <div class="stat-icon"><i class="bi bi-calendar-check"></i></div>
+            <div class="stat-info">
+                <div class="stat-label">Total Bookings</div>
+                <div class="stat-sub"><?= $completedBookings ?> completed · <?= $pendingBookings ?> pending</div>
+            </div>
+        </div>
+        <div class="stat-right">
+            <div class="stat-value"><?= $totalBookings ?></div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-left">
+            <div class="stat-icon"><i class="bi bi-cash-stack"></i></div>
+            <div class="stat-info">
+                <div class="stat-label">Total Revenue</div>
+                <div class="stat-sub"><?= $verifiedPayments ?> verified payments</div>
+            </div>
+        </div>
+        <div class="stat-right">
+            <div class="stat-value"><?= formatMoney($totalRevenue) ?></div>
+        </div>
+    </div>
+</div>
+
+    <!-- Charts Row -->
+    <div class="charts-row">
+        <div class="chart-card">
+            <div class="chart-title">Monthly Bookings Trend</div>
+            <canvas id="bookingsChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <div class="chart-title">Booking Status Overview</div>
+            <canvas id="overviewChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Additional Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon"><i class="bi bi-star-fill"></i></div>
+            <div class="stat-value"><?= number_format($avgRating, 1) ?></div>
+            <div class="stat-label">Average Rating</div>
+            <div class="stat-sub">from <?= $totalRatings ?> reviews</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="bi bi-scale"></i></div>
+            <div class="stat-value"><?= $pendingDisputes ?></div>
+            <div class="stat-label">Open Disputes</div>
+            <div class="stat-sub"><?= $resolvedDisputes ?> resolved total</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="bi bi-credit-card-2-front"></i></div>
+            <div class="stat-value"><?= $pendingPayments ?></div>
+            <div class="stat-label">Pending Verification</div>
+            <div class="stat-sub"><?= $verifiedPayments ?> verified</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="bi bi-cash"></i></div>
+            <div class="stat-value"><?= $pendingPayouts ?></div>
+            <div class="stat-label">Payout Requests</div>
+            <div class="stat-sub"><?= $totalPayouts ?> total requests</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleDropdown() {
+    const dropdown = document.getElementById('profileDropdown');
+    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+}
+
+window.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('profileDropdown');
+    const button = document.querySelector('.admin-profile');
+    if (button && !button.contains(e.target) && dropdown && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
     }
+});
 
-    updateDateTime();
-    setInterval(updateDateTime, 1000);
+// Mobile menu toggle
+const menuToggle = document.getElementById('menuToggle');
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebarOverlay');
 
-    function scrollToSection(id){
-      document.getElementById(id).scrollIntoView({ behavior:"smooth", block:"start" });
-    }
-
-    const chips = document.querySelectorAll(".chip");
-    const queueItems = document.querySelectorAll("#queueList .queue-item");
-
-    chips.forEach(chip => {
-      chip.addEventListener("click", () => {
-        chips.forEach(c => c.classList.remove("active"));
-        chip.classList.add("active");
-        const filter = chip.dataset.filter;
-
-        queueItems.forEach(item => {
-          item.style.display = filter === "all" || item.classList.contains(filter) ? "grid" : "none";
-        });
-      });
+if (menuToggle) {
+    menuToggle.addEventListener('click', function() {
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('active');
+        document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
     });
+}
 
-    const searchInput = document.getElementById("globalSearch");
-
-    searchInput.addEventListener("input", () => {
-      const value = searchInput.value.trim().toLowerCase();
-      const searchable = document.querySelectorAll(".searchable");
-
-      searchable.forEach(item => {
-        item.style.display = item.innerText.toLowerCase().includes(value) ? "" : "none";
-      });
+if (overlay) {
+    overlay.addEventListener('click', function() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
     });
+}
 
-    function openDrawer(title, text){
-      document.getElementById("drawerTitle").textContent = title;
-      document.getElementById("drawerText").textContent = text;
-      document.getElementById("drawerBackdrop").classList.add("show");
-      document.getElementById("drawer").classList.add("show");
-    }
+// Monthly Bookings Chart
+const bookingsCtx = document.getElementById('bookingsChart')?.getContext('2d');
+if (bookingsCtx) {
+    new Chart(bookingsCtx, {
+        type: 'line',
+        data: {
+            labels: <?= json_encode(array_column($monthlyData, 'month')) ?>,
+            datasets: [{
+                label: 'Bookings',
+                data: <?= json_encode(array_column($monthlyData, 'count')) ?>,
+                borderColor: '#875D9C',
+                backgroundColor: 'rgba(135, 93, 156, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#875D9C',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { 
+                legend: { position: 'top', labels: { font: { size: 11 } } }
+            }
+        }
+    });
+}
 
-    function closeDrawer(){
-      document.getElementById("drawerBackdrop").classList.remove("show");
-      document.getElementById("drawer").classList.remove("show");
-    }
+// Overview Pie Chart
+const overviewCtx = document.getElementById('overviewChart')?.getContext('2d');
+if (overviewCtx) {
+    new Chart(overviewCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Completed Sessions', 'Pending', 'Cancelled'],
+            datasets: [{
+                data: [<?= $completedBookings ?>, <?= $pendingBookings + $confirmedBookings ?>, <?= $cancelledBookings ?>],
+                backgroundColor: ['#28A745', '#F59E0B', '#DC2626'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { 
+                legend: { position: 'bottom', labels: { font: { size: 11 } } }
+            }
+        }
+    });
+}
 
-    let toastTimer;
-    function showToast(message){
-      const toast = document.getElementById("toast");
-      toast.textContent = message;
-      toast.classList.add("show");
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+// Close sidebar on window resize if screen becomes larger
+window.addEventListener('resize', function() {
+    if (window.innerWidth > 768) {
+        sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('active');
+        document.body.style.overflow = '';
     }
-  </script>
+});
+</script>
+
 </body>
 </html>

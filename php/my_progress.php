@@ -26,8 +26,6 @@ $displayName = $user['fullname'];
 $profilePic = !empty($user['profile_pic'])
     ? '../uploads/profiles/' . $user['profile_pic']
     : $assetBase . '/profile-student.png';
-
-// Get ALL completed sessions with attendance from session_completion
 $stmt = $conn->prepare("
     SELECT 
         b.id as booking_id,
@@ -51,6 +49,7 @@ $stmt = $conn->prepare("
     WHERE b.student_id = ? 
         AND b.status = 'completed'
         AND b.booking_date <= CURDATE()
+    GROUP BY b.id
     ORDER BY b.booking_date DESC
 ");
 $stmt->bind_param("i", $userID);
@@ -108,11 +107,12 @@ foreach ($allCompletedSessions as $session) {
 
 $attendanceRate = $totalSessions > 0 ? round(($attendedSessions / $totalSessions) * 100) : 0;
 
-// Count sessions without feedback yet
+// Count sessions without feedback yet (ONLY for attended sessions)
 $sessionsWithoutFeedback = 0;
 $reportBookingIds = array_column($sessionReports, 'booking_id');
 foreach ($allCompletedSessions as $session) {
-    if (!in_array($session['booking_id'], $reportBookingIds)) {
+    // Only count if student attended AND no feedback yet
+    if ($session['student_confirmed'] == 1 && !in_array($session['booking_id'], $reportBookingIds)) {
         $sessionsWithoutFeedback++;
     }
 }
@@ -125,17 +125,21 @@ function getAttendanceBadge($session) {
     $studentConfirmed = $session['student_confirmed'] ?? 0;
     $isManuallySet = $session['attendance_manually_set'] ?? 0;
     $noShowType = $session['no_show_type'] ?? null;
-    $autoCompleted = $session['auto_completed'] ?? 0;  // Add this line
     
+    // If student confirmed attendance
     if ($studentConfirmed == 1) {
-        return '<span class="badge-attended"><i class="bi bi-check-circle-fill"></i> Attended</span>';
-    } elseif ($studentConfirmed == 0 && $isManuallySet && $noShowType == 'student_no_show') {
+        return '<span class="badge-attended"><i class="bi bi-check-circle-fill"></i> Attended ✓</span>';
+    } 
+    // If student admitted no-show
+    elseif ($studentConfirmed == 0 && $isManuallySet == 1 && $noShowType == 'student_no_show') {
         return '<span class="badge-missed"><i class="bi bi-x-circle-fill"></i> Missed (No Refund)</span>';
-    } elseif ($studentConfirmed == 0 && $isManuallySet && $noShowType == 'tutor_no_show') {
+    } 
+    // If tutor didn't attend
+    elseif ($studentConfirmed == 0 && $isManuallySet == 1 && $noShowType == 'tutor_no_show') {
         return '<span class="badge-refund"><i class="bi bi-cash-stack"></i> Refund Processing</span>';
-    } elseif ($autoCompleted == 1) {
-        return '<span class="badge-auto"><i class="bi bi-robot"></i> Auto-Completed</span>';
-    } else {
+    } 
+    // If still pending
+    else {
         return '<span class="badge-pending"><i class="bi bi-clock-history"></i> Pending Confirmation</span>';
     }
 }

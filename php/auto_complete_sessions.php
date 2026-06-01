@@ -1,6 +1,6 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+error_reporting(0);
+ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 set_time_limit(0);
 ini_set('memory_limit', '512M');
@@ -8,7 +8,8 @@ ini_set('memory_limit', '512M');
 include __DIR__ . '/config.php';
 
 if (!isset($conn) || $conn->connect_error) {
-    die("Database connection failed\n");
+    error_log("[Kyoshi] auto_complete_sessions: DB connection failed");
+    exit(1);
 }
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -17,328 +18,262 @@ require __DIR__ . '/../vendor/autoload.php';
 
 date_default_timezone_set('Asia/Kuala_Lumpur');
 
-// Get confirmed/accepted sessions that ended more than 24 hours ago
+error_log("[Kyoshi] auto_complete_sessions started at " . date('Y-m-d H:i:s'));
+
+// ── Fetch sessions that ended 24+ hours ago and not yet auto-completed ──
 $stmt = $conn->prepare("
-    SELECT 
-        b.id as booking_id,
+    SELECT
+        b.id            AS booking_id,
         b.student_id,
         b.tutor_id,
         b.language,
         b.booking_date,
         b.booking_time,
         b.learning_mode,
-        b.status as current_status,
-        s.fullname as student_name,
-        s.email as student_email,
-        t.fullname as tutor_name,
-        t.email as tutor_email
+        b.status        AS current_status,
+        s.fullname      AS student_name,
+        s.email         AS student_email,
+        t.fullname      AS tutor_name,
+        t.email         AS tutor_email
     FROM bookings b
     JOIN users s ON b.student_id = s.id
-    JOIN users t ON b.tutor_id = t.id
+    JOIN users t ON b.tutor_id   = t.id
     WHERE b.status IN ('confirmed', 'accepted')
-    AND TIMESTAMP(b.booking_date, b.booking_time) < DATE_SUB(NOW(), INTERVAL 24 HOUR)
-    AND NOT EXISTS (
-        SELECT 1 FROM session_completion sc 
-        WHERE sc.booking_id = b.id AND sc.auto_completed = 1
-    )
+      AND TIMESTAMP(b.booking_date, b.booking_time) < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+      AND NOT EXISTS (
+          SELECT 1 FROM session_completion sc
+          WHERE sc.booking_id = b.id AND sc.auto_completed = 1
+      )
     LIMIT 100
 ");
-
 $stmt->execute();
 $sessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 
-$auto_completed_count = 0;
-$skipped_disputed_count = 0;
-
-echo "[" . date('Y-m-d H:i:s') . "] Found " . count($sessions) . " sessions to process\n";
+$completed = 0;
+$skipped   = 0;
 
 foreach ($sessions as $session) {
-    echo "\n--- Processing booking #{$session['booking_id']} ---\n";
-    echo "  Current status: {$session['current_status']}\n";
-    
-    // CRITICAL: Skip if booking is already disputed
+    $bookingId = $session['booking_id'];
+
+    // Skip disputed bookings
     if ($session['current_status'] === 'disputed') {
-        echo "  ⏭ SKIPPED: Booking status is 'disputed' - cannot auto-complete\n";
-        $skipped_disputed_count++;
+        error_log("[Kyoshi] Booking #$bookingId skipped — disputed");
+        $skipped++;
         continue;
     }
-    
-    // Check attendance from meeting_logs (for notification purposes only)
-    $meetingStmt = $conn->prepare("
-        SELECT 
-            COUNT(CASE WHEN participant_role = 'student' THEN 1 END) as student_joined,
-            COUNT(CASE WHEN participant_role = 'tutor' THEN 1 END) as tutor_joined
+
+    // Check attendance from meeting_logs
+    $meetStmt = $conn->prepare("
+        SELECT
+            COUNT(CASE WHEN participant_role = 'student' THEN 1 END) AS student_joined,
+            COUNT(CASE WHEN participant_role = 'tutor'   THEN 1 END) AS tutor_joined
         FROM meeting_logs
         WHERE booking_id = ?
     ");
-    $meetingStmt->bind_param("i", $session['booking_id']);
-    $meetingStmt->execute();
-    $meetingResult = $meetingStmt->get_result()->fetch_assoc();
-    
-    $studentJoined = ($meetingResult && $meetingResult['student_joined'] > 0);
-    $tutorJoined = ($meetingResult && $meetingResult['tutor_joined'] > 0);
-    
-    echo "  Student joined: " . ($studentJoined ? "✅ YES" : "❌ NO") . "\n";
-    echo "  Tutor joined: " . ($tutorJoined ? "✅ YES" : "❌ NO") . "\n";
-    
-    // AUTO-COMPLETE REGARDLESS OF ATTENDANCE
-    $updateStmt = $conn->prepare("
-        UPDATE bookings 
-        SET status = 'completed', 
-            completed_at = NOW(),
-            auto_completed = 1
+    $meetStmt->bind_param("i", $bookingId);
+    $meetStmt->execute();
+    $meet = $meetStmt->get_result()->fetch_assoc();
+    $meetStmt->close();
+
+    $studentJoined = $meet && $meet['student_joined'] > 0;
+    $tutorJoined   = $meet && $meet['tutor_joined']   > 0;
+
+    // Mark booking as completed
+    $upd = $conn->prepare("
+        UPDATE bookings
+        SET status = 'completed', completed_at = NOW(), auto_completed = 1
         WHERE id = ? AND status IN ('confirmed', 'accepted')
     ");
-    $updateStmt->bind_param("i", $session['booking_id']);
-    $updateStmt->execute();
-    
-    if ($updateStmt->affected_rows > 0) {
-        $auto_completed_count++;
-        
-        // Insert session completion record
-        $completionStmt = $conn->prepare("
-            INSERT INTO session_completion (booking_id, completed_at, auto_completed, status)
-            VALUES (?, NOW(), 1, 'completed')
-            ON DUPLICATE KEY UPDATE 
-            completed_at = NOW(), 
-            auto_completed = 1,
-            status = 'completed'
-        ");
-        $completionStmt->bind_param("i", $session['booking_id']);
-        $completionStmt->execute();
-        
-        echo "  ✅ AUTO-COMPLETED: Booking #{$session['booking_id']}\n";
-        
-        // Send different notifications based on attendance
-        if ($studentJoined && $tutorJoined) {
-            echo "  📧 Both attended - sending completion notifications\n";
-            sendBothAttendedNotifications($conn, $session);
-        } elseif ($tutorJoined && !$studentJoined) {
-            echo "  📧 Only tutor attended - sending student no-show notifications\n";
-            sendTutorOnlyNotifications($conn, $session);
-        } elseif ($studentJoined && !$tutorJoined) {
-            echo "  📧 Only student attended - sending tutor no-show notifications\n";
-            sendStudentOnlyNotifications($conn, $session);
-        } else {
-            echo "  📧 Neither attended - sending no-show notifications\n";
-            sendNeitherAttendedNotifications($conn, $session);
-        }
+    $upd->bind_param("i", $bookingId);
+    $upd->execute();
+
+    if ($upd->affected_rows === 0) {
+        $upd->close();
+        continue; // already changed by something else
     }
-}
+    $upd->close();
 
-echo "\n=== SUMMARY ===\n";
-echo "[" . date('Y-m-d H:i:s') . "] Auto-completed: $auto_completed_count\n";
-echo "[" . date('Y-m-d H:i:s') . "] Skipped (already disputed): $skipped_disputed_count\n";
-echo "[" . date('Y-m-d H:i:s') . "] Total processed: " . ($auto_completed_count + $skipped_disputed_count) . "\n";
+    // Insert session_completion record
+    $comp = $conn->prepare("
+        INSERT INTO session_completion (booking_id, completed_at, auto_completed, status)
+        VALUES (?, NOW(), 1, 'completed')
+        ON DUPLICATE KEY UPDATE completed_at = NOW(), auto_completed = 1, status = 'completed'
+    ");
+    $comp->bind_param("i", $bookingId);
+    $comp->execute();
+    $comp->close();
 
-function sendBothAttendedNotifications($conn, $session) {
-    $date = date('d M Y', strtotime($session['booking_date']));
-    $time = date('g:i A', strtotime($session['booking_time']));
-    
-    $studentMessage = "Your {$session['language']} session with {$session['tutor_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $studentMessage .= "✅ Both you and your tutor attended the session.\n\n";
-    $studentMessage .= "If you had any issues, please report within 7 days.";
-    
-    $tutorMessage = "Your {$session['language']} session with {$session['student_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $tutorMessage .= "✅ Both you and the student attended the session.\n\n";
-    $tutorMessage .= "Payment will be processed to your account within 3-5 business days.";
-    
-    insertNotification($conn, $session['student_id'], "Session Completed", $studentMessage, "completed", "booking_detail.php?id={$session['booking_id']}");
-    insertNotification($conn, $session['tutor_id'], "Session Completed - Payment Processing", $tutorMessage, "completed", "tutor_booking_detail.php?id={$session['booking_id']}");
-    
-    sendEmail($session, 'both_attended');
-}
+    $completed++;
+    error_log("[Kyoshi] Booking #$bookingId auto-completed (student=" . ($studentJoined?'Y':'N') . " tutor=" . ($tutorJoined?'Y':'N') . ")");
 
-function sendTutorOnlyNotifications($conn, $session) {
-    $date = date('d M Y', strtotime($session['booking_date']));
-    $time = date('g:i A', strtotime($session['booking_time']));
-    
-    $studentMessage = "⚠️ Your {$session['language']} session with {$session['tutor_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $studentMessage .= "❌ You did NOT attend the session, but your tutor did.\n\n";
-    $studentMessage .= "The session has been marked as completed. If you have a valid reason for missing the session, please contact support within 7 days.";
-    
-    $tutorMessage = "Your {$session['language']} session with {$session['student_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $tutorMessage .= "✅ You attended the session, but the student did NOT show up.\n\n";
-    $tutorMessage .= "Payment will still be processed to your account. Thank you for your commitment!";
-    
-    insertNotification($conn, $session['student_id'], "Session Completed - No Show", $studentMessage, "completed", "booking_detail.php?id={$session['booking_id']}");
-    insertNotification($conn, $session['tutor_id'], "Session Completed - Student No Show", $tutorMessage, "completed", "tutor_booking_detail.php?id={$session['booking_id']}");
-    
-    sendEmail($session, 'tutor_only');
-}
-
-function sendStudentOnlyNotifications($conn, $session) {
-    $date = date('d M Y', strtotime($session['booking_date']));
-    $time = date('g:i A', strtotime($session['booking_time']));
-    
-    $studentMessage = "Your {$session['language']} session with {$session['tutor_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $studentMessage .= "✅ You attended the session, but your tutor did NOT show up.\n\n";
-    $studentMessage .= "You will receive a full refund. Please contact support if you have any questions.";
-    
-    $tutorMessage = "⚠️ Your {$session['language']} session with {$session['student_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $tutorMessage .= "❌ You did NOT attend the session, but the student did.\n\n";
-    $tutorMessage .= "This may affect your tutor rating and payment. Please contact support to explain your absence.";
-    
-    insertNotification($conn, $session['student_id'], "Session Completed - Tutor No Show", $studentMessage, "completed", "booking_detail.php?id={$session['booking_id']}");
-    insertNotification($conn, $session['tutor_id'], "Session Completed - Your No Show", $tutorMessage, "warning", "tutor_booking_detail.php?id={$session['booking_id']}");
-    
-    sendEmail($session, 'student_only');
-}
-
-function sendNeitherAttendedNotifications($conn, $session) {
-    $date = date('d M Y', strtotime($session['booking_date']));
-    $time = date('g:i A', strtotime($session['booking_time']));
-    
-    $studentMessage = "Your {$session['language']} session with {$session['tutor_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $studentMessage .= "❌ Neither you nor your tutor attended the session.\n\n";
-    $studentMessage .= "Please contact support if you believe this is an error or if you wish to reschedule.";
-    
-    $tutorMessage = "Your {$session['language']} session with {$session['student_name']} on {$date} at {$time} has been automatically completed.\n\n";
-    $tutorMessage .= "❌ Neither you nor the student attended the session.\n\n";
-    $tutorMessage .= "No payment will be processed. Please contact support if you have any questions.";
-    
-    insertNotification($conn, $session['student_id'], "Session Completed - No Show", $studentMessage, "completed", "booking_detail.php?id={$session['booking_id']}");
-    insertNotification($conn, $session['tutor_id'], "Session Completed - No Show", $tutorMessage, "warning", "tutor_booking_detail.php?id={$session['booking_id']}");
-    
-    sendEmail($session, 'neither');
-}
-
-function insertNotification($conn, $userId, $title, $message, $type, $link) {
-    $stmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, is_read, created_at) VALUES (?, ?, ?, ?, ?, 0, NOW())");
-    if ($stmt) {
-        $stmt->bind_param("issss", $userId, $title, $message, $type, $link);
-        $stmt->execute();
-    }
-}
-
-function sendEmail($session, $scenario) {
-    if (!defined('SMTP_USER') || !defined('SMTP_PASS')) {
-        return;
-    }
-    
-    $date = date('l, d F Y', strtotime($session['booking_date']));
-    $time = date('g:i A', strtotime($session['booking_time']));
-    
-    // Send email to student
-    $mailStudent = new PHPMailer(true);
-    try {
-        $mailStudent->isSMTP();
-        $mailStudent->Host = 'smtp.gmail.com';
-        $mailStudent->SMTPAuth = true;
-        $mailStudent->Username = SMTP_USER;
-        $mailStudent->Password = SMTP_PASS;
-        $mailStudent->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mailStudent->Port = 587;
-        $mailStudent->setFrom(SMTP_USER, 'Kyoshi');
-        $mailStudent->addAddress($session['student_email'], $session['student_name']);
-        $mailStudent->isHTML(true);
-        $mailStudent->Subject = 'Session Auto-Completed - Kyoshi';
-        
-        $mailStudent->Body = getStudentEmailBody($session, $scenario, $date, $time);
-        $mailStudent->send();
-    } catch (Exception $e) {
-        error_log("Student email failed: " . $e->getMessage());
-    }
-    
-    // Send email to tutor
-    $mailTutor = new PHPMailer(true);
-    try {
-        $mailTutor->isSMTP();
-        $mailTutor->Host = 'smtp.gmail.com';
-        $mailTutor->SMTPAuth = true;
-        $mailTutor->Username = SMTP_USER;
-        $mailTutor->Password = SMTP_PASS;
-        $mailTutor->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mailTutor->Port = 587;
-        $mailTutor->setFrom(SMTP_USER, 'Kyoshi');
-        $mailTutor->addAddress($session['tutor_email'], $session['tutor_name']);
-        $mailTutor->isHTML(true);
-        $mailTutor->Subject = 'Session Auto-Completed - Kyoshi';
-        
-        $mailTutor->Body = getTutorEmailBody($session, $scenario, $date, $time);
-        $mailTutor->send();
-    } catch (Exception $e) {
-        error_log("Tutor email failed: " . $e->getMessage());
-    }
-}
-
-function getStudentEmailBody($session, $scenario, $date, $time) {
-    if ($scenario === 'both_attended') {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#28a745;'>Session Completed ✓</h2>
-            <p>Dear <strong>{$session['student_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['tutor_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>✅ Both you and your tutor attended the session.</p>
-            <p>If you had any issues, please report within 7 days.</p>
-        </div>";
-    } elseif ($scenario === 'tutor_only') {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#ffc107;'>Session Completed - You Missed</h2>
-            <p>Dear <strong>{$session['student_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['tutor_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>❌ You did NOT attend, but your tutor did.</p>
-            <p>If you have a valid reason, please contact support within 7 days.</p>
-        </div>";
-    } elseif ($scenario === 'student_only') {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#dc2626;'>Session Completed - Tutor Missed</h2>
-            <p>Dear <strong>{$session['student_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['tutor_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>✅ You attended, but your tutor did NOT show up.</p>
-            <p>You will receive a full refund.</p>
-        </div>";
+    // Send notifications + emails based on attendance
+    if ($studentJoined && $tutorJoined) {
+        notifyBothAttended($conn, $session);
+    } elseif ($tutorJoined && !$studentJoined) {
+        notifyTutorOnly($conn, $session);
+    } elseif ($studentJoined && !$tutorJoined) {
+        notifyStudentOnly($conn, $session);
     } else {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#999;'>Session Completed - No Show</h2>
-            <p>Dear <strong>{$session['student_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['tutor_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>❌ Neither you nor your tutor attended.</p>
-            <p>Please contact support if you wish to reschedule.</p>
-        </div>";
+        notifyNeitherAttended($conn, $session);
     }
 }
 
-function getTutorEmailBody($session, $scenario, $date, $time) {
-    if ($scenario === 'both_attended') {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#28a745;'>Session Completed - Payment Processing</h2>
-            <p>Dear <strong>{$session['tutor_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['student_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>✅ Both you and the student attended.</p>
-            <p>Payment will be processed within 3-5 business days.</p>
-        </div>";
-    } elseif ($scenario === 'tutor_only') {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#28a745;'>Session Completed - Student No Show</h2>
-            <p>Dear <strong>{$session['tutor_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['student_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>✅ You attended, but the student did NOT show up.</p>
-            <p>Payment will still be processed. Thank you for your commitment!</p>
-        </div>";
-    } elseif ($scenario === 'student_only') {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#dc2626;'>Session Completed - You Missed</h2>
-            <p>Dear <strong>{$session['tutor_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['student_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>❌ You did NOT attend, but the student did.</p>
-            <p>No payment will be processed. Please contact support to explain your absence.</p>
-        </div>";
-    } else {
-        return "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <h2 style='color:#999;'>Session Completed - No Show</h2>
-            <p>Dear <strong>{$session['tutor_name']}</strong>,</p>
-            <p>Your <strong>{$session['language']}</strong> session with <strong>{$session['student_name']}</strong> on <strong>$date at $time</strong> has been completed.</p>
-            <p>❌ Neither you nor the student attended.</p>
-            <p>No payment will be processed.</p>
-        </div>";
+error_log("[Kyoshi] auto_complete_sessions done — completed: $completed, skipped: $skipped");
+
+// ════════════════════════════════════════════════
+//  NOTIFICATION HELPERS
+// ════════════════════════════════════════════════
+
+function addNotification($conn, $userId, $title, $message, $type, $link) {
+    $s = $conn->prepare("
+        INSERT INTO notifications (user_id, title, message, type, link, is_read, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, NOW())
+    ");
+    if ($s) {
+        $s->bind_param("issss", $userId, $title, $message, $type, $link);
+        $s->execute();
+        $s->close();
     }
 }
-?>
+
+function notifyBothAttended($conn, $s) {
+    $d = fmtDate($s['booking_date']); $t = fmtTime($s['booking_time']);
+    addNotification($conn, $s['student_id'],
+        "Session Completed ✓",
+        "Your {$s['language']} session with {$s['tutor_name']} on $d at $t has been completed. Both you and your tutor attended. If you had any issues, please report within 7 days.",
+        "completed", "booking_detail.php?id={$s['booking_id']}");
+    addNotification($conn, $s['tutor_id'],
+        "Session Completed — Payment Processing",
+        "Your {$s['language']} session with {$s['student_name']} on $d at $t has been completed. Both attended. Payment will be processed within 3–5 business days.",
+        "completed", "tutor_booking_detail.php?id={$s['booking_id']}");
+    sendEmails($s, 'both_attended');
+}
+
+function notifyTutorOnly($conn, $s) {
+    $d = fmtDate($s['booking_date']); $t = fmtTime($s['booking_time']);
+    addNotification($conn, $s['student_id'],
+        "Session Completed — You Missed",
+        "Your {$s['language']} session with {$s['tutor_name']} on $d at $t is completed. You did not attend but your tutor did. Contact support within 7 days if you have a valid reason.",
+        "warning", "booking_detail.php?id={$s['booking_id']}");
+    addNotification($conn, $s['tutor_id'],
+        "Session Completed — Student No Show",
+        "Your {$s['language']} session with {$s['student_name']} on $d at $t is completed. You attended but the student did not show up. Payment will still be processed.",
+        "completed", "tutor_booking_detail.php?id={$s['booking_id']}");
+    sendEmails($s, 'tutor_only');
+}
+
+function notifyStudentOnly($conn, $s) {
+    $d = fmtDate($s['booking_date']); $t = fmtTime($s['booking_time']);
+    addNotification($conn, $s['student_id'],
+        "Session Completed — Tutor No Show",
+        "Your {$s['language']} session with {$s['tutor_name']} on $d at $t is completed. You attended but your tutor did not show up. You will receive a full refund.",
+        "completed", "booking_detail.php?id={$s['booking_id']}");
+    addNotification($conn, $s['tutor_id'],
+        "Session Completed — You Missed",
+        "Your {$s['language']} session with {$s['student_name']} on $d at $t is completed. You did not attend but the student did. This may affect your rating. Please contact support.",
+        "warning", "tutor_booking_detail.php?id={$s['booking_id']}");
+    sendEmails($s, 'student_only');
+}
+
+function notifyNeitherAttended($conn, $s) {
+    $d = fmtDate($s['booking_date']); $t = fmtTime($s['booking_time']);
+    addNotification($conn, $s['student_id'],
+        "Session Completed — No Show",
+        "Your {$s['language']} session with {$s['tutor_name']} on $d at $t is completed. Neither you nor your tutor attended. Contact support to reschedule.",
+        "warning", "booking_detail.php?id={$s['booking_id']}");
+    addNotification($conn, $s['tutor_id'],
+        "Session Completed — No Show",
+        "Your {$s['language']} session with {$s['student_name']} on $d at $t is completed. Neither party attended. No payment will be processed.",
+        "warning", "tutor_booking_detail.php?id={$s['booking_id']}");
+    sendEmails($s, 'neither');
+}
+
+// ════════════════════════════════════════════════
+//  EMAIL HELPERS
+// ════════════════════════════════════════════════
+
+function sendEmails($session, $scenario) {
+    if (!defined('SMTP_USER') || !defined('SMTP_PASS')) return;
+
+    $d = date('l, d F Y', strtotime($session['booking_date']));
+    $t = date('g:i A',    strtotime($session['booking_time']));
+
+    sendOneMail($session['student_email'], $session['student_name'], studentBody($session, $scenario, $d, $t));
+    sendOneMail($session['tutor_email'],   $session['tutor_name'],   tutorBody($session,   $scenario, $d, $t));
+}
+
+function sendOneMail($toEmail, $toName, $body) {
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        $mail->setFrom(SMTP_USER, 'Kyoshi');
+        $mail->addAddress($toEmail, $toName);
+        $mail->isHTML(true);
+        $mail->Subject = 'Session Auto-Completed — Kyoshi';
+        $mail->Body    = $body;
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("[Kyoshi] Email failed to $toEmail: " . $e->getMessage());
+    }
+}
+
+function emailWrap($heading, $headingColor, $studentOrTutor, $lang, $otherParty, $date, $time, $body) {
+    return "
+    <div style='font-family:Segoe UI,sans-serif;max-width:560px;margin:auto;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08);'>
+        <div style='background:linear-gradient(135deg,#E75A9B,#F28AB2);padding:28px 32px;'>
+            <h2 style='margin:0;color:white;font-size:20px;'>$heading</h2>
+        </div>
+        <div style='padding:28px 32px;background:#fff;'>
+            <p style='font-size:15px;color:#342635;'>Dear <strong>$studentOrTutor</strong>,</p>
+            <p style='font-size:14px;color:#7B6178;'>Your <strong>$lang</strong> session with <strong>$otherParty</strong> on <strong>$date at $time</strong> has been automatically completed.</p>
+            <div style='background:#FFF1F6;border:1px solid rgba(231,90,155,.2);border-radius:12px;padding:16px;margin:20px 0;font-size:14px;color:#342635;line-height:1.7;'>
+                $body
+            </div>
+            <p style='font-size:12px;color:#aaa;margin-top:24px;'>This is an automated message from Kyoshi. Do not reply to this email.</p>
+        </div>
+    </div>";
+}
+
+function studentBody($s, $scenario, $d, $t) {
+    switch ($scenario) {
+        case 'both_attended':
+            return emailWrap('Session Completed ✓', '#28a745', $s['student_name'], $s['language'], $s['tutor_name'], $d, $t,
+                '✅ Both you and your tutor attended.<br>If you had any issues, please report within 7 days.');
+        case 'tutor_only':
+            return emailWrap('Session Completed — You Missed', '#ffc107', $s['student_name'], $s['language'], $s['tutor_name'], $d, $t,
+                '❌ You did not attend, but your tutor did.<br>If you have a valid reason, please contact support within 7 days.');
+        case 'student_only':
+            return emailWrap('Session Completed — Tutor No Show', '#dc2626', $s['student_name'], $s['language'], $s['tutor_name'], $d, $t,
+                '✅ You attended, but your tutor did not show up.<br>You will receive a full refund. Contact support if you have questions.');
+        default:
+            return emailWrap('Session Completed — No Show', '#999', $s['student_name'], $s['language'], $s['tutor_name'], $d, $t,
+                '❌ Neither you nor your tutor attended.<br>Please contact support if you wish to reschedule.');
+    }
+}
+
+function tutorBody($s, $scenario, $d, $t) {
+    switch ($scenario) {
+        case 'both_attended':
+            return emailWrap('Session Completed — Payment Processing', '#28a745', $s['tutor_name'], $s['language'], $s['student_name'], $d, $t,
+                '✅ Both you and the student attended.<br>Payment will be processed within 3–5 business days.');
+        case 'tutor_only':
+            return emailWrap('Session Completed — Student No Show', '#28a745', $s['tutor_name'], $s['language'], $s['student_name'], $d, $t,
+                '✅ You attended, but the student did not show up.<br>Payment will still be processed. Thank you for your commitment!');
+        case 'student_only':
+            return emailWrap('Session Completed — You Missed', '#dc2626', $s['tutor_name'], $s['language'], $s['student_name'], $d, $t,
+                '❌ You did not attend, but the student did.<br>No payment will be processed. Please contact support to explain your absence.');
+        default:
+            return emailWrap('Session Completed — No Show', '#999', $s['tutor_name'], $s['language'], $s['student_name'], $d, $t,
+                '❌ Neither you nor the student attended.<br>No payment will be processed.');
+    }
+}
+
+function fmtDate($d) { return date('d M Y', strtotime($d)); }
+function fmtTime($t) { return date('g:i A', strtotime($t)); }

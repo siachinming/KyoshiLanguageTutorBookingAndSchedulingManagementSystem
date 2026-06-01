@@ -877,17 +877,61 @@ if ($is_minor_dispute && $activeDispute):
       <div class="pay-row"><span class="pl">Submitted On</span><span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span></div>
       <?php endif; ?>
     </div>
+    
+    <!-- ADD CANCELLATION POLICY INFO BOX -->
+    <div style="background: rgba(255,241,200,.4); border-radius: 12px; padding: 12px 16px; margin-top: 12px; border-left: 3px solid #f59e0b;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <i class="bi bi-info-circle-fill" style="color: #f59e0b; font-size: 14px;"></i>
+            <strong style="font-size: 12px; color: #856404;">Cancellation & Refund Policy</strong>
+        </div>
+        <?php 
+        $session_datetime = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
+        $current_time = time();
+        $hoursUntilSession = ($session_datetime - $current_time) / 3600;
+        $is_future_session = $session_datetime > $current_time;
+        
+        if ($is_future_session):
+        ?>
+            <div style="font-size: 12px; color: #856404; line-height: 1.5;">
+                <?php if ($hoursUntilSession >= 24): ?>
+                    <i class="bi bi-cash-stack" style="color: #28a745;"></i> 
+                    <strong style="color: #28a745;">Full Refund Available</strong> - Cancel more than 24 hours before session
+                    <div style="margin-top: 4px;">You have <strong><?= floor($hoursUntilSession) ?></strong> hours left for full refund</div>
+                <?php elseif ($hoursUntilSession > 0 && $hoursUntilSession < 24): ?>
+                    <i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i> 
+                    <strong style="color: #f59e0b;">No Refund for Late Cancellation</strong> - Less than 24 hours notice
+                    <div style="margin-top: 4px;">Session starts in <strong><?= floor($hoursUntilSession) ?></strong> hours</div>
+                <?php endif; ?>
+                <div style="margin-top: 6px; font-size: 11px;">
+                    <i class="bi bi-calendar-x"></i> 
+                    <a href="#" onclick="showRefundPolicy()" style="color: #E75A9B; text-decoration: underline;">View full cancellation policy →</a>
+                </div>
+            </div>
+        <?php else: ?>
+            <div style="font-size: 12px; color: #856404;">
+                <i class="bi bi-clock-history"></i> Session has ended - Cannot cancel
+            </div>
+        <?php endif; ?>
+    </div>
 </div>
-
 <!-- ACTION BAR FOR CONFIRMED SESSIONS -->
 <div class="action-bar" style="margin-top:16px;">
     <?php if ($is_future_session): ?>
         <a href="reschedule_booking.php?id=<?= $bookingID ?>" class="btn-primary">
             <i class="bi bi-calendar-plus"></i> Reschedule Session
         </a>
+        <?php if ($hoursUntilSession >= 24): ?>
+        <button onclick="openCancelModalWithRefund('full')" class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997);">
+            <i class="bi bi-cash-stack"></i> Cancel (Full Refund)
+        </button>
+        <?php elseif ($hoursUntilSession > 0 && $hoursUntilSession < 24): ?>
+        <button onclick="openCancelModalWithRefund('none')" class="btn-danger">
+            <i class="bi bi-exclamation-triangle"></i> Cancel (No Refund)
+        </button>
+        <?php endif; ?>
     <?php else: ?>
         <span class="btn-secondary" style="opacity:0.6; cursor:not-allowed;">
-            <i class="bi bi-calendar-x"></i> Cannot Reschedule (Session Ended)
+            <i class="bi bi-calendar-x"></i> Cannot Cancel (Session Ended)
         </span>
     <?php endif; ?>
     
@@ -909,7 +953,6 @@ if ($is_minor_dispute && $activeDispute):
         <?php endif; ?>
     <?php endif; ?>
 </div>
-
     <?php elseif ($bookStatus === 'completed'): ?>
 
 <?php if($paymentState === 'paid'): ?>
@@ -1114,28 +1157,61 @@ Payment made directly during session.
       <?php endif; ?>
   
     </div>
-    <!-- Online Session Section -->
-<?php if ($b['learning_mode'] === 'online' && !empty($b['meeting_link']) && ($bookStatus === 'confirmed' || $bookStatus === 'completed')): ?>
+
+<!-- Online Session Section - FIXED -->
+<?php if ($b['learning_mode'] === 'online' && !empty($b['meeting_link']) && ($bookStatus === 'confirmed' || $bookStatus === 'completed')): 
+    // Calculate session times
+    $session_start = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
+    $session_end = $session_start + (2 * 3600); // 2 hours session
+    $current_time = time();
+    $is_session_ended = ($current_time > $session_end);
+    $is_session_ongoing = ($current_time >= $session_start && $current_time <= $session_end);
+    $is_session_future = ($current_time < $session_start);
+?>
 <div class="card">
     <div class="card-title"><i class="bi bi-camera-video-fill"></i> Online Session</div>
     
-    <!-- Join Meeting Button -->
+    <!-- Join Meeting Button - ONLY SHOW IF SESSION IS ONGOING OR FUTURE (NOT ENDED) -->
+    <?php if (!$is_session_ended): ?>
     <div style="background: linear-gradient(135deg, rgba(231,90,155,0.1), rgba(242,138,178,0.05)); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
             <div>
                 <strong style="font-size: 14px;">Ready for your session?</strong>
-                <p style="font-size: 12px; color: #64748b; margin: 5px 0 0;">Click button on the right to join your online class.</p>
+                <?php if ($is_session_future): ?>
+                <p style="font-size: 12px; color: #64748b; margin: 5px 0 0;">
+                    <i class="bi bi-clock"></i> Session starts on <?= date('d M Y, g:i A', $session_start) ?>
+                </p>
+                <?php elseif ($is_session_ongoing): ?>
+                <p style="font-size: 12px; color: #28a745; margin: 5px 0 0;">
+                    <i class="bi bi-play-circle-fill"></i> Session is happening NOW!
+                </p>
+                <?php endif; ?>
             </div>
             <button onclick="checkAndJoinMeeting(<?= $bookingID ?>, '<?= urlencode($b['meeting_link']) ?>')" 
-        class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997); padding: 10px 24px; width: auto;">
-    <i class="bi bi-camera-video-fill"></i> Join Meeting
-</button>
+                class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997); padding: 10px 24px; width: auto;">
+                <i class="bi bi-camera-video-fill"></i> Join Meeting
+            </button>
         </div>
     </div>
+    <?php else: ?>
+    <!-- Session Ended - Show message instead of Join button -->
+    <div style="background: rgba(200,200,200,0.1); border-radius: 16px; padding: 16px; margin-bottom: 16px; text-align: center; border: 1px dashed #ccc;">
+        <i class="bi bi-clock-history" style="font-size: 28px; color: #999;"></i>
+        <p style="font-size: 13px; color: #666; margin-top: 8px;">
+            <strong>Session has ended</strong><br>
+            This session was held on <?= date('d M Y, g:i A', $session_start) ?>
+        </p>
+        <?php if ($bookStatus === 'confirmed' && !$is_completed): ?>
+        <p style="font-size: 12px; color: #f59e0b;">
+            <i class="bi bi-exclamation-triangle"></i> Please confirm your attendance above if you attended.
+        </p>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
     
     <!-- Meeting Activity -->
     <div style="margin-bottom: 16px;">
-        <strong style="font-size: 13px;"><i class="bi bi-clock-history"></i> Meeting Activity</strong>
+        <strong style="font-size: 13px;">Attendance Record</strong>
         <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
             <?php
             $logsStmt = $conn->prepare("SELECT * FROM meeting_logs WHERE booking_id = ? ORDER BY join_time DESC");
@@ -1163,29 +1239,14 @@ Payment made directly during session.
         </div>
     </div>
     
-   
-     <!-- End Session Button -->
+    <!-- End Session Button - ONLY SHOW IF SESSION IS ONGOING OR HAS ACTIVE SESSION -->
+    <?php if (!$is_session_ended || $is_session_ongoing): ?>
     <div>
         <strong style="font-size: 13px;"><i class="bi bi-door-closed"></i> End Session</strong>
         <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
             <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">
                 After finishing your session, click below to record your leave time.
             </p>
-            <?php
-            // Check if session is past class time
-            $class_end_time = strtotime($b['booking_date'] . ' ' . $b['booking_time']) + (2 * 3600);
-            $is_past_session = (time() > $class_end_time);
-            
-            if ($is_past_session && !$is_completed):
-            ?>
-            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px;">
-                <i class="bi bi-exclamation-triangle-fill" style="color: #856404;"></i>
-                <span style="font-size: 11px; color: #856404;">
-                    ⚠️ This session has passed (ended <?= date('g:i A', $class_end_time) ?>). 
-                    It will be auto-ended automatically.
-                </span>
-            </div>
-            <?php endif; ?>
             
             <?php
             // Check if there's an active session to end
@@ -1207,10 +1268,11 @@ Payment made directly during session.
             <?php endif; ?>
         </div>
     </div>
-</div>  <!-- This closes the Online Session card -->
-<?php endif; ?>  <!-- This closes the if condition for online session -->
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 <!-- Face-to-Face Session Section -->
-<!-- Face-to-Face Session Section -->
+
 <?php if ($b['learning_mode'] === 'face_to_face' && ($bookStatus === 'confirmed' || $bookStatus === 'completed')): ?>
 <div class="card">
     <div class="card-title">
@@ -1599,6 +1661,76 @@ function contactTutor(tutorId, tutorName, tutorPhone, studentName, bookingId, la
         showToast('Tutor has not added WhatsApp number yet. Please use the message feature in your dashboard.', 'error');
     }
 }
+function openCancelModalWithRefund(refundType) {
+    // Store refund type in a data attribute
+    const cancelForm = document.getElementById('cancelForm');
+    if (cancelForm) {
+        cancelForm.setAttribute('data-refund', refundType);
+        
+        // Add hidden input for refund type if not exists
+        let refundInput = document.getElementById('refund_type_input');
+        if (!refundInput) {
+            refundInput = document.createElement('input');
+            refundInput.type = 'hidden';
+            refundInput.name = 'refund_type';
+            refundInput.id = 'refund_type_input';
+            cancelForm.appendChild(refundInput);
+        }
+        refundInput.value = refundType;
+        
+        // Update modal message based on refund type
+        const modalTitle = document.querySelector('#cancelModal h3');
+        const modalMessage = document.querySelector('#cancelModal p');
+        
+        if (refundType === 'full') {
+            modalTitle.innerHTML = '<i class="bi bi-cash-stack" style="color: #28a745;"></i> Cancel Booking (Full Refund)';
+            if (modalMessage) {
+                modalMessage.innerHTML = '✅ You will receive a <strong style="color: #28a745;">FULL REFUND</strong> because you are cancelling more than 24 hours before the session.<br><br>Please select a reason for cancelling:';
+            }
+        } else {
+            modalTitle.innerHTML = '<i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i> Cancel Booking (No Refund)';
+            if (modalMessage) {
+                modalMessage.innerHTML = '<strong style="color: #f59e0b;">⚠️ WARNING: No refund will be issued</strong> because you are cancelling less than 24 hours before the session.<br><br>Please select a reason for cancelling:';
+            }
+        }
+    }
+    document.getElementById('cancelModal').classList.add('active');
+}
+
+function showRefundPolicy() {
+    const modal = document.createElement('div');
+    modal.id = 'policyModal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1001;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="background:white;border-radius:20px;padding:25px;max-width:500px;width:90%;position:relative;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h3 style="margin:0;"><i class="bi bi-file-text-fill" style="color:#E75A9B;"></i> Cancellation & Refund Policy</h3>
+                <button onclick="closePolicyModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+            </div>
+            <div style="margin-bottom:20px;">
+                <div style="background:#f8f9fa;border-radius:12px;padding:15px;margin-bottom:15px;">
+                    <h4 style="margin:0 0 10px;color:#28a745;"><i class="bi bi-cash-stack"></i> Full Refund (≥24 hours notice)</h4>
+                    <p style="margin:0;font-size:13px;">Cancel more than 24 hours before your session to receive a full refund.</p>
+                </div>
+                <div style="background:#fff3cd;border-radius:12px;padding:15px;margin-bottom:15px;">
+                    <h4 style="margin:0 0 10px;color:#f59e0b;"><i class="bi bi-exclamation-triangle"></i> No Refund (<24 hours notice)</h4>
+                    <p style="margin:0;font-size:13px;">Cancellations within 24 hours of the session will NOT receive a refund as the tutor has already reserved this time.</p>
+                </div>
+                <div style="background:#e8f5e9;border-radius:12px;padding:15px;">
+                    <h4 style="margin:0 0 10px;color:#2e7d32;"><i class="bi bi-calendar-x"></i> Tutor Cancellation / No-Show</h4>
+                    <p style="margin:0;font-size:13px;">If the tutor cancels or doesn't show up, you will receive a FULL refund automatically.</p>
+                </div>
+            </div>
+            <button onclick="closePolicyModal()" style="width:100%;padding:12px;background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;border:none;border-radius:30px;cursor:pointer;font-weight:bold;">Got it</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function closePolicyModal() {
+    const modal = document.getElementById('policyModal');
+    if (modal) modal.remove();
+}
 function showReportIssue(bookingId) {
     const modal = document.createElement('div');
     modal.id = 'reportModal';
@@ -1746,6 +1878,69 @@ function checkAndJoinMeeting(bookingId, meetingLink) {
             btn.innerHTML = originalText;
             btn.disabled = false;
         });
+}
+
+// Cancel form submission handler - captures refund type
+document.getElementById('cancelForm')?.addEventListener('submit', function(e) {
+  const selectedReason = document.querySelector('input[name="cancel_reason"]:checked');
+  if (!selectedReason) {
+    e.preventDefault();
+    alert('Please select a reason for cancellation');
+    return;
+  }
+  
+  let cancelReason = selectedReason.value;
+  if (selectedReason.value === 'Other') {
+    const otherText = document.getElementById('otherReasonText').value.trim();
+    if (!otherText) {
+      e.preventDefault();
+      alert('Please specify your reason');
+      return;
+    }
+    cancelReason = 'Other: ' + otherText;
+    // Update the value
+    selectedReason.value = cancelReason;
+  }
+  
+  // Get refund type from data attribute (set by openCancelModalWithRefund)
+  const refundType = this.getAttribute('data-refund');
+  if (refundType) {
+    let refundInput = document.getElementById('refund_type_input');
+    if (!refundInput) {
+      refundInput = document.createElement('input');
+      refundInput.type = 'hidden';
+      refundInput.name = 'refund_type';
+      refundInput.id = 'refund_type_input';
+      this.appendChild(refundInput);
+    }
+    refundInput.value = refundType;
+  }
+});
+
+// Also need to reset the modal when it closes
+const cancelModal = document.getElementById('cancelModal');
+if (cancelModal) {
+    cancelModal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeCancelModal();
+        }
+    });
+}
+
+// Reset form when modal closes
+function closeCancelModal() {
+    const modal = document.getElementById('cancelModal');
+    if (modal) modal.classList.remove('active');
+    const form = document.getElementById('cancelForm');
+    if (form) {
+        form.reset();
+        form.removeAttribute('data-refund');
+        // Remove refund input if exists
+        const refundInput = document.getElementById('refund_type_input');
+        if (refundInput) refundInput.remove();
+    }
+    const otherText = document.getElementById('otherReasonText');
+    if (otherText) otherText.style.display = 'none';
 }
 </script>
 </body>
