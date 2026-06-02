@@ -17,12 +17,14 @@ $userID = $_SESSION['user_id'];
 
 $stmt = $conn->prepare("
     SELECT u.*, tp.experience, tp.rate, tp.bio, tp.language_certificate,
-           tp.qualification,
-           bd.bank_name, bd.bank_account_number, bd.bank_account_name
+           bd.bank_name, bd.bank_account_number, bd.bank_account_name,
+           GROUP_CONCAT(DISTINCT tq.qualification_name SEPARATOR ' | ') as qualifications
     FROM users u
     LEFT JOIN tutor_profiles tp ON u.id = tp.user_id
     LEFT JOIN tutor_bank_details bd ON u.id = bd.tutor_id
+    LEFT JOIN tutor_qualifications tq ON u.id = tq.tutor_id
     WHERE u.id = ? AND u.role = 'tutor'
+    GROUP BY u.id
 ");
 $stmt->bind_param("i", $userID);
 $stmt->execute();
@@ -1299,8 +1301,8 @@ body::before {
                     
                     <h4 style="margin-bottom: 12px;"><i class="bi bi-patch-check"></i> Qualifications</h4>
                     <div>
-                        <?php if ($tutor['qualification']): 
-                            $quals = array_map('trim', explode(',', $tutor['qualification']));
+                        <?php if (!empty($tutor['qualifications'])): 
+                            $quals = explode(' | ', $tutor['qualifications']);
                             foreach ($quals as $qual): ?>
                                 <span class="info-tag"><?= e($qual) ?></span>
                             <?php endforeach;

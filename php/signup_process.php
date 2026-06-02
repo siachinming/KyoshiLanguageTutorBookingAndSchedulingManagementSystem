@@ -1,6 +1,10 @@
 <?php
 session_start();
 include "config.php";
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require '../vendor/autoload.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header("Location: signup.php");
@@ -17,7 +21,7 @@ $status   = ($role === 'tutor') ? 'pending' : 'approved';
 
 // ── Validate role ────────────────────────────────────────────────
 if (!in_array($role, ['student', 'tutor'])) {
-    $_SESSION['error'] = "Invalid role selected.";
+    $_SESSION['error'] = "Invalid role selected.Please select a role";
     header("Location: signup.php");
     exit();
 }
@@ -31,21 +35,21 @@ if (empty($fullname) || empty($email) || empty($password) || empty($confirm)) {
 
 // ── Valid email ──────────────────────────────────────────────────
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    $_SESSION['error'] = "Please enter a valid email address.";
+    $_SESSION['error'] = "Please enter a valid email address.Try again";
     header("Location: signup.php");
     exit();
 }
 
 // ── Password match ───────────────────────────────────────────────
 if ($password !== $confirm) {
-    $_SESSION['error'] = "Passwords do not match.";
+    $_SESSION['error'] = "Passwords do not match.Try again";
     header("Location: signup.php");
     exit();
 }
 
 // ── Password strength ────────────────────────────────────────────
 if (!preg_match('/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\,\.?":{}|<>]).{8,}$/', $password)) {
-    $_SESSION['error'] = "Password must be at least 8 characters and include an uppercase letter, a number, and a special character.";
+    $_SESSION['error'] = "Password must be at least 8 characters and include an uppercase letter, a number, and a special character. Please try again.";
     header("Location: signup.php");
     exit();
 }
@@ -62,6 +66,15 @@ if ($check->num_rows > 0) {
 }
 $check->close();
 
+// ── Profile picture required for tutor ───────────────────────────
+if ($role === 'tutor') {
+    if (empty($_FILES['profile_pic']['name'])) {
+        $_SESSION['error'] = "Tutors must upload a profile photo. Students need to see who they are booking with. Please try again.";
+        header("Location: signup.php");
+    exit();
+    }
+}
+
 // ── Profile picture upload (all roles) ───────────────────────────
 $profile_pic = '';
 if (!empty($_FILES['profile_pic']['name'])) {
@@ -72,13 +85,13 @@ if (!empty($_FILES['profile_pic']['name'])) {
     $allowed = ['jpg', 'jpeg', 'png', 'webp'];
 
     if (!in_array($ext, $allowed)) {
-        $_SESSION['error'] = "Profile picture must be a JPG, PNG, or WEBP image.";
+        $_SESSION['error'] = "Profile picture must be a JPG, PNG, or WEBP image. Please try again";
         header("Location: signup.php");
         exit();
     }
 
     if ($_FILES['profile_pic']['size'] > 2 * 1024 * 1024) {
-        $_SESSION['error'] = "Profile picture must be under 2MB.";
+        $_SESSION['error'] = "Profile picture must be under 2MB. Please try again";
         header("Location: signup.php");
         exit();
     }
@@ -86,6 +99,15 @@ if (!empty($_FILES['profile_pic']['name'])) {
     $filename = 'profile_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
     if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $uploadDir . $filename)) {
         $profile_pic = $filename;
+    }
+}
+
+// If no profile picture uploaded, set default based on role
+if (empty($profile_pic)) {
+    if ($role === 'tutor') {
+        $profile_pic = 'default-tutor.png';
+    } else {
+        $profile_pic = 'default-student.png';
     }
 }
 
@@ -108,23 +130,57 @@ if (!$stmt->execute()) {
 $newUserId = $conn->insert_id;
 $stmt->close();
 
-// ── If tutor, insert into tutor_profiles ─────────────────────────
+// ── If tutor, insert into tutor_profiles and tutor_certificates ─────────
 if ($role === 'tutor') {
     $experience = intval($_POST['experience'] ?? 0);
     $rate       = trim($_POST['rate']         ?? '');
     $bio        = trim($_POST['bio']          ?? '');
-    $certificate = '';
-
-    // Certificate upload
+    
+    // ========== INSERT INTO TUTOR_PROFILES (NO qualification column) ==========
+    $stmt2 = $conn->prepare("
+        INSERT INTO tutor_profiles (user_id, experience, rate, bio)
+        VALUES (?, ?, ?, ?)
+    ");
+    $stmt2->bind_param("idss", $newUserId, $experience, $rate, $bio);
+    $stmt2->execute();
+    $stmt2->close();
+    
+    // ========== INSERT INTO TUTOR_CERTIFICATES ==========
+    if (isset($_FILES['certificates']) && !empty($_FILES['certificates']['name'][0])) {
+        $uploadDir = '../uploads/certificates/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+        
+        $allowed_ext = ['pdf', 'jpg', 'jpeg', 'png'];
+        
+        $certStmt = $conn->prepare("INSERT INTO tutor_certificates (tutor_id, certificate_name, file_path, uploaded_at) VALUES (?, ?, ?, NOW())");
+        
+        foreach ($_FILES['certificates']['name'] as $key => $name) {
+            if ($_FILES['certificates']['error'][$key] == 0 && !empty($name)) {
+                $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                if (in_array($ext, $allowed_ext)) {
+                    $filename = 'cert_' . time() . '_' . $key . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                    if (move_uploaded_file($_FILES['certificates']['tmp_name'][$key], $uploadDir . $filename)) {
+                        $certStmt->bind_param("iss", $newUserId, $name, $filename);
+                        $certStmt->execute();
+                    }
+                }
+            }
+        }
+        $certStmt->close();
+    }
+    
+    // Also support single file upload (backward compatibility)
     if (!empty($_FILES['certificate']['name'])) {
         $uploadDir = '../uploads/certificates/';
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-
-        $ext      = strtolower(pathinfo($_FILES['certificate']['name'], PATHINFO_EXTENSION));
+        
+        $ext = strtolower(pathinfo($_FILES['certificate']['name'], PATHINFO_EXTENSION));
         $filename = 'cert_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-
         if (move_uploaded_file($_FILES['certificate']['tmp_name'], $uploadDir . $filename)) {
-            $certificate = $filename;
+            $certStmt = $conn->prepare("INSERT INTO tutor_certificates (tutor_id, certificate_name, file_path, uploaded_at) VALUES (?, ?, ?, NOW())");
+            $certStmt->bind_param("iss", $newUserId, $_FILES['certificate']['name'], $filename);
+            $certStmt->execute();
+            $certStmt->close();
         }
     }
 
@@ -168,14 +224,6 @@ if ($role === 'tutor') {
         $locStmt->execute();
         $locStmt->close();
     }
-
-    $stmt2 = $conn->prepare("
-        INSERT INTO tutor_profiles (user_id, experience, rate, bio, language_certificate)
-        VALUES (?, ?, ?, ?, ?)
-    ");
-    $stmt2->bind_param("idsss", $newUserId, $experience, $rate, $bio, $certificate);
-    $stmt2->execute();
-    $stmt2->close();
 }
 
 // ── If student, insert languages with proficiency ────────────────
@@ -222,8 +270,85 @@ if ($role === 'student') {
     }
 }
 
+function sendWelcomeEmail($toEmail, $fullname, $role) {
+    $mail = new PHPMailer(true);
+    
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port       = 587;
+
+        $mail->setFrom(SMTP_USER, 'Kyoshi');
+        $mail->addAddress($toEmail, $fullname);
+
+        $mail->isHTML(true);
+        $mail->Subject = 'Welcome to Kyoshi - Registration Confirmation';
+        
+        $roleText = ($role === 'tutor') ? 'Tutor' : 'Student';
+        $statusText = ($role === 'tutor') ? 'Pending Approval' : 'Active';
+        
+        $mail->Body = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;border:1px solid #eee;border-radius:10px;padding:20px;'>
+                <h2 style='color:#38bdf8;'>Welcome to Kyoshi!</h2>
+                <p>Dear <strong>" . htmlspecialchars($fullname) . "</strong>,</p>
+                <p>Thank you for registering as a <strong>$roleText</strong> on Kyoshi Learning Platform.</p>
+                
+                <div style='background:#f0f8ff;padding:15px;border-radius:8px;margin:20px 0;'>
+                    <p style='margin:0;'><strong>Your registered email:</strong><br>
+                    <span style='font-size:16px;color:#38bdf8;'>" . htmlspecialchars($toEmail) . "</span></p>
+                    <p style='margin:10px 0 0;font-size:12px;color:#666;'>Please use this email to log in to your account.</p>
+                </div>
+                
+                " . ($role === 'tutor' ? "
+                <div style='background:#fff3cd;padding:15px;border-radius:8px;margin:20px 0;'>
+                    <p style='margin:0;'><strong>Account Status: $statusText</strong></p>
+                    <p style='margin:5px 0 0;font-size:12px;'>Our admin will review your application within 24-48 hours. You will receive another email once approved.</p>
+                </div>
+                " : "
+                <div style='background:#d4edda;padding:15px;border-radius:8px;margin:20px 0;'>
+                    <p style='margin:0;'><strong>Account Status: $statusText</strong></p>
+                    <p style='margin:5px 0 0;font-size:12px;'>You can now browse and book tutors!</p>
+                </div>
+                ") . "
+                
+                <p style='margin-top:20px;'>If you did not create this account, please ignore this email.</p>
+                <hr style='margin:20px 0;'>
+                <p style='font-size:12px;color:gray;'>This is an automated message, please do not reply.</p>
+                <p style='font-size:12px;color:gray;'>&copy; 2025 Kyoshi Learning Platform</p>
+            </div>
+        ";
+
+        $mail->AltBody = "Welcome to Kyoshi!\n\nYou have registered as a $roleText.\nYour registered email: $toEmail\nAccount Status: $statusText\n\nUse this email to log in.\n\nThis is an automated message, please do not reply.";
+        
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log("Welcome email could not be sent. Mailer Error: {$mail->ErrorInfo}");
+        return false;
+    }
+}
+
+// Send welcome email
+$emailSent = sendWelcomeEmail($email, $fullname, $role);
+
 // ── Success ──────────────────────────────────────────────────────
-$_SESSION['success'] = "Account created successfully! Please log in.";
-header("Location: signup.php");
+if ($emailSent) {
+    $_SESSION['success'] = "Account created successfully!<br>
+    A confirmation email has been sent to <strong>" . htmlspecialchars($email) . "</strong><br>
+    Please use this email to log in.<br>
+    " . ($role === 'tutor' ? "Your account is pending approval. You will receive another email once verified." : "");
+} else {
+    $_SESSION['success'] = "Account created successfully!<br>
+     Your registered email: <strong>" . htmlspecialchars($email) . "</strong><br>
+    Please use this email to log in.<br>
+    " . ($role === 'tutor' ? "Your account is pending approval." : "");
+}
+
+header("Location: login.php");
 exit();
+
 ?>

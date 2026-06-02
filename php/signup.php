@@ -206,6 +206,195 @@
       flex: 1;
       min-width: 150px;
     }
+
+    input[type="password"]::-ms-reveal,
+    input[type="password"]::-ms-clear {
+        display: none;
+    }
+
+    input[type="password"]::-webkit-credentials-auto-fill-button,
+    input[type="password"]::-webkit-contacts-auto-fill-button {
+        visibility: hidden;
+        display: none;
+        pointer-events: none;
+    }
+
+    #imageModal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.85);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+    #imageModal img {
+        max-width: 90%;
+        max-height: 90%;
+        object-fit: contain;
+        border-radius: 10px;
+        box-shadow: 0 0 30px rgba(0,0,0,0.3);
+    }
+
+    #closeModalBtn {
+        position: absolute;
+        top: 20px;
+        right: 30px;
+        background: white;
+        border: none;
+        font-size: 28px;
+        cursor: pointer;
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+
+    #closeModalBtn:hover {
+        background: #f0f0f0;
+        transform: scale(1.05);
+    }
+
+@media (max-width: 768px) {
+    .role-box {
+        width: 100%;
+        margin-bottom: 12px;
+    }
+}
+
+@media (max-width: 768px) {
+    .signup-container {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .signup-left {
+        display: none;
+    }
+
+    .signup-right {
+        padding: 20px 16px;
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .signup-box {
+        padding: 20px;
+        margin: 20px 0;
+    }
+
+    .role-box {
+        padding: 20px !important;
+    }
+
+    .role-box div:first-child {
+        font-size: 36px !important;
+    }
+
+    .role-box div:nth-child(2) {
+        font-size: 20px !important;
+    }
+
+    .language-item .row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .lang-checkbox {
+        min-width: auto;
+    }
+
+    .proficiency-select {
+        width: 100%;
+        min-width: auto;
+    }
+
+    .mode-option {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    .d-flex.gap-3 {
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .filter-chips {
+        gap: 8px;
+    }
+
+    .btn-main, .btn-back, .btn-secondary {
+        font-size: 14px;
+        padding: 10px;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .card-title h1 {
+        font-size: 1.2rem;
+    }
+
+    .page-title p {
+        font-size: 0.7rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .signup-box {
+        padding: 16px;
+    }
+
+    .role-box {
+        padding: 16px !important;
+    }
+
+    .role-box div:first-child {
+        font-size: 28px !important;
+    }
+
+    .role-box div:nth-child(2) {
+        font-size: 18px !important;
+    }
+
+    .form-control {
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    .btn-main, .btn-back {
+        font-size: 13px;
+        padding: 8px;
+    }
+
+    .language-item {
+        padding: 10px;
+    }
+
+    .mode-option {
+        flex: 1;
+        text-align: center;
+    }
+
+    .certificate-item .d-flex {
+        flex-direction: column;
+    }
+
+    .certificate-item .btn-danger {
+        align-self: flex-start;
+    }
+}
   </style>
 </head>
 
@@ -224,14 +413,16 @@
         <h3 class="fw-bold mb-1">Create Account</h3>
         <p class="text-muted mb-3" style="font-size:14px;">Select your role to continue</p>
 
-        <div class="role-box" onclick="selectRole(this, 'student')">
-          <div style="font-size:28px;">👩‍🎓</div>
-          <div>I am a Student</div>
+        <div class="role-box" style="padding:30px;" onclick="selectRole(this, 'student')">
+          <div style="font-size:48px; margin-bottom:10px;">👨‍🎓</div>
+          <div style="font-size:24px; font-weight:700;">Student</div>
+          <div style="font-size:12px; color:#666; margin-top:5px;">Learn new languages</div>
         </div>
 
-        <div class="role-box" onclick="selectRole(this, 'tutor')">
-          <div style="font-size:28px;">👨‍🏫</div>
-          <div>I am a Tutor</div>
+        <div class="role-box" style="padding:30px;" onclick="selectRole(this, 'tutor')">
+         <div style="font-size:48px; margin-bottom:10px;">👨‍🏫</div>
+          <div style="font-size:24px; font-weight:700;">Tutor</div>
+          <div style="font-size:12px; color:#666; margin-top:5px;">Share your knowledge</div>
         </div>
 
         <button type="button" class="btn-main mt-3" onclick="goNext()">Continue</button>
@@ -274,13 +465,12 @@
           </div>
           <div id="matchMsg"></div>
 
-          <input type="tel" name="phone" id="phoneInput" class="form-control mb-2" placeholder="Phone Number (Optional)">
+          <input type="tel" name="phone" id="phoneInput" class="form-control mb-2" placeholder="Phone Number" required>
 
           <!-- STUDENT FIELDS -->
           <div id="studentFields" style="display:none;">
             <hr class="my-3">
             <p class="text-muted mb-2" style="font-size:13px;">Languages You Want to Learn & Your Current Level</p>
-
             <div id="studentLanguagesContainer">
               <div class="language-item">
                 <div class="row">
@@ -395,7 +585,7 @@
           <div id="tutorFields" style="display:none;">
             <hr class="my-3">
             <p class="text-muted mb-2" style="font-size:13px;">Languages You Teach & Your Proficiency Level</p>
-
+            <div id="studentLanguagesContainer"></div>
             <div id="tutorLanguagesContainer">
               <div class="language-item">
                 <div class="row">
@@ -508,25 +698,58 @@
             <input type="number" name="experience" class="form-control mb-2" placeholder="Years of Experience" min="0" required>
             <input type="text" name="rate" class="form-control mb-2" placeholder="Hourly Rate (RM)" required>
             <textarea name="bio" class="form-control mb-2" placeholder="Short bio about yourself" rows="3" required></textarea>
+<!-- Profile Picture Section with X button inside input -->
+<label class="form-label text-muted" style="font-size:13px;">
+    Profile Picture <span class="text-danger">*</span>
+    <small class="text-muted d-block">Please upload a clear photo of your face. Students need to see who they are booking with.</small>
+</label>
+<div style="position: relative; margin-bottom: 15px;">
+    <input type="file" name="profile_pic" id="profilePicInput" class="form-control" accept="image/*" required style="padding-right: 40px;">
+    <button type="button" id="clearProfilePicBtn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #dc3545; font-size: 18px; cursor: pointer; display: none;">
+        <i class="bi bi-x-circle-fill"></i>
+    </button>
+</div>
+<div id="profilePicPreview" style="display:none; margin-top: 10px; margin-bottom: 15px;">
+    <img id="profilePicPreviewImg" src="#" alt="Preview" style="width: 80px; height: 80px; object-fit: cover; border-radius: 10px; border: 1px solid #ddd;">
+</div>
+<div id="photoConfirmBox" style="display: none; margin-bottom: 15px; padding: 10px; background: #cdeaff; border: 1px solid #ffeeba; border-radius: 10px;">
+    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+        <input type="checkbox" id="realPhotoConfirm" required>
+        <span style="font-size: 13px;">
+            I confirm that this is a <strong>real photo of myself</strong>.<br> I understand that using fake photos may result in account rejection in applying.
+        </span>
+    </label>
+</div>
+<label class="form-label text-muted" style="font-size:13px;">
+    Certificates <span class="text-danger">*</span>
+    <small class="text-muted d-block">Upload your teaching certificates (PDF, JPG, PNG)</small>
+</label>
 
-            <label class="form-label text-muted" style="font-size:13px;">
-              Profile Picture <span class="text-muted">(Optional)</span>
-            </label>
-            <input type="file" name="profile_pic" class="form-control mb-2" accept="image/*">
+<div id="certificatesContainer">
+    <div class="certificate-item" style="margin-bottom: 15px;">
+        <div style="position: relative;">
+            <input type="file" name="certificates[]" class="form-control certificate-input" accept=".pdf,.jpg,.jpeg,.png" required style="padding-right: 40px;">
+            <button type="button" class="clear-cert-btn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #dc3545; font-size: 18px; cursor: pointer; display: none;">
+                <i class="bi bi-x-circle-fill"></i>
+            </button>
+        </div>
+    </div>
+</div>
 
-            <label class="form-label text-muted" style="font-size:13px;">
-              Certificate <span class="text-danger">*</span>
-            </label>
-            <input type="file" name="certificate" class="form-control mb-2" required>
-          </div>
-
+<button type="button" id="addCertificateBtn" class="btn btn-sm btn-secondary mb-3" style="background:#e2e8f0; border:none; padding:5px 12px; border-radius:20px;">
+    <i class="bi bi-plus"></i> Add Another Certificate
+</button>
           <button type="submit" class="btn-main mt-3" id="submitBtn">Create Account</button>
         </form>
       </div>
     </div>
   </div>
 </div>
-
+<!-- Image Preview Modal -->
+<div id="imageModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; align-items: center; justify-content: center; cursor: pointer;">
+    <img id="modalImage" src="" alt="Full size preview" style="max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 10px;">
+    <button id="closeModalBtn" style="position: absolute; top: 20px; right: 30px; background: white; border: none; font-size: 30px; cursor: pointer; width: 40px; height: 40px; border-radius: 50%;">&times;</button>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@18/build/js/intlTelInput.min.js"></script>
 
 <script>
@@ -542,6 +765,160 @@
       ? "url('../assets/img/tutor.jpg')"
       : "url('../assets/img/student.jpg')";
   }
+  // ========== PROFILE PICTURE - X button inside input ==========
+const profilePicInput = document.getElementById('profilePicInput');
+const clearProfilePicBtn = document.getElementById('clearProfilePicBtn');
+const profilePicPreview = document.getElementById('profilePicPreview');
+const profilePicPreviewImg = document.getElementById('profilePicPreviewImg');
+
+if (profilePicInput) {
+    profilePicInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                profilePicPreviewImg.src = e.target.result;
+                profilePicPreview.style.display = 'block';
+                if (clearProfilePicBtn) clearProfilePicBtn.style.display = 'block';
+            };
+            reader.readAsDataURL(this.files[0]);
+        }
+    });
+}
+
+if (clearProfilePicBtn) {
+    clearProfilePicBtn.addEventListener('click', function() {
+        profilePicInput.value = '';
+        profilePicPreview.style.display = 'none';
+        profilePicPreviewImg.src = '#';
+        clearProfilePicBtn.style.display = 'none';
+    });
+}
+
+// Show confirmation checkbox when photo is selected
+const photoConfirmBox = document.getElementById('photoConfirmBox');
+const realPhotoConfirm = document.getElementById('realPhotoConfirm');
+const imageModal = document.getElementById('imageModal');
+const modalImage = document.getElementById('modalImage');
+const closeModalBtn = document.getElementById('closeModalBtn');
+
+if (profilePicInput) {
+    profilePicInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                profilePicPreviewImg.src = e.target.result;
+                profilePicPreview.style.display = 'block';
+                if (clearProfilePicBtn) clearProfilePicBtn.style.display = 'block';
+                // Show confirmation checkbox
+                if (photoConfirmBox) photoConfirmBox.style.display = 'block';
+            };
+            reader.readAsDataURL(this.files[0]);
+        } else {
+            profilePicPreview.style.display = 'none';
+            if (clearProfilePicBtn) clearProfilePicBtn.style.display = 'none';
+            if (photoConfirmBox) photoConfirmBox.style.display = 'none';
+            if (realPhotoConfirm) realPhotoConfirm.checked = false;
+        }
+    });
+}
+
+// Make preview image clickable to expand
+if (profilePicPreviewImg) {
+    profilePicPreviewImg.style.cursor = 'pointer';
+    profilePicPreviewImg.style.transition = 'transform 0.2s';
+    profilePicPreviewImg.addEventListener('mouseenter', function() {
+        this.style.transform = 'scale(1.02)';
+    });
+    profilePicPreviewImg.addEventListener('mouseleave', function() {
+        this.style.transform = 'scale(1)';
+    });
+    profilePicPreviewImg.addEventListener('click', function() {
+        if (modalImage && imageModal) {
+            modalImage.src = this.src;
+            imageModal.style.display = 'flex';
+        }
+    });
+}
+
+// Close modal when clicking background or close button
+if (imageModal) {
+    imageModal.addEventListener('click', function(e) {
+        if (e.target === imageModal || e.target === closeModalBtn) {
+            imageModal.style.display = 'none';
+        }
+    });
+}
+
+if (closeModalBtn) {
+    closeModalBtn.addEventListener('click', function() {
+        imageModal.style.display = 'none';
+    });
+}
+
+function initCertificateClear(input, clearBtn) {
+    // Show clear button when file selected
+    input.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            clearBtn.style.display = 'block';
+        } else {
+            clearBtn.style.display = 'none';
+        }
+    });
+    
+    // Clear button functionality - clears the file input
+    clearBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        input.value = '';
+        clearBtn.style.display = 'none';
+    });
+}
+
+// Initialize existing certificates
+document.querySelectorAll('.certificate-item').forEach(item => {
+    const input = item.querySelector('.certificate-input');
+    const clearBtn = item.querySelector('.clear-cert-btn');
+    
+    if (input && clearBtn) {
+        initCertificateClear(input, clearBtn);
+    }
+});
+
+// Add new certificate with X button inside
+const addCertBtn = document.getElementById('addCertificateBtn');
+if (addCertBtn) {
+    const newAddBtn = addCertBtn.cloneNode(true);
+    addCertBtn.parentNode.replaceChild(newAddBtn, addCertBtn);
+    
+    newAddBtn.addEventListener('click', function() {
+        const container = document.getElementById('certificatesContainer');
+        const newDiv = document.createElement('div');
+        newDiv.className = 'certificate-item';
+        newDiv.style.marginBottom = '15px';
+        newDiv.innerHTML = `
+            <div style="position: relative;">
+                <input type="file" name="certificates[]" class="form-control certificate-input" accept=".pdf,.jpg,.jpeg,.png" style="padding-right: 40px;">
+                <button type="button" class="clear-cert-btn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #dc3545; font-size: 18px; cursor: pointer; display: none;">
+                    <i class="bi bi-x-circle-fill"></i>
+                </button>
+            </div>
+            <button type="button" class="remove-cert-row-btn btn btn-sm btn-outline-danger" style="margin-top: 5px; padding: 2px 8px;">Remove</button>
+        `;
+        container.appendChild(newDiv);
+        
+        const newInput = newDiv.querySelector('.certificate-input');
+        const newClearBtn = newDiv.querySelector('.clear-cert-btn');
+        const removeRowBtn = newDiv.querySelector('.remove-cert-row-btn');
+        
+        initCertificateClear(newInput, newClearBtn);
+        
+        if (removeRowBtn) {
+            removeRowBtn.addEventListener('click', function() {
+                newDiv.remove();
+            });
+        }
+    });
+}
 
   function goNext() {
     if (!currentRole) { alert('Please select a role first.'); return; }
@@ -673,8 +1050,7 @@
       const locationBox = document.getElementById('tutorLocationBox');
       locationBox.style.display = (ftfCheckbox && ftfCheckbox.checked) ? 'block' : 'none';
     }
-  }
-document.getElementById('signupForm').addEventListener('submit', function(e) {
+  }document.getElementById('signupForm').addEventListener('submit', function(e) {
     hideErr();
     
     const fullname = document.querySelector('input[name="fullname"]').value.trim();
@@ -785,7 +1161,6 @@ document.getElementById('signupForm').addEventListener('submit', function(e) {
         const experience = document.querySelector('input[name="experience"]').value.trim();
         const rate = document.querySelector('input[name="rate"]').value.trim();
         const bio = document.querySelector('textarea[name="bio"]').value.trim();
-        const cert = document.querySelector('input[name="certificate"]');
 
         if (!experience) {
             e.preventDefault();
@@ -812,12 +1187,37 @@ document.getElementById('signupForm').addEventListener('submit', function(e) {
                 return;
             }
         }
+
+         const profilePic = document.getElementById('profilePicInput');
+          if (!profilePic.files || profilePic.files.length === 0) {
+              e.preventDefault();
+              showErr('Please upload a profile photo. Students need to see who they are booking with.');
+              return;
+          }
+          
+          const realPhotoConfirm = document.getElementById('realPhotoConfirm');
+          if (!realPhotoConfirm || !realPhotoConfirm.checked) {
+              e.preventDefault();
+              showErr('Please confirm that you have uploaded a real photo of yourself. Students need to see who they are booking with.');
+              return;
+          }
         
-        if (!cert.files || cert.files.length === 0) {
+        const certInputs = document.querySelectorAll('input[name="certificates[]"]');
+        let hasCert = false;
+        for (let i = 0; i < certInputs.length; i++) {
+            if (certInputs[i].files && certInputs[i].files.length > 0) {
+                hasCert = true;
+                break;
+            }
+        }
+
+        
+        if (!hasCert) {
             e.preventDefault();
-            showErr('Please upload your certificate for verification.');
+            showErr('Please upload at least one certificate for verification.');
             return;
         }
+
     }
 
     // ── ALL VALIDATION PASSED - NOW SHOW CONFIRMATION ──
@@ -842,6 +1242,18 @@ function showToast(msg) {
   setTimeout(() => toast.style.opacity = '0', 3000);
 }
 
+
+// Show remove button for first certificate only if more than one
+function updateRemoveButtons() {
+    const items = document.querySelectorAll('.certificate-item');
+    items.forEach((item, index) => {
+        const removeBtn = item.querySelector('.remove-cert-btn');
+        if (removeBtn) {
+            removeBtn.style.display = items.length > 1 ? 'inline-block' : 'none';
+        }
+    });
+}
+
 <?php if (isset($_SESSION['error'])): ?>
   showToast("<?php echo addslashes($_SESSION['error']); unset($_SESSION['error']); ?>");
 <?php endif; ?>
@@ -851,6 +1263,5 @@ function showToast(msg) {
   setTimeout(() => window.location.href = 'login.php', 3000);
 <?php endif; ?>
 </script>
-
 </body>
 </html>

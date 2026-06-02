@@ -27,10 +27,10 @@ $profilePic = !empty($admin['profile_pic'])
     ? '../uploads/profiles/' . $admin['profile_pic']
     : $assetBase . '/profile-admin.png';
 
-// Get all stats for dashboard overview
 $totalTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor'")->fetch_assoc()['count'];
 $pendingTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor' AND status = 'pending'")->fetch_assoc()['count'];
-$approvedTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor' AND status = 'active'")->fetch_assoc()['count'];
+$approvedTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor' AND (status = 'active' OR status = 'approved')")->fetch_assoc()['count'];
+$rejectedTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor' AND status = 'rejected'")->fetch_assoc()['count'];
 $totalStudents = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'student'")->fetch_assoc()['count'];
 $totalBookings = $conn->query("SELECT COUNT(*) as count FROM bookings")->fetch_assoc()['count'];
 $pendingBookings = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE status = 'pending'")->fetch_assoc()['count'];
@@ -53,13 +53,27 @@ $avgRating = $conn->query("SELECT AVG(rating) as avg FROM ratings")->fetch_assoc
 $totalPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests")->fetch_assoc()['count'] ?? 0;
 $pendingPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests WHERE status = 'pending'")->fetch_assoc()['count'] ?? 0;
 
-// Monthly bookings for chart
 $monthlyData = [];
+
 for ($i = 5; $i >= 0; $i--) {
-    $month = date('Y-m', strtotime("-$i months"));
+    $monthKey = date('Y-m', strtotime("-$i months"));
     $monthName = date('M', strtotime("-$i months"));
-    $count = $conn->query("SELECT COUNT(*) as c FROM bookings WHERE DATE_FORMAT(created_at, '%Y-%m') = '$month'")->fetch_assoc()['c'];
-    $monthlyData[] = ['month' => $monthName, 'count' => $count];
+    $yearDisplay = date('Y', strtotime("-$i months"));
+    
+    // Only show year if different from current year
+    if ($yearDisplay != date('Y')) {
+        $displayMonth = $monthName . " '" . substr($yearDisplay, -2);
+    } else {
+        $displayMonth = $monthName;
+    }
+    
+    $count = $conn->query("SELECT COUNT(*) as c FROM bookings WHERE DATE_FORMAT(created_at, '%Y-%m') = '$monthKey'")->fetch_assoc()['c'];
+    
+    $monthlyData[] = [
+        'month' => $displayMonth,
+        'full_month' => $monthName,
+        'count' => (int)$count
+    ];
 }
 
 function e($value) {
@@ -166,6 +180,51 @@ function formatMoney($amount) {
         .nav-item i {
             width: 20px;
             font-size: 1.1rem;
+        }
+        /* Sidebar Section Labels */
+        .nav-section {
+            margin-bottom: 8px;
+        }
+
+        .nav-section-label {
+            padding: 12px 20px 6px 20px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: #B26EA7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-section-label i {
+            font-size: 0.7rem;
+            color: #B26EA7;
+        }
+
+        .nav-badge {
+            margin-left: auto;
+            font-size: 0.65rem;
+            background: rgba(178, 110, 167, 0.25);
+            padding: 2px 8px;
+            border-radius: 30px;
+            color: #D4CFE8;
+            font-weight: 600;
+        }
+
+        .nav-badge.pending {
+            background: rgba(245, 158, 11, 0.25);
+            color: #F59E0B;
+        }
+
+        .nav-badge.dispute {
+            background: rgba(220, 38, 38, 0.25);
+            color: #FFA3A3;
+        }
+
+        .nav-item {
+            position: relative;
         }
         
         /* Main Content */
@@ -391,53 +450,104 @@ function formatMoney($amount) {
             line-height: 1.2;
         }
 
-        /* Alerts - Responsive */
-        .alert-card {
-            background: #FEF3C7;
-            border-left: 4px solid #F59E0B;
-            border-radius: 14px;
-            padding: 14px 18px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        
-        .alert-content {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        
-        .alert-content i {
-            font-size: 22px;
-            color: #F59E0B;
-        }
-        
-        .alert-content strong {
-            color: #92400E;
-            font-size: 0.85rem;
-        }
-        
-        .alert-content p {
-            color: #B45309;
-            font-size: 12px;
-            margin-top: 2px;
-        }
-        
-        .alert-btn {
-            background: #F59E0B;
-            color: white;
-            padding: 6px 18px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 12px;
-            white-space: nowrap;
-        }
+        /* Alert with auto-dismiss animation - FIXED */
+.alert-card {
+    background: #FEF3C7;
+    border-left: 4px solid #F59E0B;
+    border-radius: 14px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    transition: opacity 0.5s ease, transform 0.3s ease;
+    position: relative;
+}
+
+.alert-card.fade-out {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+}
+
+.alert-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.alert-content i {
+    font-size: 22px;
+    color: #F59E0B;
+    flex-shrink: 0;
+}
+
+.alert-content strong {
+    color: #92400E;
+    font-size: 0.85rem;
+}
+
+.alert-content p {
+    color: #B45309;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.alert-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.alert-btn {
+    background: #F59E0B;
+    color: white;
+    padding: 6px 18px;
+    border-radius: 30px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.alert-close {
+    background: transparent;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: #92400E;
+    padding: 0 6px;
+    font-weight: bold;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+    line-height: 1;
+}
+
+.alert-close:hover {
+    opacity: 1;
+}
+
+/* Mobile responsive fix */
+@media (max-width: 768px) {
+    .alert-card {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .alert-actions {
+        justify-content: flex-end;
+        margin-top: 8px;
+    }
+    
+    .alert-btn {
+        text-align: center;
+        flex: 1;
+    }
+}
         
         /* Charts Row - Responsive */
         .charts-row {
@@ -729,39 +839,69 @@ function formatMoney($amount) {
             </div>
         </div>
     </div>
-    
     <nav class="nav-menu">
+    <!-- DASHBOARD -->
+    <div class="nav-section">
         <a href="admin_dashboard.php" class="nav-item active">
             <i class="bi bi-speedometer2"></i><span>Dashboard</span>
         </a>
-        <a href="admin_tutors.php" class="nav-item">
-            <i class="bi bi-person-badge"></i><span>Tutor Applications</span>
+    </div>
+
+    <!-- USERS -->
+    <div class="nav-section">
+        <div class="nav-section-label">
+            USERS
+        </div>
+        <a href="admin_tutor_actions.php" class="nav-item">
+    <i class="bi bi-person-badge"></i><span>Tutors</span>
+            <span class="nav-badge"><?= $totalTutors ?></span>
         </a>
-        <a href="admin_qualifications.php" class="nav-item">
-            <i class="bi bi-file-earmark-text"></i><span>Qualifications</span>
+        <a href="admin_students.php" class="nav-item">
+            <i class="bi bi-person"></i><span>Students</span>
+            <span class="nav-badge"><?= $totalStudents ?></span>
         </a>
+    </div>
+
+    <!-- FINANCE -->
+    <div class="nav-section">
+        <div class="nav-section-label">
+            FINANCE
+        </div>
         <a href="admin_payments.php" class="nav-item">
-            <i class="bi bi-credit-card"></i><span>Payment Verification</span>
-        </a>
-        <a href="admin_bookings.php" class="nav-item">
-            <i class="bi bi-calendar-check"></i><span>Bookings</span>
-        </a>
-        <a href="admin_disputes.php" class="nav-item">
-            <i class="bi bi-scale"></i><span>Disputes</span>
-        </a>
-        <a href="admin_feedback.php" class="nav-item">
-            <i class="bi bi-chat-dots"></i><span>Feedback Moderation</span>
-        </a>
-        <a href="admin_users.php" class="nav-item">
-            <i class="bi bi-people"></i><span>Users</span>
+            <i class="bi bi-credit-card"></i><span>Payments</span>
+            <span class="nav-badge pending"><?= $pendingPayments ?></span>
         </a>
         <a href="admin_payouts.php" class="nav-item">
-            <i class="bi bi-cash-stack"></i><span>Payout Requests</span>
+             <i class="bi bi-cash-stack"></i><span>Payouts</span>
+            <span class="nav-badge"><?= $pendingPayouts ?></span>
         </a>
+    </div>
+
+    <!-- BOOKINGS -->
+    <div class="nav-section">
+        <div class="nav-section-label">
+            BOOKINGS
+        </div>
+        <a href="admin_bookings.php" class="nav-item">
+            <i class="bi bi-calendar-check"></i><span>Bookings</span>
+            <span class="nav-badge"><?= $totalBookings ?></span>
+        </a>
+        <a href="admin_disputes.php" class="nav-item">
+            <i class="bi bi-flag"></i><span>Disputes</span>
+            <span class="nav-badge dispute"><?= $pendingDisputes ?></span>
+        </a>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="nav-section">
+        <div class="nav-section-label">
+            REPORTS
+        </div>
         <a href="admin_reports.php" class="nav-item">
-            <i class="bi bi-graph-up"></i><span>Reports & Analytics</span>
+            <i class="bi bi-graph-up"></i><span>Analytics</span>
         </a>
-    </nav>
+    </div>
+</nav>
     
     <div class="sidebar-footer">
     <div class="admin-info">
@@ -797,45 +937,54 @@ function formatMoney($amount) {
         </div>
     </div>
 
-    <!-- Alerts for pending items -->
-    <?php if ($pendingTutors > 0): ?>
-    <div class="alert-card">
-        <div class="alert-content">
-            <i class="bi bi-person-plus"></i>
-            <div>
-                <strong><?= $pendingTutors ?> new tutor application<?= $pendingTutors > 1 ? 's' : '' ?></strong>
-                <p>Review and approve qualified tutors to join the platform</p>
-            </div>
+   <!-- Alerts for pending items -->
+<?php if ($pendingTutors > 0): ?>
+<div class="alert-card">
+    <div class="alert-content">
+        <i class="bi bi-person-plus"></i>
+        <div>
+            <strong><?= $pendingTutors ?> new tutor application<?= $pendingTutors > 1 ? 's' : '' ?></strong>
+            <p>Review and approve qualified tutors to join the platform</p>
         </div>
+    </div>
+    <div class="alert-actions">
         <a href="admin_tutors.php" class="alert-btn">Review Now</a>
+        <button class="alert-close" onclick="this.closest('.alert-card').classList.add('fade-out'); setTimeout(() => this.closest('.alert-card').remove(), 500);">&times;</button>
     </div>
-    <?php endif; ?>
+</div>
+<?php endif; ?>
 
-    <?php if ($pendingPayments > 0): ?>
-    <div class="alert-card">
-        <div class="alert-content">
-            <i class="bi bi-exclamation-triangle"></i>
-            <div>
-                <strong><?= $pendingPayments ?> pending payment verification<?= $pendingPayments > 1 ? 's' : '' ?></strong>
-                <p>Manual payments need to be verified before sessions are confirmed</p>
-            </div>
+<?php if ($pendingPayments > 0): ?>
+<div class="alert-card">
+    <div class="alert-content">
+        <i class="bi bi-exclamation-triangle"></i>
+        <div>
+            <strong><?= $pendingPayments ?> pending payment verification<?= $pendingPayments > 1 ? 's' : '' ?></strong>
+            <p>Manual payments need to be verified before sessions are confirmed</p>
         </div>
+    </div>
+    <div class="alert-actions">
         <a href="admin_payments.php" class="alert-btn">Verify Now</a>
+        <button class="alert-close" onclick="this.closest('.alert-card').classList.add('fade-out'); setTimeout(() => this.closest('.alert-card').remove(), 500);">&times;</button>
     </div>
-    <?php endif; ?>
+</div>
+<?php endif; ?>
 
-    <?php if ($pendingDisputes > 0): ?>
-    <div class="alert-card">
-        <div class="alert-content">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <div>
-                <strong><?= $pendingDisputes ?> open dispute<?= $pendingDisputes > 1 ? 's' : '' ?></strong>
-                <p>Requires immediate attention for fair resolution</p>
-            </div>
+<?php if ($pendingDisputes > 0): ?>
+<div class="alert-card">
+    <div class="alert-content">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>
+            <strong><?= $pendingDisputes ?> open dispute<?= $pendingDisputes > 1 ? 's' : '' ?></strong>
+            <p>Requires immediate attention for fair resolution</p>
         </div>
-        <a href="admin_disputes.php" class="alert-btn">View Disputes</a>
     </div>
-    <?php endif; ?>
+    <div class="alert-actions">
+        <a href="admin_disputes.php" class="alert-btn">View Disputes</a>
+        <button class="alert-close" onclick="this.closest('.alert-card').classList.add('fade-out'); setTimeout(() => this.closest('.alert-card').remove(), 500);">&times;</button>
+    </div>
+</div>
+<?php endif; ?>
 
     <!-- Main Stats Grid -->
 <div class="stats-grid">
@@ -853,17 +1002,20 @@ function formatMoney($amount) {
     </div>
     
     <div class="stat-card">
-        <div class="stat-left">
-            <div class="stat-icon"><i class="bi bi-person-badge"></i></div>
-            <div class="stat-info">
-                <div class="stat-label">Active Tutors</div>
-                <div class="stat-sub"><?= $pendingTutors ?> pending approval</div>
+    <div class="stat-left">
+        <div class="stat-icon"><i class="bi bi-person-badge"></i></div>
+        <div class="stat-info">
+            <div class="stat-label">Approved Tutors</div>
+            <div class="stat-sub">
+                <?= $pendingTutors ?> pending · 
+                <?= $rejectedTutors ?> rejected
             </div>
         </div>
-        <div class="stat-right">
-            <div class="stat-value"><?= $totalTutors ?></div>
-        </div>
     </div>
+    <div class="stat-right">
+        <div class="stat-value"><?= $approvedTutors ?></div>
+    </div>
+</div>
     
     <div class="stat-card">
         <div class="stat-left">
@@ -909,21 +1061,21 @@ function formatMoney($amount) {
         <div class="stat-card">
             <div class="stat-icon"><i class="bi bi-star-fill"></i></div>
             <div class="stat-value"><?= number_format($avgRating, 1) ?></div>
-            <div class="stat-label">Average Rating</div>
+            <div class="stat-label">Average Tutor Rating</div>
             <div class="stat-sub">from <?= $totalRatings ?> reviews</div>
         </div>
         <div class="stat-card">
-            <div class="stat-icon"><i class="bi bi-scale"></i></div>
+            <div class="stat-icon"><i class="bi bi-flag"></i></div>
             <div class="stat-value"><?= $pendingDisputes ?></div>
             <div class="stat-label">Open Disputes</div>
             <div class="stat-sub"><?= $resolvedDisputes ?> resolved total</div>
         </div>
         <div class="stat-card">
-            <div class="stat-icon"><i class="bi bi-credit-card-2-front"></i></div>
-            <div class="stat-value"><?= $pendingPayments ?></div>
-            <div class="stat-label">Pending Verification</div>
-            <div class="stat-sub"><?= $verifiedPayments ?> verified</div>
-        </div>
+        <div class="stat-icon"><i class="bi bi-clock-history"></i></div>
+        <div class="stat-value"><?= $pendingPayments ?></div>
+        <div class="stat-label">Payment Verification</div>
+        <div class="stat-sub"><?= $verifiedPayments ?> verified</div>
+    </div>
         <div class="stat-card">
             <div class="stat-icon"><i class="bi bi-cash"></i></div>
             <div class="stat-value"><?= $pendingPayouts ?></div>
@@ -967,39 +1119,71 @@ if (overlay) {
         document.body.style.overflow = '';
     });
 }
-
-// Monthly Bookings Chart
+// Monthly Bookings Chart - FIXED
 const bookingsCtx = document.getElementById('bookingsChart')?.getContext('2d');
 if (bookingsCtx) {
+    const chartLabels = <?= json_encode(array_column($monthlyData, 'month')) ?>;
+    const chartData = <?= json_encode(array_column($monthlyData, 'count')) ?>;
+    
     new Chart(bookingsCtx, {
         type: 'line',
         data: {
-            labels: <?= json_encode(array_column($monthlyData, 'month')) ?>,
+            labels: chartLabels,
             datasets: [{
-                label: 'Bookings',
-                data: <?= json_encode(array_column($monthlyData, 'count')) ?>,
+                label: 'Number of Bookings',
+                data: chartData,
                 borderColor: '#875D9C',
                 backgroundColor: 'rgba(135, 93, 156, 0.1)',
                 borderWidth: 3,
                 fill: true,
-                tension: 0.4,
+                tension: 0.3,
                 pointBackgroundColor: '#875D9C',
                 pointBorderColor: '#fff',
                 pointBorderWidth: 2,
-                pointRadius: 4,
-                pointHoverRadius: 6
+                pointRadius: 5,
+                pointHoverRadius: 7
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Number of Bookings',
+                        font: { size: 11 }
+                    },
+                    ticks: {
+                        stepSize: 1,
+                        precision: 0
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Month',
+                        font: { size: 11 }
+                    }
+                }
+            },
             plugins: { 
-                legend: { position: 'top', labels: { font: { size: 11 } } }
+                legend: { 
+                    position: 'top', 
+                    labels: { font: { size: 11 } } 
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.raw + ' booking' + (context.raw !== 1 ? 's' : '');
+                        }
+                    }
+                }
             }
         }
     });
 }
-
 // Overview Pie Chart
 const overviewCtx = document.getElementById('overviewChart')?.getContext('2d');
 if (overviewCtx) {
@@ -1030,6 +1214,62 @@ window.addEventListener('resize', function() {
         if (overlay) overlay.classList.remove('active');
         document.body.style.overflow = '';
     }
+});
+
+// Auto-dismiss alerts after 5 seconds
+function setupAutoDismissAlerts() {
+    const alerts = document.querySelectorAll('.alert-card');
+    
+    alerts.forEach(alert => {
+        // Set timeout to fade out after 5 seconds
+        setTimeout(() => {
+            alert.classList.add('fade-out');
+            // Remove from DOM after animation completes
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.remove();
+                }
+            }, 500);
+        }, 5000); // 5 seconds
+    });
+}
+
+// Add close button to each alert (optional)
+function addCloseButtonToAlerts() {
+    const alerts = document.querySelectorAll('.alert-card');
+    
+    alerts.forEach(alert => {
+        // Check if close button already exists
+        if (!alert.querySelector('.alert-close')) {
+            const closeBtn = document.createElement('button');
+            closeBtn.innerHTML = '&times;';
+            closeBtn.className = 'alert-close';
+            closeBtn.style.cssText = `
+                background: transparent;
+                border: none;
+                font-size: 20px;
+                cursor: pointer;
+                color: #92400E;
+                padding: 0 8px;
+                font-weight: bold;
+                opacity: 0.6;
+                transition: opacity 0.2s;
+            `;
+            closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
+            closeBtn.onmouseout = () => closeBtn.style.opacity = '0.6';
+            closeBtn.onclick = () => {
+                alert.classList.add('fade-out');
+                setTimeout(() => alert.remove(), 500);
+            };
+            alert.appendChild(closeBtn);
+        }
+    });
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    setupAutoDismissAlerts();
+    addCloseButtonToAlerts();
 });
 </script>
 

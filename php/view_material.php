@@ -280,6 +280,7 @@ function getFileIcon($fileName) {
         <a href="booking_status.php">My Bookings</a>
         <a href="my_payments.php">My Payments</a>
         <a class="active" href="my_materials.php">My Materials</a>
+        <a href="my_assignments.php">My Assignments</a>
       </div>
       
       <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">

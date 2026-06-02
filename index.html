@@ -2,59 +2,634 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kyoshi Landing Page</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Kyoshi Landing Page | Language Tutor Booking</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
-</head>
 
+<style>
+  /* ---------- GLOBAL RESET & FULL WIDTH FIX ---------- */
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    background: #E0F3F8;
+    font-family: 'Segoe UI', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    width: 100%;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+  }
+
+  section, .container-fluid, footer {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .container {
+    max-width: 1280px;
+    width: 100%;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  /* ---------- FIXED NAVBAR - COMPACT & NOT TOO BIG ---------- */
+  .navbar {
+    padding: 0.5rem 0;
+    background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    min-height: 68px;
+  }
+
+  .logo {
+    height: 38px;
+    width: auto;
+    transition: all 0.2s;
+  }
+
+  @media (max-width: 767px) {
+    .logo {
+      height: 30px;
+    }
+    .navbar {
+      padding: 0.4rem 0;
+      min-height: 60px;
+    }
+    .navbar-nav .nav-link {
+      font-size: 0.95rem;
+      padding: 0.5rem 0;
+    }
+    .btn-outline, .btn-main {
+      padding: 5px 14px;
+      font-size: 0.85rem;
+    }
+  }
+
+  .navbar .btn-outline,
+  .navbar .btn-main {
+    border-radius: 40px;
+    font-weight: 500;
+    transition: all 0.25s ease;
+  }
+
+  /* NAV LINK HOVER & ACTIVE/CLICK EFFECTS */
+  .navbar-nav .nav-link {
+    transition: all 0.25s ease;
+    position: relative;
+    font-weight: 600;
+  }
+
+  .navbar-nav .nav-link:hover {
+    color: #38bdf8 !important;
+    transform: translateY(-2px);
+  }
+
+  .navbar-nav .nav-link:active {
+    transform: translateY(1px);
+    color: #0ea5e9 !important;
+  }
+
+  /* Active page indicator (optional - adds underline style) */
+  .navbar-nav .nav-link:active::after,
+  .navbar-nav .nav-link:hover::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: #38bdf8;
+    border-radius: 3px;
+  }
+
+  /* Mobile navbar buttons - centered with margin */
+  @media (max-width: 767px) {
+    .navbar .d-flex {
+      margin-top: 12px;
+      margin-bottom: 8px;
+      justify-content: center !important;
+      width: 100%;
+    }
+    .navbar .d-flex .btn {
+      flex: 0 1 auto;
+      min-width: 100px;
+    }
+    .navbar-collapse {
+      text-align: center;
+    }
+    .navbar-nav {
+      text-align: center;
+    }
+  }
+
+  .btn-main {
+    background: #38bdf8;
+    border: none;
+    color: #ffffff;  /* Change from #0f172a to white */
+    transition: all 0.25s ease;
+    font-weight: 600;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-main:hover {
+    background: #0ea5e9;
+    color: #ffffff;  /* Keep white text on hover */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(56, 189, 248, 0.3);
+}
+
+  .btn-main:active {
+    transform: translateY(1px);
+    background: #0284c7;
+    box-shadow: 0 2px 6px rgba(56, 189, 248, 0.2);
+    transition: all 0.05s ease;
+  }
+
+.btn-outline {
+    border: 2px solid #0f172a;
+    color: #0f172a;
+    background: transparent;
+    border-radius: 40px;
+    transition: all 0.25s ease;
+    font-weight: 600;
+}
+
+.btn-outline:hover {
+    background: #0f172a;
+    color: #ffffff;  /* Change to white on hover */
+    transform: translateY(-2px);
+    border-color: #0f172a;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
+}
+
+  .btn-outline:active {
+    transform: translateY(1px);
+    background: #1e293b;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+    transition: all 0.05s ease;
+  }
+
+  /* Hero buttons specific */
+  .hero .btn-main, .hero .btn-outline {
+    padding: 12px 28px;
+    font-weight: 700;
+  }
+  /* Change from 767px to 991px for tablet breakpoint */
+@media (max-width: 991px) {
+  .navbar-nav {
+    flex-direction: column !important;
+    text-align: center;
+    gap: 10px !important;
+  }
+  
+  .navbar-nav .nav-item {
+    margin: 0;
+  }
+  
+  .navbar .d-flex {
+    margin-top: 15px;
+    justify-content: center !important;
+  }
+  
+  .navbar .d-flex .btn {
+    min-width: 120px;
+  }
+}
+
+/* Keep horizontal on desktop (992px and above) */
+@media (min-width: 992px) {
+  .navbar-nav {
+    flex-direction: row !important;
+  }
+  
+  .navbar-nav .nav-link {
+    white-space: nowrap;
+  }
+
+  .navbar .d-flex {
+    margin-left: auto !important;
+    margin-right: 0 !important;
+  }
+  
+  /* Optional: Add more space between nav links and buttons */
+  .navbar-nav {
+    margin-right: 500px !important;
+  }
+}
+  @media (max-width: 767px) {
+    .hero .btn-main, .hero .btn-outline {
+      padding: 8px 20px;
+      font-size: 0.9rem;
+    }
+  }
+
+  /* Carousel find tutor buttons */
+  .carousel-card-inner .btn-sm {
+    transition: all 0.25s ease;
+  }
+
+  .carousel-card-inner .btn-sm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(56, 189, 248, 0.3);
+  }
+
+  .carousel-card-inner .btn-sm:active {
+    transform: translateY(1px);
+  }
+
+  /* ---------- HERO SECTION (FULL WIDTH) ---------- */
+  .hero {
+    min-height: 100vh;
+    width: 100%;
+    background: url('assets/img/herobg.png') no-repeat center/cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    position: relative;
+    padding: 120px 20px 100px;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.3);
+  }
+
+  .hero-content {
+    position: relative;
+    z-index: 3;
+    max-width: 800px;
+  }
+
+  .hero h1 {
+    font-size: 3.2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .hero-wave {
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    line-height: 0;
+  }
+
+  .hero-wave svg {
+    display: block;
+    width: 100%;
+    height: 90px;
+  }
+
+  @media (max-width: 767px) {
+    .hero h1 {
+      font-size: 2rem;
+    }
+    .hero-wave svg {
+      height: 50px;
+    }
+    .hero {
+      padding: 100px 20px 80px;
+    }
+  }
+
+  /* ---------- CAROUSEL STYLES ---------- */
+  .languages {
+    padding: 70px 0 90px;
+    width: 100%;
+  }
+
+  .carousel-container {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    padding: 0 40px;
+  }
+
+  .carousel-track {
+    display: flex;
+    gap: 24px;
+    transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+    will-change: transform;
+  }
+
+  .carousel-card {
+    flex: 0 0 calc(33.333% - 16px);
+    min-width: 0;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    .carousel-card {
+      flex: 0 0 calc(50% - 12px);
+    }
+    .carousel-container {
+      padding: 0 35px;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .carousel-card {
+      flex: 0 0 100%;
+    }
+    .carousel-container {
+      padding: 0 20px;
+    }
+    .carousel-track {
+      gap: 16px;
+    }
+  }
+
+  .carousel-card-inner {
+    background: white;
+    border-radius: 28px;
+    padding: 20px 16px 20px;
+    text-align: center;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.05);
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .carousel-card-inner:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 20px 30px rgba(0,0,0,0.08);
+  }
+
+  .img-box {
+    width: 100%;
+    height: 170px;
+    background: #f8fafc;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .img-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transition: 0.2s;
+  }
+
+  .carousel-card-inner h5 {
+    margin-top: 18px;
+    font-weight: 700;
+    font-size: 1.35rem;
+  }
+
+  /* Navigation buttons with press effects */
+  .nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #38bdf8;
+    border: none;
+    color: white;
+    border-radius: 60px;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    z-index: 12;
+  }
+
+  .nav-btn:hover {
+    background: #0f172a;
+    transform: translateY(-50%) scale(1.05);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.2);
+  }
+
+  .nav-btn:active {
+    transform: translateY(-48%) scale(0.95);
+    background: #0ea5e9;
+    transition: all 0.05s ease;
+  }
+
+  .nav-btn.left {
+    left: 0;
+  }
+  .nav-btn.right {
+    right: 0;
+  }
+
+  @media (max-width: 767px) {
+    .nav-btn {
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+    }
+  }
+
+  /* ---------- TUTOR SECTION ---------- */
+  .place-img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-radius: 24px;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.05);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .place-img:hover {
+    transform: scale(1.02);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+  }
+
+  @media (max-width: 767px) {
+    .place-img {
+      height: 140px;
+    }
+    .tutor-section h2 {
+      font-size: 1.8rem;
+      text-align: center;
+    }
+    .tutor-section .text-muted {
+      text-align: center;
+    }
+  }
+
+  /* ---------- CARD BOX ---------- */
+  .card-box {
+    background: white;
+    padding: 28px 18px;
+    border-radius: 28px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+    transition: all 0.25s ease;
+    cursor: default;
+  }
+
+  .card-box:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 16px 32px rgba(0,0,0,0.08);
+  }
+
+  .step-badge {
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #38bdf8;
+    color: #0f172a;
+    font-weight: bold;
+    width: 36px;
+    height: 36px;
+    border-radius: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
+  }
+
+  .card-box:hover .step-badge {
+    background: #0ea5e9;
+    transform: translateX(-50%) scale(1.05);
+    color: white;
+  }
+
+  @media (max-width: 767px) {
+    .card-box {
+      padding: 20px 12px;
+    }
+    .card-box h5 {
+      font-size: 1rem;
+    }
+    .card-box p {
+      font-size: 0.85rem;
+    }
+    #how-it-works h2, #about h2 {
+      font-size: 1.8rem;
+    }
+    footer h5 {
+      font-size: 1.2rem;
+    }
+    footer p {
+      font-size: 0.85rem;
+    }
+  }
+
+  section {
+    scroll-margin-top: 85px;
+  }
+
+  footer {
+    background: #0f172a;
+    width: 100%;
+  }
+
+  .row {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  img {
+    max-width: 100%;
+  }
+
+  @media (max-width: 767px) {
+    .container {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .languages h2 {
+      font-size: 1.8rem;
+    }
+    .hero .d-flex {
+      flex-direction: row;
+      justify-content: center;
+    }
+    .hero .btn-main, .hero .btn-outline {
+      margin: 0 5px;
+    }
+  }
+
+  /* Tutor section buttons */
+  .tutor-section .btn-main, .tutor-section .btn-outline {
+    transition: all 0.25s ease;
+  }
+
+  .tutor-section .btn-main:hover, .tutor-section .btn-outline:hover {
+    transform: translateY(-2px);
+  }
+
+  .tutor-section .btn-main:active, .tutor-section .btn-outline:active {
+    transform: translateY(1px);
+  }
+
+  /* Footer links if any */
+  footer a {
+    transition: color 0.2s ease;
+  }
+
+  footer a:hover {
+    color: #38bdf8 !important;
+  }
+</style>
+</head>
 <body>
 
-<!-- NAVBAR -->
+<!-- NAVBAR - with hover & click effects -->
 <nav class="navbar navbar-expand-lg fixed-top">
   <div class="container">
-
     <a class="navbar-brand" href="#">
-      <img src="assets/img/logo.png" class="logo">
+      <img src="assets/img/logo.png" class="logo" alt="Kyoshi Logo">
     </a>
-
-    <button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#nav">
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
-
     <div class="collapse navbar-collapse" id="nav">
-      <ul class="navbar-nav mx-auto gap-4">
-        <li class="nav-item"><a class="nav-link" href="#home">Home</a></li>
-        <li class="nav-item"><a class="nav-link" href="#languages">Languages</a></li>
-        <li class="nav-item"><a class="nav-link" href="#tutor">Tutors</a></li>
-        <li class="nav-item"><a class="nav-link" href="#how-it-works">How It Works</a></li>
-        <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
+      <ul class="navbar-nav mx-auto gap-3 gap-lg-4">
+        <li class="nav-item"><a class="nav-link fw-semibold" href="#home">Home</a></li>
+        <li class="nav-item"><a class="nav-link fw-semibold" href="#languages">Languages</a></li>
+        <li class="nav-item"><a class="nav-link fw-semibold" href="#tutor">Tutors</a></li>
+        <li class="nav-item"><a class="nav-link fw-semibold" href="#how-it-works">How It Works</a></li>
+        <li class="nav-item"><a class="nav-link fw-semibold" href="#about">About</a></li>
       </ul>
-
-      <div>
-        <a href="php/login.php" class="btn btn-outline me-2">Login</a>
+      <div class="d-flex gap-2 justify-content-center w-100 w-lg-auto">
+        <a href="php/login.php" class="btn btn-outline">Login</a>
         <a href="php/signup.php" class="btn btn-main">Sign Up</a>
       </div>
     </div>
-
   </div>
 </nav>
 
+<!-- HERO SECTION -->
 <section class="hero" id="home">
   <div class="hero-content">
     <h1>Learn Anytime, Anywhere</h1>
-    <p class="mt-3">
+    <p class="mt-3 fs-5">
       Book language tutors instantly and start learning Japanese, English,
       Mandarin, Korean & Malay.
     </p>
-
-    <div class="mt-4">
-      <a href="php/login.php" class="btn btn-main me-2">Get Started</a>
-      <a href="php/login.php?redirect=search_tutors.php" class="btn btn-outline" onclick="requireLogin()">Book a Tutor</a>
+    <div class="mt-4 d-flex gap-3 justify-content-center flex-wrap">
+      <a href="php/login.php" class="btn btn-main px-4 py-2">Get Started</a>
+      <a href="javascript:void(0);" class="btn btn-outline px-4 py-2" onclick="requireLogin()">Book a Tutor</a>
     </div>
   </div>
-
   <div class="hero-wave">
     <svg viewBox="0 0 1440 320" preserveAspectRatio="none">
       <path fill="#E0F3F8" d="M0,224L60,213.3C120,203,240,181,360,176C480,171,600,181,720,192C840,203,960,213,1080,202.7C1200,192,1320,160,1380,144L1440,128L1440,320L0,320Z"></path>
@@ -62,237 +637,228 @@
   </div>
 </section>
 
+<!-- LANGUAGES CAROUSEL -->
 <section class="languages text-center" id="languages">
-  <div class="container">
-
-    <h2 class="fw-bold mb-4">Explore Languages</h2>
-
+  <div class="container-fluid px-4">
+    <h2 class="fw-bold mb-4 display-6">Explore Languages</h2>
     <div class="carousel-container">
-
-      <button class="nav-btn left" onclick="moveSlide(-1)">❮</button>
-
+      <button class="nav-btn left" id="prevBtn" aria-label="Previous">❮</button>
       <div class="carousel-track" id="carouselTrack">
-
         <div class="carousel-card">
           <div class="carousel-card-inner">
-            <div class="img-box">
-            <img src="assets/img/japanese.webp">
-            </div>
+            <div class="img-box"><img src="assets/img/japanese.webp" alt="Japanese"></div>
             <h5>Japanese</h5>
-            <a href="php/login.php?redirect=search_tutors.php&lang=Japanese" class="btn btn-main btn-sm">Find Tutor</a>
+            <a href="php/login.php?redirect=search_tutors.php&lang=Japanese" class="btn btn-main btn-sm mt-2">Find Tutor</a>
           </div>
         </div>
-
         <div class="carousel-card">
           <div class="carousel-card-inner">
-            <div class="img-box">
-            <img src="assets/img/english.webp"></div>
+            <div class="img-box"><img src="assets/img/english.webp" alt="English"></div>
             <h5>English</h5>
-            <a href="php/login.php?redirect=search_tutors.php&lang=English" class="btn btn-main btn-sm">Find Tutor</a>
+            <a href="php/login.php?redirect=search_tutors.php&lang=English" class="btn btn-main btn-sm mt-2">Find Tutor</a>
           </div>
         </div>
-
         <div class="carousel-card">
           <div class="carousel-card-inner">
-            <div class="img-box">
-            <img src="assets/img/mandarin.png"></div>
+            <div class="img-box"><img src="assets/img/mandarin.png" alt="Mandarin"></div>
             <h5>Mandarin</h5>
-            <a href="php/login.php?redirect=search_tutors.php&lang=Mandarin" class="btn btn-main btn-sm">Find Tutor</a>
+            <a href="php/login.php?redirect=search_tutors.php&lang=Mandarin" class="btn btn-main btn-sm mt-2">Find Tutor</a>
           </div>
         </div>
-
         <div class="carousel-card">
           <div class="carousel-card-inner">
-            <div class="img-box">
-            <img src="assets/img/korean.jpg"></div>
+            <div class="img-box"><img src="assets/img/korean.jpg" alt="Korean"></div>
             <h5>Korean</h5>
-            <a href="php/login.php?redirect=search_tutors.php&lang=Korean" class="btn btn-main btn-sm">Find Tutor</a>
+            <a href="php/login.php?redirect=search_tutors.php&lang=Korean" class="btn btn-main btn-sm mt-2">Find Tutor</a>
           </div>
         </div>
-
         <div class="carousel-card">
           <div class="carousel-card-inner">
-            <div class="img-box">
-            <img src="assets/img/malay.jpg"></div>
+            <div class="img-box"><img src="assets/img/malay.jpg" alt="Malay"></div>
             <h5>Malay</h5>
-            <a href="php/login.php?redirect=search_tutors.php&lang=English" class="btn btn-main btn-sm">Find Tutor</a>
+            <a href="php/login.php?redirect=search_tutors.php&lang=Malay" class="btn btn-main btn-sm mt-2">Find Tutor</a>
           </div>
         </div>
-
       </div>
-
-      <button class="nav-btn right" onclick="moveSlide(1)">❯</button>
-
+      <button class="nav-btn right" id="nextBtn" aria-label="Next">❯</button>
     </div>
-
   </div>
 </section>
 
+<!-- TUTORS SECTION -->
 <section id="tutor" class="tutor-section py-5">
   <div class="container">
-
     <div class="row align-items-center g-5">
-
       <div class="col-md-6">
         <div class="row g-3">
-
-          <div class="col-6">
-            <img src="assets/img/kl.jpg" class="img-fluid place-img">
-            <p class="text-center mt-2 fw-semibold">Kuala Lumpur Tutor</p>
-          </div>
-
-          <div class="col-6">
-            <img src="assets/img/penang.jpg" class="img-fluid place-img">
-            <p class="text-center mt-2 fw-semibold">Penang Tutor</p>
-          </div>
-
-          <div class="col-6">
-            <img src="assets/img/jb.jpg" class="img-fluid place-img">
-            <p class="text-center mt-2 fw-semibold">Johor Bahru Tutor</p>
-          </div>
-
-          <div class="col-6">
-            <img src="assets/img/kk.jpg" class="img-fluid place-img">
-            <p class="text-center mt-2 fw-semibold">Kota Kinabalu Tutor</p>
-          </div>
-
+          <div class="col-6"><img src="assets/img/kl.jpg" class="img-fluid place-img" alt="KL Tutor"><p class="text-center mt-2 fw-semibold">Kuala Lumpur Tutor</p></div>
+          <div class="col-6"><img src="assets/img/penang.jpg" class="img-fluid place-img" alt="Penang Tutor"><p class="text-center mt-2 fw-semibold">Penang Tutor</p></div>
+          <div class="col-6"><img src="assets/img/jb.jpg" class="img-fluid place-img" alt="JB Tutor"><p class="text-center mt-2 fw-semibold">Johor Bahru Tutor</p></div>
+          <div class="col-6"><img src="assets/img/kk.jpg" class="img-fluid place-img" alt="KK Tutor"><p class="text-center mt-2 fw-semibold">Kota Kinabalu Tutor</p></div>
         </div>
       </div>
       <div class="col-md-6">
-        <h2 class="fw-bold mb-3">
-          The best teachers in Malaysia available here
-        </h2>
-
-        <p class="text-muted mb-4">
-          Find the best local tutors from Kuala Lumpur, Penang, Johor Bahru and Kota Kinabalu.
-          With expert teachers nearby, quality learning is just a step away for every student.
-          Hire a tutor for in person or online tutoring.
-        </p>
-      <div class="d-flex gap-3 justify-content-center justify-content-md-start">
+        <h2 class="fw-bold mb-3">The best teachers in Malaysia available here</h2>
+        <p class="text-muted mb-4">Find the best local tutors from Kuala Lumpur, Penang, Johor Bahru and Kota Kinabalu. With expert teachers nearby, quality learning is just a step away for every student. Hire a tutor for in person or online tutoring.</p>
+        <div class="d-flex gap-3 justify-content-center justify-content-md-start">
           <a href="php/login.php?redirect=search_tutors.php" class="btn btn-main">Find a Tutor</a>
           <a href="php/signup.php" class="btn btn-outline">Register as a Tutor</a>
+        </div>
       </div>
-
-      </div>
-
     </div>
-
   </div>
 </section>
+
+<!-- HOW IT WORKS SECTION -->
 <section id="how-it-works" class="py-5 text-center">
   <div class="container">
-
     <h2 class="fw-bold mb-4">How It Works</h2>
-
     <div class="row g-4 mt-3">
-
-        <div class="col-md-3 col-6">
-        <div class="card-box h-100 position-relative">
-
-          <span class="step-badge">1</span>
-
-          <h5 class="mt-4">Search Language</h5>
-          <p class="text-muted">Select the language to be learned.</p>
-        </div>
-      </div>
-
-      <div class="col-md-3 col-6">
-        <div class="card-box h-100 position-relative">
-
-          <span class="step-badge">2</span>
-
-          <h5 class="mt-4">Choose Tutor</h5>
-          <p class="text-muted">Select a tutor based on profile and availability.</p>
-        </div>
-      </div>
-
-      <div class="col-md-3 col-6">
-        <div class="card-box h-100 position-relative">
-
-          <span class="step-badge">3</span>
-
-          <h5 class="mt-4">Book Session</h5>
-          <p class="text-muted">Select preferred date and time for the session.</p>
-        </div>
-      </div>
-
-      <div class="col-md-3 col-6">
-        <div class="card-box h-100 position-relative">
-
-          <span class="step-badge">4</span>
-
-          <h5 class="mt-4">Start Learning</h5>
-          <p class="text-muted">Attend the scheduled learning session.</p>
-        </div>
-      </div>
-
+      <div class="col-md-3 col-6"><div class="card-box h-100 position-relative"><span class="step-badge">1</span><h5 class="mt-4">Search Language</h5><p class="text-muted">Select the language to be learned.</p></div></div>
+      <div class="col-md-3 col-6"><div class="card-box h-100 position-relative"><span class="step-badge">2</span><h5 class="mt-4">Choose Tutor</h5><p class="text-muted">Select a tutor based on profile and availability.</p></div></div>
+      <div class="col-md-3 col-6"><div class="card-box h-100 position-relative"><span class="step-badge">3</span><h5 class="mt-4">Book Session</h5><p class="text-muted">Select preferred date and time for the session.</p></div></div>
+      <div class="col-md-3 col-6"><div class="card-box h-100 position-relative"><span class="step-badge">4</span><h5 class="mt-4">Start Learning</h5><p class="text-muted">Attend the scheduled learning session.</p></div></div>
     </div>
-
   </div>
 </section>
 
+<!-- ABOUT SECTION -->
 <section id="about" class="py-5 text-center">
   <div class="container">
-    
     <h2 class="fw-bold mb-4">About Kyoshi</h2>
-    <div class="row justify-content-center">
-      <div class="col-lg-8">
-
-        <p class="text-muted fs-5">
-          Kyoshi is a language tutor booking platform that connects students with certified tutors across Malaysia.
-          The system provides a structured approach for users to access learning services.
-        </p>
-
-      </div>
-    </div>
-
+    <div class="row justify-content-center"><div class="col-lg-8"><p class="text-muted fs-5">Kyoshi is a language tutor booking platform that connects students with certified tutors across Malaysia. The system provides a structured approach for users to access learning services.</p></div></div>
     <div class="row g-4 mt-4">
-
-      <div class="col-md-4">
-        <div class="card-box h-100">
-          <div class="mb-2"><img src="assets/img/teacher.png" alt="Teacher" style="width:40px; height:40px;"></div>
-          <h5>Verified Tutors</h5>
-          <p class="text-muted">All tutors undergo verification to ensure qualification standards.</p>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="card-box h-100">
-          <div class="mb-2"><img src="assets/img/booking.png" alt="Teacher" style="width:40px; height:40px;"></div>
-          <h5>Instant Booking</h5>
-          <p class="text-muted">Users can book tutors through a streamlined booking process.</p>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="card-box h-100">
-          <div class="mb-2"><img src="assets/img/learning.png" alt="Teacher" style="width:40px; height:40px;"></div>
-          <h5>Flexible Learning</h5>
-          <p class="text-muted">Supports both online and face-to-face learning sessions.</p>
-        </div>
-      </div>
-
+      <div class="col-md-4"><div class="card-box h-100"><div class="mb-2"><img src="assets/img/teacher.png" alt="Teacher" style="width:40px; height:40px;"></div><h5>Verified Tutors</h5><p class="text-muted">All tutors undergo verification to ensure qualification standards.</p></div></div>
+      <div class="col-md-4"><div class="card-box h-100"><div class="mb-2"><img src="assets/img/booking.png" alt="Booking" style="width:40px; height:40px;"></div><h5>Instant Booking</h5><p class="text-muted">Users can book tutors through a streamlined booking process.</p></div></div>
+      <div class="col-md-4"><div class="card-box h-100"><div class="mb-2"><img src="assets/img/learning.png" alt="Learning" style="width:40px; height:40px;"></div><h5>Flexible Learning</h5><p class="text-muted">Supports both online and face-to-face learning sessions.</p></div></div>
     </div>
-
   </div>
 </section>
 
 <footer class="py-5 text-center text-white" style="background:#0f172a;">
   <div class="container">
-
     <h5>Kyoshi Language Tutor Booking System</h5>
-    <p class="text-white-50">
-      A platform for connecting students with certified language tutors.
-    </p>
-
+    <p class="text-white-50">A platform for connecting students with certified language tutors.</p>
     <hr class="border-light">
-
     <p class="mb-0">© 2026 Kyoshi. All rights reserved.</p>
-
   </div>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/script.js"></script>
+<script>
+// ========== WORKING CAROUSEL WITH BUTTONS ==========
+let currentIndex = 0;
+let cardsPerView = 3;
+let cardWidth = 0;
+let gap = 24;
+
+function updateCardsPerView() {
+    if (window.innerWidth <= 767) {
+        cardsPerView = 1;
+    } else if (window.innerWidth <= 1023) {
+        cardsPerView = 2;
+    } else {
+        cardsPerView = 3;
+    }
+    return cardsPerView;
+}
+
+function updateCardWidth() {
+    const cards = document.querySelectorAll(".carousel-card");
+    if (cards.length > 0) {
+        cardWidth = cards[0].getBoundingClientRect().width;
+    }
+}
+
+function getActualGap() {
+    const track = document.getElementById("carouselTrack");
+    if (track) {
+        const computedStyle = getComputedStyle(track);
+        const gapValue = computedStyle.gap;
+        if (gapValue && gapValue !== 'normal') {
+            return parseFloat(gapValue);
+        }
+    }
+    return 24;
+}
+
+function moveSlide(direction) {
+    const track = document.getElementById("carouselTrack");
+    const cards = document.querySelectorAll(".carousel-card");
+    
+    if (!track || cards.length === 0) {
+        return;
+    }
+    
+    updateCardsPerView();
+    updateCardWidth();
+    gap = getActualGap();
+    
+    const totalCards = cards.length;
+    const maxIndex = Math.max(0, totalCards - cardsPerView);
+    
+    let newIndex = currentIndex + direction;
+    
+    if (newIndex < 0) newIndex = 0;
+    if (newIndex > maxIndex) newIndex = maxIndex;
+    
+    if (newIndex === currentIndex) return;
+    
+    currentIndex = newIndex;
+    
+    const scrollAmount = currentIndex * (cardWidth + gap);
+    
+    track.style.transform = `translateX(-${scrollAmount}px)`;
+    track.style.transition = "transform 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1)";
+}
+function requireLogin() {
+    if (confirm("You need to login or sign up first to book a tutor. Would you like to login now?")) {
+        window.location.href = "php/login.php?redirect=search_tutors.php";
+    }
+    return false;
+}
+// Attach button event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    const track = document.getElementById("carouselTrack");
+    if (track) {
+        track.style.display = "flex";
+        track.style.transition = "transform 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1)";
+        updateCardsPerView();
+        updateCardWidth();
+        gap = getActualGap();
+    }
+    
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    
+    if (prevBtn) {
+        prevBtn.addEventListener("click", function() {
+            moveSlide(-1);
+        });
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener("click", function() {
+            moveSlide(1);
+        });
+    }
+});
+
+// Reset on window resize
+window.addEventListener('resize', function() {
+    currentIndex = 0;
+    const track = document.getElementById("carouselTrack");
+    if (track) {
+        track.style.transform = "translateX(0px)";
+        track.style.transition = "none";
+        setTimeout(() => {
+            track.style.transition = "transform 0.4s ease";
+            updateCardsPerView();
+            updateCardWidth();
+            gap = getActualGap();
+        }, 50);
+    }
+});
+</script>
 </body>
 </html>

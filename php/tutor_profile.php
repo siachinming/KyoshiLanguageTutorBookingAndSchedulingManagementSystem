@@ -28,18 +28,20 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 $tutorID = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if (!$tutorID) { header("Location: find_language.php"); exit(); }
 
-// Get tutor info
 $stmt = $conn->prepare("
     SELECT u.id, u.fullname, u.profile_pic, u.phone,
            tp.experience, tp.rate, tp.bio, tp.language_certificate,
-           tp.qualification,
            ul.location,
            ROUND(AVG(r.rating), 1) as avg_rating,
-           COUNT(DISTINCT r.id) as review_count
+           COUNT(DISTINCT r.id) as review_count,
+           GROUP_CONCAT(DISTINCT tq.qualification_name SEPARATOR ' | ') as qualifications,
+           GROUP_CONCAT(DISTINCT tc.certificate_name SEPARATOR ' | ') as certificates
     FROM users u
     JOIN tutor_profiles tp ON u.id = tp.user_id
     LEFT JOIN user_locations ul ON u.id = ul.user_id AND ul.location_type = 'teaching'
     LEFT JOIN ratings r ON u.id = r.tutor_id
+    LEFT JOIN tutor_qualifications tq ON u.id = tq.tutor_id
+    LEFT JOIN tutor_certificates tc ON u.id = tc.tutor_id AND tc.status = 'approved'
     WHERE u.id = ? AND u.role = 'tutor' AND u.status = 'approved'
     GROUP BY u.id
 ");
@@ -349,16 +351,23 @@ if (!empty($tutor['phone'])) {
           </div>
           <?php endif; ?>
 
-          <!-- QUALIFICATION -->
-          <?php if($tutor['qualification']): ?>
-            <div class="section">
-                <p class="section-title">Qualification</p>
-                <div style="display:flex;align-items:center;gap:10px;padding:14px;border-radius:16px;background:rgba(221,244,227,.60);border:1px solid rgba(46,160,87,.18);">
-                    <i class="bi bi-patch-check-fill" style="color:#2E7042;font-size:22px;flex:0 0 auto;"></i>
-                    <span style="font-weight:700;color:#2E7042;font-size:14px;"><?= e($tutor['qualification']) ?></span>
+  
+<?php if(!empty($tutor['qualifications'])): ?>
+    <div class="section">
+        <p class="section-title">Qualifications</p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <?php 
+            $quals = explode(' | ', $tutor['qualifications']);
+            foreach($quals as $qual): 
+            ?>
+                <div style="display:flex;align-items:center;gap:10px;padding:12px;border-radius:16px;background:rgba(221,244,227,.60);border:1px solid rgba(46,160,87,.18);">
+                    <i class="bi bi-patch-check-fill" style="color:#2E7042;font-size:20px;flex:0 0 auto;"></i>
+                    <span style="font-weight:600;color:#2E7042;font-size:13px;"><?= e($qual) ?></span>
                 </div>
-            </div>
-          <?php endif; ?>
+            <?php endforeach; ?>
+        </div>
+    </div>
+<?php endif; ?>
 
           <!-- AVAILABILITY (from structured table) -->
           <?php if(!empty($availability)): ?>
@@ -462,10 +471,10 @@ if (!empty($tutor['phone'])) {
             <span>Rating</span>
             <span><?= $tutor['avg_rating'] ? e($tutor['avg_rating']).' / 5.0' : 'No reviews yet' ?></span>
           </div>
-          <?php if($tutor['qualification']): ?>
+          <?php if(!empty($tutor['qualifications'])): ?>
           <div class="info-row">
-            <span>Qualification</span>
-            <span><?= e($tutor['qualification']) ?></span>
+              <span>Qualifications</span>
+              <span><?= e(str_replace(' | ', ', ', $tutor['qualifications'])) ?></span>
           </div>
           <?php endif; ?>
           <?php if(!empty($availability)): ?>
