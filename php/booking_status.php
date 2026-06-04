@@ -154,10 +154,13 @@ $filterStatus  = $_GET['status'] ?? 'all';
 $filterDateFrom = isset($_GET['date_from']) && !empty($_GET['date_from']) ? $_GET['date_from'] : '';
 $filterDateTo   = isset($_GET['date_to']) && !empty($_GET['date_to']) ? $_GET['date_to'] : '';
 $sortBy = $_GET['sort'] ?? 'booked_newest';
+$filterLanguage = $_GET['language'] ?? 'all';
+$filterLearningMode = $_GET['learning_mode'] ?? 'all';
 
 $where = "WHERE b.student_id = ?";
 $params = [$userID];
 $types  = "i";
+
 if ($filterStatus !== 'all' && in_array($filterStatus, ['pending','accepted','confirmed','completed','cancelled','rescheduled','disputed'])) {
     $where .= " AND b.status = ?";
     $params[] = $filterStatus;
@@ -171,6 +174,18 @@ if ($filterDateFrom) {
 if ($filterDateTo) {
     $where .= " AND b.booking_date <= ?";
     $params[] = $filterDateTo;
+    $types .= "s";
+}
+// ADD LANGUAGE FILTER
+if ($filterLanguage !== 'all') {
+    $where .= " AND b.language = ?";
+    $params[] = $filterLanguage;
+    $types .= "s";
+}
+// ADD LEARNING MODE FILTER
+if ($filterLearningMode !== 'all') {
+    $where .= " AND b.learning_mode = ?";
+    $params[] = $filterLearningMode;
     $types .= "s";
 }
 
@@ -229,6 +244,27 @@ while ($row = $countResult->fetch_assoc()) {
     $counts['all'] += $row['cnt'];
 }
 
+// Get distinct languages for filter dropdown
+$langFilterStmt = $conn->prepare("
+    SELECT DISTINCT language 
+    FROM bookings 
+    WHERE student_id = ? 
+    ORDER BY language ASC
+");
+$langFilterStmt->bind_param("i", $userID);
+$langFilterStmt->execute();
+$availableLanguages = $langFilterStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Get distinct learning modes for filter dropdown
+$modeFilterStmt = $conn->prepare("
+    SELECT DISTINCT learning_mode 
+    FROM bookings 
+    WHERE student_id = ? 
+    ORDER BY learning_mode ASC
+");
+$modeFilterStmt->bind_param("i", $userID);
+$modeFilterStmt->execute();
+$availableModes = $modeFilterStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 function statusCfg($s) {
     $s = strtolower(trim($s));
@@ -583,10 +619,10 @@ function statusCfg($s) {
 </div>
 
     <!-- FILTER BAR -->
-    <form method="GET" class="filter-bar">
-        <div class="filter-group">
-            <label><i class="bi bi-funnel"></i> Status</label>
-            <select name="status" class="filter-select" onchange="this.form.submit()">
+<form method="GET" class="filter-bar">
+    <div class="filter-group">
+        <label><i class="bi bi-funnel"></i> Status</label>
+        <select name="status" class="filter-select" onchange="this.form.submit()">
             <option value="all" <?= $filterStatus==='all'?'selected':'' ?>>All (<?= $counts['all'] ?>)</option>
             <option value="pending"   <?= $filterStatus==='pending'?'selected':'' ?>>Pending (<?= $counts['pending'] ?>)</option>
             <option value="accepted" <?= $filterStatus==='accepted'?'selected':'' ?>>Accepted (<?= $counts['accepted'] ?>)</option>
@@ -595,51 +631,72 @@ function statusCfg($s) {
             <option value="rescheduled" <?= $filterStatus==='rescheduled'?'selected':'' ?>>Rescheduled (<?= $counts['rescheduled'] ?>)</option>
             <option value="disputed" <?= $filterStatus==='disputed'?'selected':'' ?>>Disputed (<?= $counts['disputed'] ?? 0 ?>)</option>
             <option value="cancelled" <?= $filterStatus==='cancelled'?'selected':'' ?>>Cancelled (<?= $counts['cancelled'] ?>)</option>
+        </select>
+    </div>
+    
+    <!-- NEW: Language Filter -->
+    <div class="filter-group">
+        <label><i class="bi bi-translate"></i> Language</label>
+        <select name="language" class="filter-select" onchange="this.form.submit()">
+            <option value="all" <?= $filterLanguage==='all'?'selected':'' ?>>All Languages</option>
+            <?php foreach ($availableLanguages as $lang): ?>
+                <option value="<?= e($lang['language']) ?>" <?= $filterLanguage===$lang['language']?'selected':'' ?>>
+                    <?= e($lang['language']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    
+    <!-- NEW: Learning Mode Filter -->
+    <div class="filter-group">
+        <label><i class="bi bi-laptop"></i> Learning Mode</label>
+        <select name="learning_mode" class="filter-select" onchange="this.form.submit()">
+            <option value="all" <?= $filterLearningMode==='all'?'selected':'' ?>>All Modes</option>
+            <?php foreach ($availableModes as $mode): ?>
+                <option value="<?= e($mode['learning_mode']) ?>" <?= $filterLearningMode===$mode['learning_mode']?'selected':'' ?>>
+                    <?= $mode['learning_mode'] === 'online' ? '💻 Online' : '🤝 Face to Face' ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    
+    <div class="filter-group">
+        <label><i class="bi bi-calendar3"></i> From</label>
+        <input type="date" name="date_from" class="filter-input" value="<?= e($_GET['date_from'] ?? '') ?>" onchange="this.form.submit()">
+    </div>
+    
+    <div class="filter-group">
+        <label><i class="bi bi-calendar3"></i> To</label>
+        <input type="date" name="date_to" class="filter-input" value="<?= e($_GET['date_to'] ?? '') ?>" onchange="this.form.submit()">
+    </div>
+    
+    <div class="filter-right">
+        <div class="filter-group">
+            <label><i class="bi bi-sort-down"></i> Sort By</label>
+            <select name="sort" class="filter-select" onchange="this.form.submit()">
+                <optgroup label="Booked On">
+                    <option value="booked_newest" <?= $sortBy==='booked_newest'?'selected':'' ?>>Newest Booking First</option>
+                    <option value="booked_oldest" <?= $sortBy==='booked_oldest'?'selected':'' ?>>Oldest Booking First</option>
+                </optgroup>
+                <optgroup label="Session Date">
+                    <option value="session_soonest" <?= $sortBy==='session_soonest'?'selected':'' ?>>Soonest Session First</option>
+                    <option value="session_latest"  <?= $sortBy==='session_latest'?'selected':'' ?>>Latest Session First</option>
+                </optgroup>
+                <optgroup label="Price">
+                    <option value="price_low"  <?= $sortBy==='price_low'?'selected':'' ?>>Lowest Price</option>
+                    <option value="price_high" <?= $sortBy==='price_high'?'selected':'' ?>>Highest Price</option>
+                </optgroup>
+                <optgroup label="Other">
+                    <option value="language" <?= $sortBy==='language'?'selected':'' ?>>Language A–Z</option>
+                </optgroup>
             </select>
         </div>
-        <div class="filter-group">
-            <label><i class="bi bi-calendar3"></i> From</label>
-            <input type="date" name="date_from" class="filter-input" value="<?= e($_GET['date_from'] ?? '') ?>" onchange="this.form.submit()">
-        </div>
-        <div class="filter-group">
-            <label><i class="bi bi-calendar3"></i> To</label>
-            <input type="date" name="date_to" class="filter-input" value="<?= e($_GET['date_to'] ?? '') ?>" onchange="this.form.submit()">
-        </div>
-        <div class="filter-right">
-    <?php if (
-        $filterStatus !== 'all' ||
-        !empty($_GET['date_from']) ||
-        !empty($_GET['date_to']) ||
-        $sortBy !== 'furthest'
-    ): ?>
-    <?php endif; ?>
-
-            <div class="filter-group">
-                <label><i class="bi bi-sort-down"></i> Sort By</label>
-                <select name="sort" class="filter-select" onchange="this.form.submit()">
-  <optgroup label="Booked On">
-    <option value="booked_newest" <?= $sortBy==='booked_newest'?'selected':'' ?>>Newest Booking First</option>
-    <option value="booked_oldest" <?= $sortBy==='booked_oldest'?'selected':'' ?>>Oldest Booking First</option>
-  </optgroup>
-  <optgroup label="Session Date">
-    <option value="session_soonest" <?= $sortBy==='session_soonest'?'selected':'' ?>>Soonest Session First</option>
-    <option value="session_latest"  <?= $sortBy==='session_latest'?'selected':'' ?>>Latest Session First</option>
-  </optgroup>
-  <optgroup label="Price">
-    <option value="price_low"  <?= $sortBy==='price_low'?'selected':'' ?>>Lowest Price</option>
-    <option value="price_high" <?= $sortBy==='price_high'?'selected':'' ?>>Highest Price</option>
-  </optgroup>
-  <optgroup label="Other">
-    <option value="language" <?= $sortBy==='language'?'selected':'' ?>>Language A–Z</option>
-  </optgroup>
-</select>
-            </div>
-
-        </div>
-                <a href="booking_status.php" class="btn-reset">
-            <i class="bi bi-x"></i> Reset
-        </a>
-        </form>
+    </div>
+    
+    <a href="booking_status.php" class="btn-reset">
+        <i class="bi bi-x"></i> Reset
+    </a>
+</form>
     <div id="bulkBar" style="display:none;position:sticky;top:90px;z-index:40;
   background:linear-gradient(135deg,#E75A9B,#F28AB2);border-radius:999px;
   padding:12px 20px;margin-bottom:16px;align-items:center;

@@ -33,7 +33,7 @@ $totalStudents = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 
 $pendingPayments = $conn->query("SELECT COUNT(*) as count FROM payments WHERE status = 'pending'")->fetch_assoc()['count'];
 $pendingDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'pending'")->fetch_assoc()['count'];
 $pendingPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests WHERE status = 'pending'")->fetch_assoc()['count'] ?? 0;
-
+$totalBookings = $conn->query("SELECT COUNT(*) as count FROM bookings")->fetch_assoc()['count'];
 // Get search and filter parameters
 $search = $_GET['search'] ?? '';
 $language_filter = $_GET['language'] ?? '';
@@ -129,14 +129,6 @@ function e($value) {
             overflow-x: hidden;
         }
 
-        .swal2-container {
-            z-index: 20000 !important;
-        }
-
-        .swal2-popup {
-            z-index: 20001 !important;
-        }
-        
         body::before {
             content: "";
             position: fixed;
@@ -146,64 +138,108 @@ function e($value) {
             z-index: -1;
         }
 
+        /* ========== SIDEBAR STYLES ========== */
         .sidebar {
             position: fixed;
             left: 0;
             top: 0;
-            width: 260px;
+            width: 230px;
             height: 100vh;
             background: #272754;
             color: #E8E4F0;
-            overflow-y: auto;
+            overflow-y: hidden;
             z-index: 1000;
             transition: transform 0.3s ease;
+            transform: translateX(0);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar.closed {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar-header {
+            padding: 28px 20px;
+            flex-shrink: 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .brand-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+        }
+
+        .brand-title {
             display: flex;
             flex-direction: column;
         }
 
-        .qualification-panel-step2 {
-    background: #f8fafc;
-    border-radius: 20px;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    max-height: 500px;
-    overflow-y: auto;
-}
+        .brand-title h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff, #B26EA7);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            margin: 0;
+            line-height: 1.2;
+        }
 
-#qualificationsList {
-    margin-bottom: 15px;
-    flex: 1;
-}
-
-.qual-textarea-single {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    font-family: inherit;
-    font-size: 0.8rem;
-    resize: vertical;
-    min-height: 60px;
-}
-
-.step2-action-buttons-horizontal {
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    margin-top: 20px;
-    padding: 10px 0;
-    position: sticky;
-    bottom: 0;
-    background: #f8fafc;
-}
+        .admin-space-text {
+            font-size: 0.6rem;
+            color: #e7c7f7;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
         
-        .sidebar.closed { transform: translateX(-100%); }
+        .nav-menu {
+            padding: 16px 0;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
         
-        .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .nav-menu { flex: 1; padding: 16px 0; }
-        .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.15); display: flex; justify-content: space-between; align-items: center; }
+        .nav-menu::-webkit-scrollbar {
+            width: 3px;
+        }
+        
+        .nav-menu::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .nav-menu::-webkit-scrollbar-thumb {
+            background: #B26EA7;
+            border-radius: 3px;
+        }
+        
+        .nav-section {
+            margin-bottom: 8px;
+        }
+        
+        .nav-section-label {
+            padding: 12px 20px 6px 20px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: #B26EA7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .nav-section-label i {
+            font-size: 0.7rem;
+            color: #B26EA7;
+        }
         
         .nav-item {
             padding: 10px 20px;
@@ -212,23 +248,25 @@ function e($value) {
             gap: 12px;
             color: #D4CFE8;
             text-decoration: none;
+            transition: all 0.2s;
             border-left: 3px solid transparent;
             font-size: 0.85rem;
         }
         
-        .nav-item:hover, .nav-item.active {
+        .nav-item:hover {
+            background: rgba(255,255,255,0.08);
+            color: white;
+        }
+        
+        .nav-item.active {
             background: rgba(255,255,255,0.1);
             border-left-color: #B26EA7;
             color: white;
         }
         
-        .nav-item i { width: 20px; }
-        .nav-section-label {
-            padding: 10px 20px 4px 20px;
-            font-size: 0.65rem;
-            font-weight: 600;
-            color: #B26EA7;
-            text-transform: uppercase;
+        .nav-item i {
+            width: 20px;
+            font-size: 1.1rem;
         }
         
         .nav-badge {
@@ -237,13 +275,110 @@ function e($value) {
             background: rgba(178, 110, 167, 0.25);
             padding: 2px 8px;
             border-radius: 30px;
+            color: #D4CFE8;
+            font-weight: 600;
         }
-        .nav-badge.pending { background: rgba(245, 158, 11, 0.25); color: #F59E0B; }
         
+        .nav-badge.pending {
+            background: rgba(245, 158, 11, 0.25);
+            color: #F59E0B;
+        }
+        
+        .nav-badge.dispute {
+            background: rgba(220, 38, 38, 0.25);
+            color: #FFA3A3;
+        }
+        
+        .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid rgba(255,255,255,0.15);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        
+        .admin-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .footer-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        
+        .admin-details {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .admin-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .logout-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: rgba(220, 38, 38, 0.15);
+            border-radius: 10px;
+            color: #FFA3A3;
+            text-decoration: none;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        
+        .logout-icon:hover {
+            background: rgba(220, 38, 38, 0.4);
+            color: white;
+            transform: scale(1.05);
+        }
+        
+        .logout-icon i {
+            font-size: 1.2rem;
+        }
+        
+        /* ========== MAIN CONTENT STYLES ========== */
         .main-content {
-            margin-left: 260px;
+            margin-left: 230px;
             padding: 20px 24px;
             transition: margin-left 0.3s ease;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        
+        .main-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .main-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        .main-content::-webkit-scrollbar-thumb {
+            background: #E75A9B;
+            border-radius: 10px;
+        }
+        
+        .main-content::-webkit-scrollbar-thumb:hover {
+            background: #C94F86;
         }
         
         .top-bar {
@@ -254,8 +389,8 @@ function e($value) {
         }
         
         .page-title h1 {
-            font-size: 1.5rem;
-            font-weight: 800;
+            font-size: 1.4rem;
+            font-weight: 700;
             color: #302E63;
         }
         
@@ -280,20 +415,22 @@ function e($value) {
             border: 1px solid #E4DCF0;
         }
         
-        .admin-profile img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
-        .admin-profile span { font-weight: 600; font-size: 0.8rem; color: #302E63; }
+        .admin-profile img { 
+            width: 36px; 
+            height: 36px; 
+            border-radius: 50%; 
+            object-fit: cover; 
+        }
         
-        .admin-info { display: flex; align-items: center; gap: 10px; }
-        .footer-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
-        .admin-name { font-size: 0.75rem; font-weight: 600; color: white; }
-        .logout-icon { color: #FFA3A3; text-decoration: none; font-size: 1.2rem; }
+        .admin-profile span { 
+            font-weight: 600; 
+            font-size: 0.8rem; 
+            color: #302E63; 
+        }
         
-        .brand-wrapper { display: flex; align-items: center; gap: 10px; }
-        .brand-icon { width: 40px; height: 40px; object-fit: contain; }
-        .brand-title h1 { font-size: 1.2rem; color: white; }
-        .admin-space-text { font-size: 0.5rem; color: #e7c7f7; }
-        
-        .relative { position: relative; }
+        .relative { 
+            position: relative; 
+        }
         
         .dropdown {
             position: absolute;
@@ -317,8 +454,15 @@ function e($value) {
             color: #1E1B2E;
             font-size: 12px;
         }
-        .dropdown a:hover { background: #F4F0F8; }
-        .dropdown hr { margin: 0; border-color: #E4DCF0; }
+        
+        .dropdown a:hover { 
+            background: #F4F0F8; 
+        }
+        
+        .dropdown hr { 
+            margin: 0; 
+            border-color: #E4DCF0; 
+        }
         
         .sidebar-overlay {
             position: fixed;
@@ -330,15 +474,12 @@ function e($value) {
             z-index: 999;
             display: none;
         }
-        .sidebar-overlay.active { display: block; }
         
-        .step2-action-buttons-horizontal {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-top: 20px;
+        .sidebar-overlay.active { 
+            display: block; 
         }
-        /* Search & Filter Bar */
+        
+        /* ========== FILTER BAR ========== */
         .filter-bar {
             background: white;
             border-radius: 16px;
@@ -362,7 +503,10 @@ function e($value) {
             border: 1px solid #e2e8f0;
         }
         
-        .search-box i { color: #94a3b8; }
+        .search-box i { 
+            color: #94a3b8; 
+        }
+        
         .search-box input {
             border: none;
             background: transparent;
@@ -397,16 +541,18 @@ function e($value) {
             background: #64748b;
         }
         
+        /* ========== TABLE STYLES ========== */
         .tutors-table-container {
             background: white;
             border-radius: 20px;
-            overflow: hidden;
+            overflow-x: auto;
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
         
         table {
             width: 100%;
             border-collapse: collapse;
+            min-width: 800px;
         }
         
         th {
@@ -427,7 +573,9 @@ function e($value) {
             vertical-align: middle;
         }
         
-        tr:hover { background: #fef9f5; }
+        tr:hover { 
+            background: #fef9f5; 
+        }
         
         .has-cert {
             background: #E0F2FE;
@@ -462,7 +610,7 @@ function e($value) {
             margin-bottom: 20px;
         }
         
-        /* STEP MODAL */
+        /* ========== MODAL STYLES ========== */
         .step-modal {
             display: none;
             position: fixed;
@@ -471,7 +619,7 @@ function e($value) {
             width: 100%;
             height: 100%;
             background: rgba(0,0,0,0.8);
-            z-index: 1000 !important;
+            z-index: 1000;
             align-items: center;
             justify-content: center;
         }
@@ -487,17 +635,6 @@ function e($value) {
             flex-direction: column;
             position: relative;
             z-index: 10000;
-        }
-
-        /* Make sure close button is visible */
-        .close-modal {
-            background: none;
-            border: none;
-            font-size: 28px;
-            cursor: pointer;
-            color: #94a3b8;
-            z-index: 10001;
-            position: relative;
         }
         
         .modal-header {
@@ -523,91 +660,91 @@ function e($value) {
             color: #94a3b8;
         }
         
-       /* Step indicator with navigation arrows */
-.step-indicator {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 28px;
-    background: #f8fafc;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-.step-nav-btn {
-    background: #E75A9B;
-    color: white;
-    border: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-}
-
-.step-nav-btn:hover {
-    background: #C94F86;
-    transform: scale(1.05);
-}
-
-.step-nav-btn:disabled {
-    background: #cbd5e1;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.steps-wrapper {
-    display: flex;
-    gap: 30px;
-}
-
-/* Base step style */
-.step {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: #94a3b8;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-/* Step number base */
-.step .step-number {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: #e2e8f0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    transition: all 0.2s;
-}
-
-/* ACTIVE step - PINK (highest priority) */
-.step.active {
-    color: #E75A9B;
-}
-
-.step.active .step-number {
-    background: #E75A9B !important;
-    color: white;
-}
-
-/* COMPLETED step - GREEN */
-.step.completed {
-    color: #28a745;
-}
-
-.step.completed .step-number {
-    background: #28a745 !important;
-    color: white;
-}
+        .step-indicator {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 28px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
         
-        /* STEP 1 - Profile Layout */
+        .step-nav-btn {
+            background: #E75A9B;
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        
+        .step-nav-btn:hover {
+            background: #C94F86;
+            transform: scale(1.05);
+        }
+        
+        .step-nav-btn:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .steps-wrapper {
+            display: flex;
+            gap: 30px;
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        .step .step-number {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            transition: all 0.2s;
+        }
+        
+        .step.active {
+            color: #E75A9B;
+        }
+        
+        .step.active .step-number {
+            background: #E75A9B !important;
+            color: white;
+        }
+        
+        .step.completed {
+            color: #28a745;
+        }
+        
+        .step.completed .step-number {
+            background: #28a745 !important;
+            color: white;
+        }
+        
+        .step-body {
+            padding: 28px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        
         .profile-split {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -657,13 +794,6 @@ function e($value) {
             font-size: 0.85rem;
         }
         
-        .languages-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 5px;
-        }
-        
         .lang-tag {
             background: #e0f2fe;
             color: #0284c7;
@@ -671,17 +801,15 @@ function e($value) {
             border-radius: 20px;
             font-size: 0.7rem;
             font-weight: 600;
+            display: inline-block;
+            margin: 2px;
         }
         
         .step-buttons {
             display: flex;
             justify-content: space-between;
             margin-top: 30px;
-            margin-bottom: 20px;  
-            margin-left:10px;
-            margin-right:10px;
             gap: 15px;
-            padding-bottom: 10px;  
         }
         
         .btn-next {
@@ -704,23 +832,21 @@ function e($value) {
             font-weight: 700;
         }
         
-        /* STEP 2 - Certificates + Qualification */
         .step2-split {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 30px;
+            align-items: stretch;
         }
         
-        .cert-panel-step2 {
+        .cert-panel-step2, .qualification-panel-step2 {
             background: #f8fafc;
             border-radius: 20px;
             padding: 20px;
-        }
-        
-        .qualification-panel-step2 {
-            background: #f8fafc;
-            border-radius: 20px;
-            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 500px;
         }
         
         .cert-viewer-step2 {
@@ -728,11 +854,12 @@ function e($value) {
             border-radius: 16px;
             padding: 20px;
             text-align: center;
-            min-height: 300px;
+            flex: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            min-height: 350px;
         }
         
         .cert-image-step2 {
@@ -742,10 +869,6 @@ function e($value) {
             margin-bottom: 15px;
             cursor: pointer;
             transition: transform 0.2s;
-        }
-        
-        .cert-image-step2:hover {
-            transform: scale(1.02);
         }
         
         .cert-nav-step2 {
@@ -771,26 +894,29 @@ function e($value) {
             cursor: not-allowed;
         }
         
-        .qual-textarea {
+        .qual-textarea-single {
             width: 100%;
             padding: 12px;
             border: 1px solid #e2e8f0;
             border-radius: 12px;
             font-family: inherit;
             font-size: 0.8rem;
-            min-height: 200px;
             resize: vertical;
+            min-height: 60px;
+        }
+        
+        .btn-add-qualification {
+            background: #e0f2fe;
+            color: #0284c7;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 30px;
+            cursor: pointer;
             margin-bottom: 20px;
+            width: 100%;
         }
         
-        .step2-action-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            justify-content: center;
-        }
-        
-        .btn-approve-step2 {
+        .btn-approve-step2-horizontal {
             background: #28a745;
             color: white;
             border: none;
@@ -799,9 +925,10 @@ function e($value) {
             cursor: pointer;
             font-weight: 700;
             width: auto;
+            min-width: 160px;
         }
         
-        .btn-reject-step2 {
+        .btn-reject-step2-horizontal {
             background: #dc3545;
             color: white;
             border: none;
@@ -810,20 +937,16 @@ function e($value) {
             cursor: pointer;
             font-weight: 700;
             width: auto;
+            min-width: 160px;
         }
         
-        .btn-back-step2 {
-            background: #64748b;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 40px;
-            cursor: pointer;
-            font-weight: 700;
-            width: 100%;
+        .step2-action-buttons-horizontal {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
         }
         
-        /* Image Enlarge Modal */
         .image-modal {
             display: none;
             position: fixed;
@@ -852,109 +975,47 @@ function e($value) {
             font-size: 40px;
             cursor: pointer;
         }
-
-        /* Equal height panels */
-.step2-split {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            align-items: stretch;
-        }
-
-        .cert-panel-step2, .qualification-panel-step2 {
-            background: #f8fafc;
-            border-radius: 20px;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            min-height: 500px;
-        }
-
-        .cert-viewer-step2 {
-            background: white;
-            border-radius: 16px;
-            padding: 20px;
-            text-align: center;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 350px;
-        }
-
-        .qualification-panel-step2 form {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
-
-        .qual-textarea-single {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            font-family: inherit;
-            font-size: 0.8rem;
-            resize: vertical;
-        }
-
-        .qual-textarea-single:focus {
-            outline: none;
-            border-color: #E75A9B;
-        }
-
-        .btn-add-qualification:hover {
-            background: #b8e0ff;
-        }
-
-        .qual-textarea {
-            flex: 1;
-            min-height: 250px;
-        }
-
-      .btn-approve-step2-horizontal {
-            background: #28a745;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 40px;
-            cursor: pointer;
-            font-weight: 700;
-            width: auto;
-            min-width: 160px;
-        }
-
-        .btn-reject-step2-horizontal {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 40px;
-            cursor: pointer;
-            font-weight: 700;
-            width: auto;
-            min-width: 160px;
-        }
-
-        .btn-reject-step2-horizontal:hover {
-            background: #c64d59;
-        }
-
-        .btn-approve-step2-horizontal:hover {
-            background: #449255;
-        }
         
-        @media (max-width: 900px) {
-            .main-content { margin-left: 0; padding: 16px; }
-            .menu-toggle { display: block; }
-            .sidebar { transform: translateX(-100%); }
-            .sidebar.open { transform: translateX(0); }
-            .filter-bar { flex-direction: column; align-items: stretch; }
-            .tutors-table-container { overflow-x: auto; }
-            table { min-width: 800px; }
-            .profile-split, .step2-split { grid-template-columns: 1fr; }
+        /* ========== RESPONSIVE ========== */
+        @media (max-width: 768px) {
+            .menu-toggle {
+                display: block;
+            }
+            
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 16px;
+            }
+            
+            .filter-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .profile-split, .step2-split {
+                grid-template-columns: 1fr;
+            }
+            
+            .brand-icon {
+                width: 38px;
+                height: 38px;
+            }
+            
+            .brand-title h1 {
+                font-size: 1.1rem;
+            }
+            
+            .sidebar-header {
+                padding: 20px 16px;
+            }
         }
     </style>
 </head>
@@ -973,13 +1034,11 @@ function e($value) {
     </div>
     <nav class="nav-menu">
         <div class="nav-section">
-            <div class="nav-section-label">MAIN</div>
             <a href="admin_dashboard.php" class="nav-item"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
         </div>
         <div class="nav-section">
             <div class="nav-section-label">USERS</div>
-            <a href="admin_tutors.php" class="nav-item"><i class="bi bi-person-badge"></i><span>Tutors</span><span class="nav-badge"><?= $totalTutors ?></span></a>
-            <a href="admin_verify_tutors.php" class="nav-item active"><i class="bi bi-person-check"></i><span>Verify Tutors</span></a>
+            <a href="admin_tutor_actions.php" class="nav-item active"><i class="bi bi-person-badge"></i><span>Tutors</span><span class="nav-badge"><?= $totalTutors ?></span></a>
             <a href="admin_students.php" class="nav-item"><i class="bi bi-person"></i><span>Students</span><span class="nav-badge"><?= $totalStudents ?></span></a>
         </div>
         <div class="nav-section">
@@ -989,7 +1048,7 @@ function e($value) {
         </div>
         <div class="nav-section">
             <div class="nav-section-label">BOOKINGS</div>
-            <a href="admin_bookings.php" class="nav-item"><i class="bi bi-calendar-check"></i><span>Bookings</span></a>
+            <a href="admin_bookings.php" class="nav-item"><i class="bi bi-calendar-check"></i><span>Bookings</span><span class="nav-badge"><?= $totalBookings ?></span></a>
             <a href="admin_disputes.php" class="nav-item"><i class="bi bi-flag"></i><span>Disputes</span><span class="nav-badge pending"><?= $pendingDisputes ?></span></a>
         </div>
         <div class="nav-section">

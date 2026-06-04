@@ -2268,7 +2268,7 @@ function checkExpiringRequests() {
             if (daysUntil === 0) {
                 row.style.background = '#fef2f2';
                 const warningSpan = document.createElement('span');
-                warningSpan.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; background: #dc2626; color: white; padding: 2px 8px; border-radius: 20px; font-size: 10px;';
+                warningSpan.style.cssText = 'display: inline-flex; align-items: center; gap: 4px;margin-top:10px; background: #dc2626; color: white; padding: 2px 8px; border-radius: 20px; font-size: 10px;';
                 warningSpan.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Expires tonight!';
                 const actionsCell = row.querySelector('td:last-child');
                 if (actionsCell && !row.querySelector('.expiry-warning')) {

@@ -98,7 +98,7 @@ $assetBase = '../assets/img';
     </div>
     
     <div class="report-section">
-        <h3><i class="bi bi-graph-up"></i> Student Progress</h3>
+        <h3><i class="bi bi-graph-up"></i> Student Progress (FEEDBACK )</h3>
         <p><?= nl2br(htmlspecialchars($report['student_progress'])) ?></p>
     </div>
     

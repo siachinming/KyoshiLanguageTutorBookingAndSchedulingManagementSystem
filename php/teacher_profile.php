@@ -279,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
     header("Location: teacher_profile.php");
     exit();
-}// SAVE/ADD Bank Account (WITH DUPLICATE CHECK)
+}
 if ($_POST['action'] === 'save_bank') {
     $bankId = intval($_POST['bank_id'] ?? 0);
     $bankName = trim($_POST['bank_name'] ?? '');
@@ -292,58 +292,135 @@ if ($_POST['action'] === 'save_bank') {
     if (empty($bankAccountName)) $errors[] = "Account holder name is required";
     
     if (empty($errors)) {
-        // CHECK FOR DUPLICATE (same account number)
-        $dupStmt = $conn->prepare("
-            SELECT id FROM tutor_bank_details 
-            WHERE tutor_id = ? AND bank_account_number = ? AND id != ?
-        ");
-        $dupStmt->bind_param("isi", $userID, $bankAccountNumber, $bankId);
-        $dupStmt->execute();
-        $duplicate = $dupStmt->get_result()->fetch_assoc();
+        // Get current account details if editing
+        $currentData = null;
+        $accountNumberChanged = true;
+        $nameChanged = true;
+        $bankNameChanged = true;
         
-        if ($duplicate) {
-            $_SESSION['error_message'] = "This bank account number already exists! Please use a different account.";
+        if ($bankId > 0) {
+            $currentStmt = $conn->prepare("SELECT bank_name, bank_account_number, bank_account_name FROM tutor_bank_details WHERE id = ? AND tutor_id = ?");
+            $currentStmt->bind_param("ii", $bankId, $userID);
+            $currentStmt->execute();
+            $currentData = $currentStmt->get_result()->fetch_assoc();
+            
+            if ($currentData) {
+                // Check what changed
+                $accountNumberChanged = ($currentData['bank_account_number'] !== $bankAccountNumber);
+                $nameChanged = ($currentData['bank_account_name'] !== $bankAccountName);
+                $bankNameChanged = ($currentData['bank_name'] !== $bankName);
+            }
+        }
+        
+        // If nothing changed, show message and exit
+        if ($bankId > 0 && !$accountNumberChanged && !$nameChanged && !$bankNameChanged) {
+            $_SESSION['success_message'] = 'No changes were made to your bank account.';
             header("Location: teacher_profile.php");
             exit();
         }
         
+        // ========== FIXED: ALWAYS CHECK FOR DUPLICATE WHEN EDITING ==========
+        // Check for duplicate account number (even if same number, check if other accounts have it)
+        $duplicate = false;
+        
+        if ($bankId > 0) {
+            // When editing: check if ANY OTHER account has this number (including if unchanged)
+            $dupStmt = $conn->prepare("
+                SELECT id FROM tutor_bank_details 
+                WHERE tutor_id = ? AND bank_account_number = ? AND id != ?
+            ");
+            $dupStmt->bind_param("isi", $userID, $bankAccountNumber, $bankId);
+        } else {
+            // Adding new account - check if any account has this number
+            $dupStmt = $conn->prepare("
+                SELECT id FROM tutor_bank_details 
+                WHERE tutor_id = ? AND bank_account_number = ?
+            ");
+            $dupStmt->bind_param("is", $userID, $bankAccountNumber);
+        }
+        
+        $dupStmt->execute();
+        $duplicate = $dupStmt->get_result()->fetch_assoc();
+        
+        if ($duplicate) {
+            $_SESSION['error_message'] = "This bank account number already exists! Please use a different account number.";
+            header("Location: teacher_profile.php");
+            exit();
+        }
+        
+        // Get current count of bank accounts
         $checkCount = $conn->prepare("SELECT COUNT(*) as count FROM tutor_bank_details WHERE tutor_id = ?");
         $checkCount->bind_param("i", $userID);
         $checkCount->execute();
-        $count = $checkCount->get_result()->fetch_assoc()['count'];
+        $countResult = $checkCount->get_result()->fetch_assoc();
+        $count = $countResult['count'];
         
         if ($bankId > 0) {
-            // Update existing
-            $stmt = $conn->prepare("
-                UPDATE tutor_bank_details SET 
-                    bank_name = ?, bank_account_number = ?, bank_account_name = ? 
-                WHERE id = ? AND tutor_id = ?
-            ");
-            $stmt->bind_param("sssii", $bankName, $bankAccountNumber, $bankAccountName, $bankId, $userID);
+            // UPDATE existing bank account - only update changed fields
+            $updateFields = [];
+            $params = [];
+            $types = "";
+            
+            if ($bankNameChanged) {
+                $updateFields[] = "bank_name = ?";
+                $params[] = $bankName;
+                $types .= "s";
+            }
+            if ($accountNumberChanged) {
+                $updateFields[] = "bank_account_number = ?";
+                $params[] = $bankAccountNumber;
+                $types .= "s";
+            }
+            if ($nameChanged) {
+                $updateFields[] = "bank_account_name = ?";
+                $params[] = $bankAccountName;
+                $types .= "s";
+            }
+            
+            if (!empty($updateFields)) {
+                $params[] = $bankId;
+                $params[] = $userID;
+                $types .= "ii";
+                
+                $sql = "UPDATE tutor_bank_details SET " . implode(", ", $updateFields) . " WHERE id = ? AND tutor_id = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param($types, ...$params);
+                
+                if ($stmt->execute()) {
+                    $_SESSION['success_message'] = 'Bank details updated successfully!';
+                } else {
+                    $_SESSION['error_message'] = 'Error updating bank details: ' . $conn->error;
+                }
+            } else {
+                $_SESSION['success_message'] = 'No changes were made to your bank account.';
+            }
         } else {
-            // Check limit (max 3)
+            // INSERT new bank account
             if ($count >= 3) {
                 $_SESSION['error_message'] = "Maximum 3 bank accounts allowed.";
                 header("Location: teacher_profile.php");
                 exit();
             }
-            // First account becomes default
+            
             $isDefault = ($count == 0) ? 1 : 0;
             $stmt = $conn->prepare("
                 INSERT INTO tutor_bank_details (tutor_id, bank_name, bank_account_number, bank_account_name, is_default) 
                 VALUES (?, ?, ?, ?, ?)
             ");
             $stmt->bind_param("isssi", $userID, $bankName, $bankAccountNumber, $bankAccountName, $isDefault);
+            
+            if ($stmt->execute()) {
+                $_SESSION['success_message'] = 'Bank account added successfully!';
+            } else {
+                $_SESSION['error_message'] = 'Error adding bank account: ' . $conn->error;
+            }
         }
         
-        if ($stmt->execute()) {
-            $_SESSION['success_message'] = $bankId > 0 ? 'Bank details updated!' : 'Bank account added!';
-        } else {
-            $_SESSION['error_message'] = 'Error saving bank details.';
-        }
+        if (isset($stmt)) $stmt->close();
     } else {
         $_SESSION['error_message'] = implode(", ", $errors);
     }
+    
     header("Location: teacher_profile.php");
     exit();
 }
@@ -501,7 +578,6 @@ if ($_POST['action'] === 'upload_profile_pic') {
     echo json_encode(['success' => false, 'error' => 'No file uploaded.']);
     exit();
 }
-    
    if ($_POST['action'] === 'deactivate_account') {
     $reason = $_POST['deactivation_reason'] ?? '';
     
@@ -531,8 +607,8 @@ if ($_POST['action'] === 'upload_profile_pic') {
     $cancelPending = $conn->prepare("
         UPDATE bookings 
         SET status = 'cancelled', 
-            cancellation_reason = 'Tutor account deactivated',
-            cancelled_at = NOW()
+            cancel_reason = 'Tutor account deactivated',
+            cancelled_by = 'tutor'
         WHERE tutor_id = ? 
         AND status = 'pending'
         AND booking_date >= CURDATE()
@@ -551,7 +627,7 @@ if ($_POST['action'] === 'upload_profile_pic') {
     if ($cancelledCount > 0) {
         $getStudents = $conn->prepare("
             SELECT DISTINCT student_id FROM bookings 
-            WHERE tutor_id = ? AND status = 'cancelled' AND cancellation_reason = 'Tutor account deactivated'
+            WHERE tutor_id = ? AND status = 'cancelled' AND cancel_reason = 'Tutor account deactivated'
         ");
         $getStudents->bind_param("i", $userID);
         $getStudents->execute();
@@ -2010,13 +2086,10 @@ function openBankModal() {
 }
 
 function editBankAccount(bankId) {
-    // First get the bank details from the existing data in the table
-    // Since we already have bankAccounts array in PHP, we need to pass it to JS
-    // Alternative: fetch via AJAX
     fetch(`get_bank_details.php?id=${bankId}`)
         .then(response => response.json())
         .then(data => {
-            if (data) {
+            if (data && !data.error) {
                 document.getElementById('modalTitle').innerHTML = '<i class="bi bi-bank2"></i> Edit Bank Account';
                 document.getElementById('bank_id').value = data.id;
                 document.getElementById('bank_name').value = data.bank_name;
@@ -2024,9 +2097,12 @@ function editBankAccount(bankId) {
                 document.getElementById('bank_account_name').value = data.bank_account_name;
                 document.getElementById('bankModal').style.display = 'block';
                 document.body.style.overflow = 'hidden';
+            } else {
+                showToast(data?.error || 'Error loading bank details', 'error');
             }
         })
         .catch(error => {
+            console.error('Error:', error);
             showToast('Error loading bank details', 'error');
         });
 }

@@ -31,6 +31,7 @@ $profilePic = !empty($admin['profile_pic'])
 $pendingTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor' AND status = 'pending'")->fetch_assoc()['count'];
 $totalTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor'")->fetch_assoc()['count'];
 $totalStudents = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'student'")->fetch_assoc()['count'];
+$totalBookings = $conn->query("SELECT COUNT(*) as count FROM bookings")->fetch_assoc()['count'];
 $pendingPayments = $conn->query("SELECT COUNT(*) as count FROM payments WHERE status = 'pending'")->fetch_assoc()['count'];
 $pendingDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'pending'")->fetch_assoc()['count'];
 $pendingPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests WHERE status = 'pending'")->fetch_assoc()['count'] ?? 0;
@@ -41,8 +42,30 @@ $pendingQualifications = $conn->query("
     WHERE tc.status = 'pending' 
     AND u.status = 'approved'  -- Only show from approved tutors
 ")->fetch_assoc()['count'];
+// Get total reviews count
 $totalReviews = $conn->query("SELECT COUNT(*) as count FROM ratings")->fetch_assoc()['count'];
 
+// Track admin's last view of reviews page
+if (!isset($_SESSION['reviews_viewed'])) {
+    $_SESSION['reviews_viewed'] = false;
+}
+
+// Get last time admin viewed the reviews page
+$lastViewTime = $_SESSION['last_reviews_view_time'] ?? date('Y-m-d H:i:s', strtotime('-1 day'));
+
+// Count NEW reviews since last view
+$newReviewsStmt = $conn->prepare("SELECT COUNT(*) as count FROM ratings WHERE created_at > ?");
+$newReviewsStmt->bind_param("s", $lastViewTime);
+$newReviewsStmt->execute();
+$newReviewsCount = $newReviewsStmt->get_result()->fetch_assoc()['count'];
+
+// Check if we're on the reviews page to update last view time
+if (basename($_SERVER['PHP_SELF']) == 'admin_tutor_actions.php') {
+    // Only show badge if there are new reviews
+    $showReviewBadge = ($newReviewsCount > 0);
+} else {
+    $showReviewBadge = ($totalReviews > 0);
+}
 function e($value) {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
@@ -56,11 +79,11 @@ function e($value) {
     <title>Kyoshi | Tutor Actions</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&family=Open+Sans&display=swap" rel="stylesheet">
-    <style>
+        <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: "Montserrat", "Open Sans", sans-serif;
+            font-family: 'Montserrat', 'Open Sans', sans-serif;
             background: url('../assets/img/background3.jpg') no-repeat center top;
             background-size: cover;
             min-height: 100vh;
@@ -80,20 +103,20 @@ function e($value) {
                         radial-gradient(circle at 90% 8%, rgba(255,195,216,.42), transparent 26%);
         }
 
-       
+        /* ========== SIDEBAR STYLES ========== */
         .sidebar {
             position: fixed;
             left: 0;
             top: 0;
             width: 230px;
-            height: 100%;
+            height: 100vh;
             background: #272754;
             color: #E8E4F0;
-            overflow-y: auto;
+            overflow-y: hidden;
             z-index: 1000;
             transition: transform 0.3s ease;
             transform: translateX(0);
-            display:flex;
+            display: flex;
             flex-direction: column;
         }
         
@@ -107,20 +130,80 @@ function e($value) {
             border-bottom: 1px solid rgba(255,255,255,0.1);
         }
         
-        
-        .sidebar-header p {
-            font-size: 0.65rem;
-            color: rgba(255,255,255,0.5);
-            margin-top: 4px;
+        .brand-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+        }
+
+        .brand-title {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-title h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff, #B26EA7);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .admin-space-text {
+            font-size: 0.6rem;
+            color: #e7c7f7;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
         }
         
         .nav-menu {
             padding: 16px 0;
-            flex:1;
-            justify-content: center;
-            flex-direction: column;
-            display:flex;
-            min-height:0;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        
+        .nav-menu::-webkit-scrollbar {
+            width: 3px;
+        }
+        
+        .nav-menu::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .nav-menu::-webkit-scrollbar-thumb {
+            background: #B26EA7;
+            border-radius: 3px;
+        }
+        
+        .nav-section {
+            margin-bottom: 8px;
+        }
+        
+        .nav-section-label {
+            padding: 12px 20px 6px 20px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: #B26EA7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .nav-section-label i {
+            font-size: 0.7rem;
+            color: #B26EA7;
         }
         
         .nav-item {
@@ -150,28 +233,7 @@ function e($value) {
             width: 20px;
             font-size: 1.1rem;
         }
-        /* Sidebar Section Labels */
-        .nav-section {
-            margin-bottom: 8px;
-        }
-
-        .nav-section-label {
-            padding: 12px 20px 6px 20px;
-            font-size: 0.65rem;
-            font-weight: 600;
-            color: #B26EA7;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .nav-section-label i {
-            font-size: 0.7rem;
-            color: #B26EA7;
-        }
-
+        
         .nav-badge {
             margin-left: auto;
             font-size: 0.65rem;
@@ -181,30 +243,107 @@ function e($value) {
             color: #D4CFE8;
             font-weight: 600;
         }
-
+        
         .nav-badge.pending {
             background: rgba(245, 158, 11, 0.25);
             color: #F59E0B;
         }
-
+        
         .nav-badge.dispute {
             background: rgba(220, 38, 38, 0.25);
             color: #FFA3A3;
         }
-
-        .nav-item {
-            position: relative;
+        
+        .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid rgba(255,255,255,0.15);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
         
-        /* Main Content */
+        .admin-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .footer-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        
+        .admin-details {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .admin-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .logout-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: rgba(220, 38, 38, 0.15);
+            border-radius: 10px;
+            color: #FFA3A3;
+            text-decoration: none;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        
+        .logout-icon:hover {
+            background: rgba(220, 38, 38, 0.4);
+            color: white;
+            transform: scale(1.05);
+        }
+        
+        .logout-icon i {
+            font-size: 1.2rem;
+        }
+        
+        /* ========== MAIN CONTENT STYLES ========== */
         .main-content {
-            margin-left: 220px;
+            margin-left: 230px;
             padding: 20px 24px;
             transition: margin-left 0.3s ease;
+            height: 100vh;
+            overflow-y: auto;
         }
         
-        .main-content.expanded {
-            margin-left: 0;
+        .main-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .main-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        .main-content::-webkit-scrollbar-thumb {
+            background: #E75A9B;
+            border-radius: 10px;
+        }
+        
+        .main-content::-webkit-scrollbar-thumb:hover {
+            background: #C94F86;
         }
         
         .top-bar {
@@ -214,19 +353,12 @@ function e($value) {
             flex-wrap: wrap;
             gap: 16px;
             margin-bottom: 24px;
-            padding-bottom: 16px;
         }
         
         .page-title h1 {
             font-size: 1.4rem;
             font-weight: 700;
             color: #302E63;
-        }
-        
-        .page-title p {
-            font-size: 0.75rem;
-            color: #7B6E8F;
-            margin-top: 4px;
         }
         
         .menu-toggle {
@@ -248,7 +380,6 @@ function e($value) {
             padding: 6px 14px 6px 10px;
             border-radius: 50px;
             cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
             border: 1px solid #E4DCF0;
         }
         
@@ -265,243 +396,9 @@ function e($value) {
             color: #302E63;
         }
         
-        .admin-profile i {
-            font-size: 11px;
-            color: #A59BB5;
+        .relative {
+            position: relative;
         }
-        
-        /* Stats Grid - Responsive */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            margin-bottom: 28px;
-        }
-        
-        .stat-card {
-            background: white;
-            border-radius: 20px;
-            padding: 18px;
-            border: 1px solid #E4DCF0;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(48, 46, 99, 0.08);
-        }
-
-       .sidebar-footer {
-            padding: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.15);
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-        }
-
-        .admin-info {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex: 1;
-            overflow: hidden;
-        }
-
-        .footer-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid rgba(255,255,255,0.2);
-        }
-
-        .admin-details {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .admin-name {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: white;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .admin-role {
-            font-size: 0.6rem;
-            color: #B26EA7;
-            margin-top: 2px;
-        }
-
-        .logout-icon {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 36px;
-            height: 36px;
-            background: rgba(220, 38, 38, 0.15);
-            border-radius: 10px;
-            color: #FFA3A3;
-            text-decoration: none;
-            transition: all 0.2s;
-            flex-shrink: 0;
-        }
-
-        .logout-icon:hover {
-            background: rgba(220, 38, 38, 0.4);
-            color: white;
-            transform: scale(1.05);
-        }
-
-        .logout-icon i {
-            font-size: 1.2rem;
-        }
-
-        
-        .nav-badge {
-            margin-left: auto;
-            font-size: 0.65rem;
-            background: rgba(178, 110, 167, 0.25);
-            padding: 2px 8px;
-            border-radius: 30px;
-            color: #D4CFE8;
-            font-weight: 600;
-        }
-        
-        .nav-badge.pending { background: rgba(245, 158, 11, 0.25); color: #F59E0B; }
-        .nav-badge.dispute { background: rgba(220, 38, 38, 0.25); color: #FFA3A3; }
-        
-        /* Main Content */
-        .main-content {
-            margin-left: 230px;
-            padding: 20px 24px;
-            transition: margin-left 0.3s ease;
-        }
-        
-        .top-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-        
-        .page-title h1 {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #302E63;
-            text-align:center;
-        }
-        
-        .page-title p {
-            font-size: 0.75rem;
-            color: #7B6E8F;
-            margin-top: 4px;
-        }
-        
-        .menu-toggle {
-            background: #272754;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 10px;
-            cursor: pointer;
-            display: none;
-        }
-        
-        .admin-profile {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            background: white;
-            padding: 6px 14px 6px 10px;
-            border-radius: 50px;
-            cursor: pointer;
-            border: 1px solid #E4DCF0;
-        }
-        
-        .admin-profile img {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
-        
-        .admin-profile span { font-weight: 600; font-size: 0.8rem; color: #302E63; }
-        
-        .admin-info {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex: 1;
-            overflow: hidden;
-        }
-        
-        .footer-avatar {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid rgba(255,255,255,0.2);
-        }
-        
-        .admin-name {
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: white;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        
-        .logout-icon {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            background: rgba(220, 38, 38, 0.15);
-            border-radius: 8px;
-            color: #FFA3A3;
-            text-decoration: none;
-        }
-        
-        .logout-icon:hover { background: rgba(220, 38, 38, 0.4); color: white; }
-        
-        .brand-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .brand-icon {
-            width: 40px;
-            height: 40px;
-            object-fit: contain;
-        }
-        
-        .brand-title h1 {
-            font-size: 1.2rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #ffffff, #B26EA7);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
-        
-        .admin-space-text { font-size: 0.5rem; color: #e7c7f7; }
-        
-        .relative { position: relative; }
         
         .dropdown {
             position: absolute;
@@ -527,8 +424,14 @@ function e($value) {
             font-size: 12px;
         }
         
-        .dropdown a:hover { background: #F4F0F8; }
-        .dropdown hr { margin: 0; border-color: #E4DCF0; }
+        .dropdown a:hover {
+            background: #F4F0F8;
+        }
+        
+        .dropdown hr {
+            margin: 0;
+            border-color: #E4DCF0;
+        }
         
         .sidebar-overlay {
             position: fixed;
@@ -541,9 +444,11 @@ function e($value) {
             display: none;
         }
         
-        .sidebar-overlay.active { display: block; }
+        .sidebar-overlay.active {
+            display: block;
+        }
         
-        /* Cards Grid - CENTERED, 2x3 */
+        /* ========== ACTIONS GRID ========== */
         .actions-wrapper {
             display: flex;
             justify-content: center;
@@ -565,9 +470,9 @@ function e($value) {
             transition: all 0.2s;
             text-decoration: none;
             color: #1E1B2E;
-            align-items:center;
             display: flex;
             flex-direction: column;
+            align-items: center;
             box-shadow: 0 8px 25px rgba(0,0,0,0.08);
             border: 1px solid #eee;
         }
@@ -587,34 +492,14 @@ function e($value) {
             align-items: center;
             justify-content: center;
             margin-bottom: 16px;
-        }
-        
-        .card-icon i {
-            align-items: center;
-            font-size: 24px;
-            color: #E75A9B;
-        }
-        
-        /* Card Badge - shows number on the card icon */
-        .card-icon {
-            width: 50px;
-            height: 50px;
-            background: #FFF1F6;
-            border-radius: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 16px;
             position: relative;
         }
-
+        
         .card-icon i {
-            align-items: center;
             font-size: 24px;
             color: #E75A9B;
         }
-
-        /* Badge styles */
+        
         .card-badge {
             position: absolute;
             top: -8px;
@@ -629,23 +514,16 @@ function e($value) {
             text-align: center;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-
+        
         .card-badge.pending {
             background: #F59E0B;
         }
-
+        
         .card-badge.dispute {
             background: #DC2626;
         }
-
-        .card-badge.success {
-            background: #10B981;
-        }
-
-        .card-badge.primary {
-            background: #3B82F6;
-        }
-                .card-title {
+        
+        .card-title {
             text-align: center;
             font-size: 1rem;
             font-weight: 800;
@@ -660,58 +538,49 @@ function e($value) {
             line-height: 1.4;
         }
         
-        /* Alert */
-        .alert-card {
-            background: #FEF3C7;
-            border-left: 4px solid #F59E0B;
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        
-        .alert-content {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        
-        .alert-content i { font-size: 20px; color: #F59E0B; }
-        .alert-content strong { color: #92400E; font-size: 0.8rem; }
-        .alert-content p { color: #B45309; font-size: 11px; margin-top: 2px; }
-        
-        .alert-btn {
-            background: #F59E0B;
-            color: white;
-            padding: 5px 16px;
-            border-radius: 25px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 11px;
-        }
-        
-        @media (max-width: 700px) {
+        /* ========== RESPONSIVE ========== */
+        @media (max-width: 768px) {
+            .menu-toggle {
+                display: block;
+            }
+            
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 16px;
+            }
+            
             .actions-grid {
                 grid-template-columns: 1fr;
                 gap: 16px;
             }
+            
             .actions-wrapper {
                 min-height: auto;
             }
-        }
-        
-        @media (max-width: 768px) {
-            .menu-toggle { display: block; }
-            .sidebar { transform: translateX(-100%); }
-            .sidebar.open { transform: translateX(0); }
-            .main-content { margin-left: 0; padding: 16px; }
+            
+            .brand-icon {
+                width: 38px;
+                height: 38px;
+            }
+            
+            .brand-title h1 {
+                font-size: 1.1rem;
+            }
+            
+            .sidebar-header {
+                padding: 20px 16px;
+            }
         }
     </style>
+
 </head>
 <body>
 
@@ -728,7 +597,6 @@ function e($value) {
     </div>
     <nav class="nav-menu">
         <div class="nav-section">
-            <div class="nav-section-label">MAIN</div>
             <a href="admin_dashboard.php" class="nav-item">
                 <i class="bi bi-speedometer2"></i><span>Dashboard</span>
             </a>
@@ -759,6 +627,7 @@ function e($value) {
             <div class="nav-section-label">BOOKINGS</div>
             <a href="admin_bookings.php" class="nav-item">
                 <i class="bi bi-calendar-check"></i><span>Bookings</span>
+                <span class="nav-badge"><?= $totalBookings ?></span>
             </a>
             <a href="admin_disputes.php" class="nav-item">
                 <i class="bi bi-flag"></i><span>Disputes</span>
@@ -821,14 +690,14 @@ function e($value) {
         <a href="admin_manage_reviews.php" class="action-card">
             <div class="card-icon">
                 <i class="bi bi-chat-dots"></i>
-                <?php if ($totalReviews > 0): ?>
+                <?php if ($showReviewBadge): ?>
                     <span class="card-badge"><?= $totalReviews ?></span>
                 <?php endif; ?>
             </div>
             <div class="card-title">Manage Reviews</div>
             <div class="card-desc">View and delete tutor reviews</div>
         </a>
-
+        
         <a href="admin_manage_qualifications.php" class="action-card">
             <div class="card-icon">
                 <i class="bi bi-file-earmark-text"></i>

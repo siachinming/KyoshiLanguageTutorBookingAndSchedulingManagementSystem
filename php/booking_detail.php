@@ -201,6 +201,30 @@ unset($_SESSION['success_message']);
     .success-toast {
     background: #28a745;
 }
+
+    /* Ensure dropdown appears above everything */
+#profileDropdown {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 18px 45px rgba(0,0,0,0.2);
+    border: 1px solid rgba(242,138,178,.2);
+    min-width: 200px;
+    overflow: hidden;
+    z-index: 10000 !important;
+}
+
+/* Make sure the profile button has proper positioning */
+.nav-actions {
+    position: relative;
+}
+
+.profile {
+    position: relative;
+    z-index: 10001;
+}
     *{box-sizing:border-box}html{scroll-behavior:smooth}
     body{margin:0;min-height:100vh;font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);
       background:linear-gradient(120deg,rgba(255,241,246,.74),rgba(255,203,220,.30)),
@@ -420,6 +444,47 @@ unset($_SESSION['success_message']);
     grid-template-columns:1fr;
   }
 }
+
+/* Force dropdown to be on top and visible */
+.nav-actions {
+    position: relative;
+    z-index: 99999;
+}
+
+#profileDropdown {
+    display: none;
+    position: absolute !important;
+    top: calc(100% + 10px) !important;
+    right: 0 !important;
+    background: white !important;
+    border-radius: 16px !important;
+    box-shadow: 0 18px 45px rgba(0,0,0,0.2) !important;
+    border: 1px solid rgba(242,138,178,.2) !important;
+    min-width: 200px !important;
+    overflow: hidden !important;
+    z-index: 999999 !important;
+}
+
+#profileDropdown a {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 12px 16px !important;
+    text-decoration: none !important;
+    color: #342635 !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    background: white !important;
+}
+
+#profileDropdown a:hover {
+    background: #FFF1F6 !important;
+}
+
+#profileDropdown hr {
+    margin: 4px 0 !important;
+    border-color: rgba(242,138,178,.2) !important;
+}
   </style>
 </head>
 <body>
@@ -445,7 +510,7 @@ unset($_SESSION['success_message']);
         </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">
-            <button class="profile" onclick="toggleDropdown()" id="profileBtn">
+            <button class="profile" onclick="toggleDropdown(event)" id="profileBtn">
               <img src="<?= e($profilePic) ?>" alt="Student profile">
               <span><?= e($displayName) ?></span>
               <i class="bi bi-chevron-down" style="font-size:11px; margin-left:4px;"></i>
@@ -750,7 +815,7 @@ if ($is_minor_dispute && $activeDispute):
 </div>
 
         <?php if (!empty($b['notes'])): ?>
-        <div class="detail-item" style="grid-column:1/-1;">
+        <div class="detail-item">
           <div class="dlabel">Notes</div>
           <div class="dval" style="font-weight:700;font-size:13px;line-height:1.5;"><?= e($b['notes']) ?></div>
         </div>
@@ -895,7 +960,7 @@ if ($is_minor_dispute && $activeDispute):
             <div style="font-size: 12px; color: #856404; line-height: 1.5;">
                 <?php if ($hoursUntilSession >= 24): ?>
                     <i class="bi bi-cash-stack" style="color: #28a745;"></i> 
-                    <strong style="color: #28a745;">Full Refund Available</strong> - Cancel more than 24 hours before session
+                    <strong style="color: #28a745;">Full Refund Available</strong> if you cancel more than 24 hours before session
                     <div style="margin-top: 4px;">You have <strong><?= floor($hoursUntilSession) ?></strong> hours left for full refund</div>
                 <?php elseif ($hoursUntilSession > 0 && $hoursUntilSession < 24): ?>
                     <i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i> 
@@ -1156,13 +1221,10 @@ Payment made directly during session.
         </div>
       <?php endif; ?>
   
-    </div>
-
-<!-- Online Session Section - FIXED -->
-<?php if ($b['learning_mode'] === 'online' && !empty($b['meeting_link']) && ($bookStatus === 'confirmed' || $bookStatus === 'completed')): 
+    </div><?php if ($b['learning_mode'] === 'online' && ($bookStatus === 'confirmed' || $bookStatus === 'completed')): 
     // Calculate session times
     $session_start = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
-    $session_end = $session_start + (2 * 3600); // 2 hours session
+    $session_end = $session_start + (2 * 3600);
     $current_time = time();
     $is_session_ended = ($current_time > $session_end);
     $is_session_ongoing = ($current_time >= $session_start && $current_time <= $session_end);
@@ -1171,103 +1233,118 @@ Payment made directly during session.
 <div class="card">
     <div class="card-title"><i class="bi bi-camera-video-fill"></i> Online Session</div>
     
-    <!-- Join Meeting Button - ONLY SHOW IF SESSION IS ONGOING OR FUTURE (NOT ENDED) -->
-    <?php if (!$is_session_ended): ?>
-    <div style="background: linear-gradient(135deg, rgba(231,90,155,0.1), rgba(242,138,178,0.05)); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
-            <div>
-                <strong style="font-size: 14px;">Ready for your session?</strong>
-                <?php if ($is_session_future): ?>
-                <p style="font-size: 12px; color: #64748b; margin: 5px 0 0;">
-                    <i class="bi bi-clock"></i> Session starts on <?= date('d M Y, g:i A', $session_start) ?>
-                </p>
-                <?php elseif ($is_session_ongoing): ?>
-                <p style="font-size: 12px; color: #28a745; margin: 5px 0 0;">
-                    <i class="bi bi-play-circle-fill"></i> Session is happening NOW!
-                </p>
-                <?php endif; ?>
-            </div>
-            <button onclick="checkAndJoinMeeting(<?= $bookingID ?>, '<?= urlencode($b['meeting_link']) ?>')" 
-                class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997); padding: 10px 24px; width: auto;">
-                <i class="bi bi-camera-video-fill"></i> Join Meeting
-            </button>
+    <?php if (empty($b['meeting_link'])): ?>
+        <div class="info-note" style="text-align: center;">
+            <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b;"></i>
+            <strong>Meeting link not yet available</strong><br>
+            The tutor will provide the meeting link before the session starts.
+            <?php if (!empty($b['tutor_phone'])): ?>
+                <div style="margin-top: 10px;">
+                    <button onclick="contactTutor(<?= $b['tutor_id'] ?>, '<?= e($b['tutor_name']) ?>', '<?= e($b['tutor_phone']) ?>', '<?= e($displayName) ?>', <?= $bookingID ?>, '<?= e($b['language']) ?>', 'meeting_link')" class="btn-secondary">
+                        <i class="bi bi-whatsapp"></i> Contact Tutor for Link
+                    </button>
+                </div>
+            <?php endif; ?>
         </div>
-    </div>
     <?php else: ?>
-    <!-- Session Ended - Show message instead of Join button -->
-    <div style="background: rgba(200,200,200,0.1); border-radius: 16px; padding: 16px; margin-bottom: 16px; text-align: center; border: 1px dashed #ccc;">
-        <i class="bi bi-clock-history" style="font-size: 28px; color: #999;"></i>
-        <p style="font-size: 13px; color: #666; margin-top: 8px;">
-            <strong>Session has ended</strong><br>
-            This session was held on <?= date('d M Y, g:i A', $session_start) ?>
-        </p>
-        <?php if ($bookStatus === 'confirmed' && !$is_completed): ?>
-        <p style="font-size: 12px; color: #f59e0b;">
-            <i class="bi bi-exclamation-triangle"></i> Please confirm your attendance above if you attended.
-        </p>
-        <?php endif; ?>
-    </div>
-    <?php endif; ?>
-    
-    <!-- Meeting Activity -->
-    <div style="margin-bottom: 16px;">
-        <strong style="font-size: 13px;">Attendance Record</strong>
-        <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
-            <?php
-            $logsStmt = $conn->prepare("SELECT * FROM meeting_logs WHERE booking_id = ? ORDER BY join_time DESC");
-            $logsStmt->bind_param("i", $bookingID);
-            $logsStmt->execute();
-            $logs = $logsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-            
-            if (!empty($logs)):
-            ?>
-                <?php foreach ($logs as $log): ?>
-                <div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid #eef2f7;">
-                    <i class="bi bi-person-circle"></i> <strong><?= ucfirst(e($log['participant_role'])) ?></strong>
-                    joined: <?= date('d M Y, g:i A', strtotime($log['join_time'])) ?>
-                    <?php if ($log['leave_time']): ?>
-                        - left: <?= date('g:i A', strtotime($log['leave_time'])) ?>
-                        <span style="color: #28a745;">(<?= $log['duration_minutes'] ?> min)</span>
-                    <?php else: ?>
-                        <span style="color: #f59e0b;">(Active)</span>
+        <!-- Join Meeting Button - ONLY SHOW IF SESSION IS ONGOING OR FUTURE (NOT ENDED) -->
+        <?php if (!$is_session_ended): ?>
+        <div style="background: linear-gradient(135deg, rgba(231,90,155,0.1), rgba(242,138,178,0.05)); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <strong style="font-size: 14px;">Ready for your session?</strong>
+                    <?php if ($is_session_future): ?>
+                        <p style="font-size: 12px; color: #64748b; margin: 5px 0 0;">
+                            <i class="bi bi-clock"></i> Session starts on <?= date('d M Y, g:i A', $session_start) ?>
+                        </p>
+                    <?php elseif ($is_session_ongoing): ?>
+                        <p style="font-size: 12px; color: #28a745; margin: 5px 0 0;">
+                            <i class="bi bi-play-circle-fill"></i> Session is happening NOW!
+                        </p>
                     <?php endif; ?>
                 </div>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <p style="font-size: 12px; color: #64748b; margin: 0;">No meeting activity recorded yet.</p>
-            <?php endif; ?>
+                <button onclick="checkAndJoinMeeting(<?= $bookingID ?>, '<?= urlencode($b['meeting_link']) ?>')" 
+                    class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997); padding: 10px 24px; width: auto;">
+                    <i class="bi bi-camera-video-fill"></i> Join Meeting
+                </button>
+            </div>
         </div>
-    </div>
-    
-    <!-- End Session Button - ONLY SHOW IF SESSION IS ONGOING OR HAS ACTIVE SESSION -->
-    <?php if (!$is_session_ended || $is_session_ongoing): ?>
-    <div>
-        <strong style="font-size: 13px;"><i class="bi bi-door-closed"></i> End Session</strong>
-        <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
-            <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">
-                After finishing your session, click below to record your leave time.
+        <?php else: ?>
+        <!-- Session Ended - Show message instead of Join button -->
+        <div style="background: rgba(200,200,200,0.1); border-radius: 16px; padding: 16px; margin-bottom: 16px; text-align: center; border: 1px dashed #ccc;">
+            <i class="bi bi-clock-history" style="font-size: 28px; color: #999;"></i>
+            <p style="font-size: 13px; color: #666; margin-top: 8px;">
+                <strong>Session has ended</strong><br>
+                This session was held on <?= date('d M Y, g:i A', $session_start) ?>
             </p>
-            
-            <?php
-            // Check if there's an active session to end
-            $hasActiveSession = false;
-            $activeCheck = $conn->prepare("SELECT id FROM meeting_logs WHERE booking_id = ? AND leave_time IS NULL LIMIT 1");
-            $activeCheck->bind_param("i", $bookingID);
-            $activeCheck->execute();
-            $hasActiveSession = $activeCheck->get_result()->num_rows > 0;
-            
-            if ($hasActiveSession):
-            ?>
-            <button onclick="recordMeetingLeave(<?= $bookingID ?>)" class="btn-outline" style="width: auto; padding: 8px 20px; background: #dc3545; color: white; border: none; border-radius: 30px; cursor: pointer;">
-                <i class="bi bi-box-arrow-right"></i> End Session & Record Leave
-            </button>
-            <?php else: ?>
-            <button disabled style="width: auto; padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 30px; opacity: 0.6;">
-                <i class="bi bi-check-circle"></i> No Active Session
-            </button>
+            <?php if ($bookStatus === 'confirmed' && !$is_completed): ?>
+            <p style="font-size: 12px; color: #f59e0b;">
+                <i class="bi bi-exclamation-triangle"></i> Please confirm your attendance above if you attended.
+            </p>
             <?php endif; ?>
         </div>
-    </div>
+        <?php endif; ?>
+        
+        <!-- Meeting Activity -->
+        <div style="margin-bottom: 16px;">
+            <strong style="font-size: 13px;">Attendance Record</strong>
+            <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+                <?php
+                $logsStmt = $conn->prepare("SELECT * FROM meeting_logs WHERE booking_id = ? ORDER BY join_time DESC");
+                $logsStmt->bind_param("i", $bookingID);
+                $logsStmt->execute();
+                $logs = $logsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                
+                if (!empty($logs)):
+                ?>
+                    <?php foreach ($logs as $log): ?>
+                    <div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid #eef2f7;">
+                        <i class="bi bi-person-circle"></i> <strong><?= ucfirst(e($log['participant_role'])) ?></strong>
+                        joined: <?= date('d M Y, g:i A', strtotime($log['join_time'])) ?>
+                        <?php if ($log['leave_time']): ?>
+                            - left: <?= date('g:i A', strtotime($log['leave_time'])) ?>
+                            <span style="color: #28a745;">(<?= $log['duration_minutes'] ?> min)</span>
+                        <?php else: ?>
+                            <span style="color: #f59e0b;">(Active)</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <p style="font-size: 12px; color: #64748b; margin: 0;">No meeting activity recorded yet.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <!-- End Session Button - ONLY SHOW IF SESSION IS ONGOING OR HAS ACTIVE SESSION -->
+        <?php if (!$is_session_ended || $is_session_ongoing): ?>
+        <div>
+            <strong style="font-size: 13px;"><i class="bi bi-door-closed"></i> End Session</strong>
+            <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+                <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">
+                    After finishing your session, click below to record your leave time.
+                </p>
+                
+                <?php
+                // Check if there's an active session to end
+                $hasActiveSession = false;
+                $activeCheck = $conn->prepare("SELECT id FROM meeting_logs WHERE booking_id = ? AND leave_time IS NULL LIMIT 1");
+                $activeCheck->bind_param("i", $bookingID);
+                $activeCheck->execute();
+                $hasActiveSession = $activeCheck->get_result()->num_rows > 0;
+                
+                if ($hasActiveSession):
+                ?>
+                <button onclick="recordMeetingLeave(<?= $bookingID ?>)" class="btn-outline" style="width: auto; padding: 8px 20px; background: #dc3545; color: white; border: none; border-radius: 30px; cursor: pointer;">
+                    <i class="bi bi-box-arrow-right"></i> End Session & Record Leave
+                </button>
+                <?php else: ?>
+                <button disabled style="width: auto; padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 30px; opacity: 0.6;">
+                    <i class="bi bi-check-circle"></i> No Active Session
+                </button>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
     <?php endif; ?>
 </div>
 <?php endif; ?>
@@ -1499,78 +1576,83 @@ Payment made directly during session.
 <?php include 'nav_search_modal.php'; ?>
 <script src="../js/search_modal.js"></script>
 <script>
+function toggleDropdown(event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const dropdown = document.getElementById('profileDropdown');
+    if (dropdown) {
+        if (dropdown.style.display === 'block') {
+            dropdown.style.display = 'none';
+        } else {
+            dropdown.style.display = 'block';
+        }
+    }
+    return false;
+}
 
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('profileDropdown');
+    const profileBtn = document.getElementById('profileBtn');
+    
+    if (!dropdown || !profileBtn) return;
+    
+    if (profileBtn.contains(e.target)) {
+        return;
+    }
+    
+    if (dropdown.style.display === 'block' && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
+});
+
+// ========== REST OF YOUR FUNCTIONS ==========
 const studentName = <?= json_encode($displayName) ?>;
 
 const anonCb = document.getElementById('anonCheckbox');
-if (anonCb) anonCb.addEventListener('change', function () {
-
-  const anonActive = this.checked;
-
-  const toggle = document.getElementById('anonToggle');
-  const check  = document.getElementById('anonCheck');
-  const icon   = document.getElementById('anonIcon');
-
-  toggle.style.borderColor =
-    anonActive ? 'var(--hot-pink)' : 'rgba(46,42,59,.10)';
-
-  toggle.style.background =
-    anonActive ? 'rgba(255,241,246,.8)' : 'rgba(255,255,255,.7)';
-
-  check.style.background =
-    anonActive ? 'linear-gradient(135deg,#E75A9B,#F28AB2)' : 'white';
-
-  check.style.borderColor =
-    anonActive ? 'var(--pink)' : 'rgba(46,42,59,.15)';
-
-  check.innerHTML = anonActive
-    ? '<i class="bi bi-check" style="font-size:13px;color:white;"></i>'
-    : '';
-
-  icon.style.color =
-    anonActive ? 'var(--hot-pink)' : 'var(--muted)';
-
-  document.getElementById('previewName').textContent =
-    anonActive ? 'Anonymous Student' : studentName;
-}); // end of anonCb listener
-  function setRating(val) {
-    document.getElementById('ratingInput').value = val;
-    document.querySelectorAll('.star-btn').forEach((btn, i) => {
-      btn.classList.toggle('active', i < val);
+if (anonCb) {
+    anonCb.addEventListener('change', function() {
+        const anonActive = this.checked;
+        const toggle = document.getElementById('anonToggle');
+        const check = document.getElementById('anonCheck');
+        const icon = document.getElementById('anonIcon');
+        if (toggle) toggle.style.borderColor = anonActive ? 'var(--hot-pink)' : 'rgba(46,42,59,.10)';
+        if (toggle) toggle.style.background = anonActive ? 'rgba(255,241,246,.8)' : 'rgba(255,255,255,.7)';
+        if (check) check.style.background = anonActive ? 'linear-gradient(135deg,#E75A9B,#F28AB2)' : 'white';
+        if (check) check.style.borderColor = anonActive ? 'var(--pink)' : 'rgba(46,42,59,.15)';
+        if (check) check.innerHTML = anonActive ? '<i class="bi bi-check" style="font-size:13px;color:white;"></i>' : '';
+        if (icon) icon.style.color = anonActive ? 'var(--hot-pink)' : 'var(--muted)';
+        const previewName = document.getElementById('previewName');
+        if (previewName) previewName.textContent = anonActive ? 'Anonymous Student' : studentName;
     });
-  }
-
-  function openCancelModal() {
-    document.getElementById('cancelModal').classList.add('active');
 }
-  
+
+function setRating(val) {
+    document.getElementById('ratingInput').value = val;
+    document.querySelectorAll('.star-btn').forEach((btn, i) => btn.classList.toggle('active', i < val));
+}
+
+function openCancelModal() { document.getElementById('cancelModal').classList.add('active'); }
 function closeCancelModal() {
-    document.getElementById('cancelModal').classList.remove('active');
-    document.getElementById('cancelForm').reset();
-    document.getElementById('otherReasonText').style.display = 'none';
+    const modal = document.getElementById('cancelModal');
+    if (modal) modal.classList.remove('active');
+    const form = document.getElementById('cancelForm');
+    if (form) form.reset();
+    const otherText = document.getElementById('otherReasonText');
+    if (otherText) otherText.style.display = 'none';
 }
-
-function openCancelRescheduleModal() {
-    document.getElementById('cancelRescheduleModal').classList.add('active');
-}
-
-function closeCancelRescheduleModal() {
-    document.getElementById('cancelRescheduleModal').classList.remove('active');
-}
-
+function openCancelRescheduleModal() { document.getElementById('cancelRescheduleModal').classList.add('active'); }
+function closeCancelRescheduleModal() { document.getElementById('cancelRescheduleModal').classList.remove('active'); }
 function submitCancelReschedule() {
     const bookingId = <?= $bookingID ?>;
-    
-    // Create a simple form instead of fetch
     var form = document.createElement('form');
     form.method = 'POST';
     form.action = 'cancel_reschedule_request.php';
-    
     var input = document.createElement('input');
     input.type = 'hidden';
     input.name = 'booking_id';
     input.value = bookingId;
-    
     form.appendChild(input);
     document.body.appendChild(form);
     form.submit();
@@ -1579,95 +1661,26 @@ function submitCancelReschedule() {
 document.addEventListener('DOMContentLoaded', function() {
     const otherRadio = document.getElementById('otherReasonRadio');
     const otherText = document.getElementById('otherReasonText');
-    
-    if (otherRadio) {
-        otherRadio.addEventListener('change', function() {
-            otherText.style.display = this.checked ? 'block' : 'none';
-        });
-    }
+    if (otherRadio) otherRadio.addEventListener('change', function() {
+        if (otherText) otherText.style.display = this.checked ? 'block' : 'none';
+    });
 });
 
-  let toastTimer;
-  function showToast(msg) {
+let toastTimer;
+function showToast(msg) {
     const t = document.getElementById('toast');
-    t.textContent = msg; t.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
-  }
-  function toggleDropdown() {
-    const d = document.getElementById('profileDropdown');
-    d.style.display = d.style.display === 'none' ? 'block' : 'none';
-  }
-  document.addEventListener('click', function(e) {
-    const btn = document.getElementById('profileBtn');
-    const dd  = document.getElementById('profileDropdown');
-    if (btn && dd && !btn.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
-  });
-
-  <?php if (isset($_GET['rated'])): ?>showToast('Rating submitted! Thank you 🌟');<?php endif; ?>
-  <?php if (isset($_GET['emailed'])): ?>showToast('Receipt sent to your email!');<?php endif; ?>
-  <?php if (isset($_GET['email_failed'])): ?>showToast('Failed to send email. Please try again.');<?php endif; ?>
-  <?php if (isset($_GET['paid'])): ?>
-    <?php 
-    // Check if payment is already verified (Stripe)
-    $checkPayment = $conn->prepare("SELECT status, payment_method FROM payments WHERE booking_id = ? ORDER BY id DESC LIMIT 1");
-    $checkPayment->bind_param("i", $booking_id);
-    $checkPayment->execute();
-    $paymentResult = $checkPayment->get_result()->fetch_assoc();
-    
-    if ($paymentResult && $paymentResult['status'] === 'verified'): ?>
-        <script>showToast('Payment successful! Your session is confirmed.', 'success');</script>
-    <?php elseif ($paymentResult && $paymentResult['payment_method'] === 'stripe'): ?>
-        <script>showToast('Stripe payment issue. Please contact support.', 'error');</script>
-    <?php else: ?>
-        <script>showToast('Payment submitted! Awaiting admin verification (24-48 hours).', 'info');</script>
-    <?php endif; ?>
-<?php endif; ?>
-  <?php if (isset($_GET['rescheduled'])): ?>showToast('Rescheduled! Waiting for tutor approval.');<?php endif; ?>
-</script>
-<script>
-function contactTutor(tutorId, tutorName, tutorPhone, studentName, bookingId, language, issueType) {
-    const student = <?= json_encode($displayName) ?>;
-    const tutor = tutorName;
-    const lang = language;
-    
-    let issueText = '';
-    if (issueType === 'wrong_materials') {
-        issueText = 'I reported that wrong materials were provided for our session. Could you please upload the correct materials?';
-    } else if (issueType === 'technical_issues') {
-        issueText = 'I am experiencing technical issues with the session. Could you please help me resolve this?';
-    } else {
-        issueText = 'I reported an issue with our session. Could we please discuss this to resolve it?';
-    }
-    
-    const message = `Hi ${tutor}! 👋\n\n`;
-    message += `I'm ${student}, your student for the ${lang} session.`;
-    message += `\n\n📚 *Booking #${bookingId}*`;
-    message += `\n\n${issueText}`;
-    message += `\n\nThank you for your understanding! 🙏`;
-    
-    const encodedMessage = encodeURIComponent(message);
-    
-    if (tutorPhone) {
-        let cleanPhone = tutorPhone.replace(/\D/g, '');
-        if (cleanPhone.startsWith('0')) {
-            cleanPhone = '60' + cleanPhone.substring(1);
-        }
-        if (!cleanPhone.startsWith('60')) {
-            cleanPhone = '60' + cleanPhone;
-        }
-        window.open(`https://wa.me/${cleanPhone}?text=${encodedMessage}`, '_blank');
-    } else {
-        showToast('Tutor has not added WhatsApp number yet. Please use the message feature in your dashboard.', 'error');
+    if (t) {
+        t.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
     }
 }
+
 function openCancelModalWithRefund(refundType) {
-    // Store refund type in a data attribute
     const cancelForm = document.getElementById('cancelForm');
     if (cancelForm) {
         cancelForm.setAttribute('data-refund', refundType);
-        
-        // Add hidden input for refund type if not exists
         let refundInput = document.getElementById('refund_type_input');
         if (!refundInput) {
             refundInput = document.createElement('input');
@@ -1677,21 +1690,14 @@ function openCancelModalWithRefund(refundType) {
             cancelForm.appendChild(refundInput);
         }
         refundInput.value = refundType;
-        
-        // Update modal message based on refund type
         const modalTitle = document.querySelector('#cancelModal h3');
         const modalMessage = document.querySelector('#cancelModal p');
-        
         if (refundType === 'full') {
-            modalTitle.innerHTML = '<i class="bi bi-cash-stack" style="color: #28a745;"></i> Cancel Booking (Full Refund)';
-            if (modalMessage) {
-                modalMessage.innerHTML = '✅ You will receive a <strong style="color: #28a745;">FULL REFUND</strong> because you are cancelling more than 24 hours before the session.<br><br>Please select a reason for cancelling:';
-            }
+            if (modalTitle) modalTitle.innerHTML = '<i class="bi bi-cash-stack" style="color: #28a745;"></i> Cancel Booking (Full Refund)';
+            if (modalMessage) modalMessage.innerHTML = '✅ You will receive a <strong style="color: #28a745;">FULL REFUND</strong> because you are cancelling more than 24 hours before the session.<br><br>Please select a reason for cancelling:';
         } else {
-            modalTitle.innerHTML = '<i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i> Cancel Booking (No Refund)';
-            if (modalMessage) {
-                modalMessage.innerHTML = '<strong style="color: #f59e0b;">⚠️ WARNING: No refund will be issued</strong> because you are cancelling less than 24 hours before the session.<br><br>Please select a reason for cancelling:';
-            }
+            if (modalTitle) modalTitle.innerHTML = '<i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i> Cancel Booking (No Refund)';
+            if (modalMessage) modalMessage.innerHTML = '<strong style="color: #f59e0b;">⚠️ WARNING: No refund will be issued</strong> because you are cancelling less than 24 hours before the session.<br><br>Please select a reason for cancelling:';
         }
     }
     document.getElementById('cancelModal').classList.add('active');
@@ -1701,135 +1707,38 @@ function showRefundPolicy() {
     const modal = document.createElement('div');
     modal.id = 'policyModal';
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1001;display:flex;align-items:center;justify-content:center;';
-    modal.innerHTML = `
-        <div style="background:white;border-radius:20px;padding:25px;max-width:500px;width:90%;position:relative;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-                <h3 style="margin:0;"><i class="bi bi-file-text-fill" style="color:#E75A9B;"></i> Cancellation & Refund Policy</h3>
-                <button onclick="closePolicyModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
-            </div>
-            <div style="margin-bottom:20px;">
-                <div style="background:#f8f9fa;border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <h4 style="margin:0 0 10px;color:#28a745;"><i class="bi bi-cash-stack"></i> Full Refund (≥24 hours notice)</h4>
-                    <p style="margin:0;font-size:13px;">Cancel more than 24 hours before your session to receive a full refund.</p>
-                </div>
-                <div style="background:#fff3cd;border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <h4 style="margin:0 0 10px;color:#f59e0b;"><i class="bi bi-exclamation-triangle"></i> No Refund (<24 hours notice)</h4>
-                    <p style="margin:0;font-size:13px;">Cancellations within 24 hours of the session will NOT receive a refund as the tutor has already reserved this time.</p>
-                </div>
-                <div style="background:#e8f5e9;border-radius:12px;padding:15px;">
-                    <h4 style="margin:0 0 10px;color:#2e7d32;"><i class="bi bi-calendar-x"></i> Tutor Cancellation / No-Show</h4>
-                    <p style="margin:0;font-size:13px;">If the tutor cancels or doesn't show up, you will receive a FULL refund automatically.</p>
-                </div>
-            </div>
-            <button onclick="closePolicyModal()" style="width:100%;padding:12px;background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;border:none;border-radius:30px;cursor:pointer;font-weight:bold;">Got it</button>
-        </div>
-    `;
+    modal.innerHTML = '<div style="background:white;border-radius:20px;padding:25px;max-width:500px;width:90%;position:relative;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;"><h3 style="margin:0;"><i class="bi bi-file-text-fill" style="color:#E75A9B;"></i> Cancellation & Refund Policy</h3><button onclick="closePolicyModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button></div><div style="margin-bottom:20px;"><div style="background:#f8f9fa;border-radius:12px;padding:15px;margin-bottom:15px;"><h4 style="margin:0 0 10px;color:#28a745;"><i class="bi bi-cash-stack"></i> Full Refund (≥24 hours notice)</h4><p style="margin:0;font-size:13px;">Cancel more than 24 hours before your session to receive a full refund.</p></div><div style="background:#fff3cd;border-radius:12px;padding:15px;margin-bottom:15px;"><h4 style="margin:0 0 10px;color:#f59e0b;"><i class="bi bi-exclamation-triangle"></i> No Refund (<24 hours notice)</h4><p style="margin:0;font-size:13px;">Cancellations within 24 hours of the session will NOT receive a refund as the tutor has already reserved this time.</p></div><div style="background:#e8f5e9;border-radius:12px;padding:15px;"><h4 style="margin:0 0 10px;color:#2e7d32;"><i class="bi bi-calendar-x"></i> Tutor Cancellation / No-Show</h4><p style="margin:0;font-size:13px;">If the tutor cancels or doesn\'t show up, you will receive a FULL refund automatically.</p></div></div><button onclick="closePolicyModal()" style="width:100%;padding:12px;background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;border:none;border-radius:30px;cursor:pointer;font-weight:bold;">Got it</button></div>';
     document.body.appendChild(modal);
 }
 
-function closePolicyModal() {
-    const modal = document.getElementById('policyModal');
-    if (modal) modal.remove();
-}
+function closePolicyModal() { const modal = document.getElementById('policyModal'); if (modal) modal.remove(); }
 function showReportIssue(bookingId) {
+    // Create report modal
     const modal = document.createElement('div');
     modal.id = 'reportModal';
-    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
+    modal.className = 'modal-overlay active';
     modal.innerHTML = `
-        <div style="background:white;border-radius:20px;padding:25px;max-width:500px;width:90%;position:relative;max-height:90vh;overflow-y:auto;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-                <h3 style="margin:0;"><i class="bi bi-exclamation-triangle-fill" style="color:#dc3545;"></i> Report Issue</h3>
-                <button onclick="closeReportModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
-            </div>
-            <form id="reportForm" enctype="multipart/form-data">
+        <div class="modal-box">
+            <h3><i class="bi bi-exclamation-triangle"></i> Report Issue</h3>
+            <p>Please describe the issue you experienced:</p>
+            <form id="reportForm" method="POST" action="report_issue.php">
                 <input type="hidden" name="booking_id" value="${bookingId}">
-                <div style="margin-bottom:15px;">
-                    <label style="display:block;margin-bottom:5px;font-weight:bold;">Issue Type <span style="color:red;">*</span></label>
-                    <select name="issue_type" id="issueType" required style="width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;">
-                        <option value="">Select issue type</option>
-                        <option value="tutor_no_show">Tutor didn't attend</option>
-                        <option value="technical_issues">Technical issues</option>
-                        <option value="wrong_materials">Wrong materials provided</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-                <div style="margin-bottom:15px;">
-                    <label style="display:block;margin-bottom:5px;font-weight:bold;">Description</label>
-                    <textarea name="message" rows="3" style="width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;" placeholder="Please describe your issue (optional)..."></textarea>
-                </div>
-                <div id="proofSection" style="margin-bottom:15px; display:none;">
-                    <label style="display:block;margin-bottom:5px;font-weight:bold;">Upload Proof (Screenshot)</label>
-                    <input type="file" name="proof" accept="image/*" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:10px;">
-                    <small style="color:#666;">Upload a screenshot as proof (e.g., empty meeting room, error message, etc.)</small>
-                </div>
-                <div style="display:flex;gap:10px;justify-content:flex-end;">
-                    <button type="button" onclick="closeReportModal()" style="background:#ccc;color:#333;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;">Cancel</button>
-                    <button type="submit" style="background:#E75A9B;color:white;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;">Submit Report</button>
+                <select name="issue_type" required style="width:100%; padding:10px; margin:10px 0; border-radius:8px;">
+                    <option value="">Select issue type</option>
+                    <option value="tutor_no_show">Tutor didn't show up</option>
+                    <option value="technical_issues">Technical issues</option>
+                    <option value="wrong_materials">Wrong materials provided</option>
+                    <option value="other">Other issue</option>
+                </select>
+                <textarea name="message" placeholder="Please describe in detail..." required style="width:100%; padding:10px; margin:10px 0; border-radius:8px; min-height:100px;"></textarea>
+                <div class="modal-actions">
+                    <button type="button" onclick="closeReportModal()" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary">Submit Report</button>
                 </div>
             </form>
         </div>
     `;
     document.body.appendChild(modal);
-    
-    // Show proof section only for "tutor_no_show" issue
-    const issueType = document.getElementById('issueType');
-    const proofSection = document.getElementById('proofSection');
-    
-    issueType.addEventListener('change', function() {
-        if (this.value === 'tutor_no_show') {
-            proofSection.style.display = 'block';
-        } else {
-            proofSection.style.display = 'none';
-        }
-    });
-    
-    // Handle form submission with file upload
-    const reportForm = document.getElementById('reportForm');
-    reportForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        // Show loading state
-        const submitBtn = this.querySelector('button[type="submit"]');
-        const originalText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Submitting...';
-        submitBtn.disabled = true;
-        
-        const formData = new FormData(this);
-        
-        fetch('report_issue.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.text())
-        .then(text => {
-            // Check if redirect happened
-            if (text.includes('Location:')) {
-                showToast('Report submitted successfully!', 'success');
-                closeReportModal();
-                setTimeout(() => location.reload(), 1500);
-            } else {
-                try {
-                    const data = JSON.parse(text);
-                    showToast(data.message, data.success ? 'success' : 'error');
-                    if (data.success) {
-                        closeReportModal();
-                        setTimeout(() => location.reload(), 1500);
-                    }
-                } catch(e) {
-                    showToast('Report submitted!', 'success');
-                    closeReportModal();
-                    setTimeout(() => location.reload(), 1500);
-                }
-            }
-        })
-        .catch(error => {
-            showToast('Error submitting report. Please try again.', 'error');
-        })
-        .finally(() => {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-        });
-    });
 }
 
 function closeReportModal() {
@@ -1838,109 +1747,49 @@ function closeReportModal() {
 }
 
 function recordMeetingLeave(bookingId) {
-    if (confirm('Record that you have left the session? Your attendance duration will be calculated.')) {
-        fetch('record_meeting_leave.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ booking_id: bookingId })
-        })
-        .then(response => response.json())
-        .then(data => {
-            showToast(data.message, data.success ? 'success' : 'error');
-            if (data.success) {
-                setTimeout(() => location.reload(), 1500);
-            }
-        });
+    if (confirm('Are you sure you want to end this session? This will record your leave time.')) {
+        window.location.href = `record_meeting_leave.php?booking_id=${bookingId}`;
     }
 }
 
 function checkAndJoinMeeting(bookingId, meetingLink) {
-    // Show loading state
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Checking...';
-    btn.disabled = true;
-    
-    fetch(`check_meeting_time.php?booking_id=${bookingId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.can_join) {
-                // Open in new tab only if allowed
-                window.open(`join_meeting.php?booking_id=${bookingId}&link=${meetingLink}`, '_blank');
-            } else {
-                showToast(data.message, 'error');
-            }
-        })
-        .catch(error => {
-            showToast('Error checking meeting time', 'error');
-        })
-        .finally(() => {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        });
+    window.location.href = `join_meeting.php?booking_id=${bookingId}&link=${encodeURIComponent(meetingLink)}`;
 }
 
-// Cancel form submission handler - captures refund type
-document.getElementById('cancelForm')?.addEventListener('submit', function(e) {
-  const selectedReason = document.querySelector('input[name="cancel_reason"]:checked');
-  if (!selectedReason) {
-    e.preventDefault();
-    alert('Please select a reason for cancellation');
-    return;
-  }
-  
-  let cancelReason = selectedReason.value;
-  if (selectedReason.value === 'Other') {
-    const otherText = document.getElementById('otherReasonText').value.trim();
-    if (!otherText) {
-      e.preventDefault();
-      alert('Please specify your reason');
-      return;
-    }
-    cancelReason = 'Other: ' + otherText;
-    // Update the value
-    selectedReason.value = cancelReason;
-  }
-  
-  // Get refund type from data attribute (set by openCancelModalWithRefund)
-  const refundType = this.getAttribute('data-refund');
-  if (refundType) {
-    let refundInput = document.getElementById('refund_type_input');
-    if (!refundInput) {
-      refundInput = document.createElement('input');
-      refundInput.type = 'hidden';
-      refundInput.name = 'refund_type';
-      refundInput.id = 'refund_type_input';
-      this.appendChild(refundInput);
-    }
-    refundInput.value = refundType;
-  }
-});
+function contactTutor(tutorId, tutorName, tutorPhone, studentName, bookingId, language, issueType) {
+    const message = `Hello ${tutorName},\n\nI'm ${studentName} regarding our ${language} session (Booking #${bookingId}).\n\nIssue: ${issueType}\n\nPlease help resolve this. Thank you!`;
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/${tutorPhone}?text=${encodedMessage}`, '_blank');
+}
 
-// Also need to reset the modal when it closes
 const cancelModal = document.getElementById('cancelModal');
-if (cancelModal) {
-    cancelModal.addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeCancelModal();
+if (cancelModal) cancelModal.addEventListener('click', function(e) { if (e.target === this) closeCancelModal(); });
+
+const cancelForm = document.getElementById('cancelForm');
+if (cancelForm) {
+    cancelForm.addEventListener('submit', function(e) {
+        const selectedReason = document.querySelector('input[name="cancel_reason"]:checked');
+        if (!selectedReason) { e.preventDefault(); alert('Please select a reason for cancellation'); return; }
+        let cancelReason = selectedReason.value;
+        if (selectedReason.value === 'Other') {
+            const otherText = document.getElementById('otherReasonText').value.trim();
+            if (!otherText) { e.preventDefault(); alert('Please specify your reason'); return; }
+            cancelReason = 'Other: ' + otherText;
+            selectedReason.value = cancelReason;
+        }
+        const refundType = this.getAttribute('data-refund');
+        if (refundType) {
+            let refundInput = document.getElementById('refund_type_input');
+            if (!refundInput) {
+                refundInput = document.createElement('input');
+                refundInput.type = 'hidden';
+                refundInput.name = 'refund_type';
+                refundInput.id = 'refund_type_input';
+                this.appendChild(refundInput);
+            }
+            refundInput.value = refundType;
         }
     });
-}
-
-// Reset form when modal closes
-function closeCancelModal() {
-    const modal = document.getElementById('cancelModal');
-    if (modal) modal.classList.remove('active');
-    const form = document.getElementById('cancelForm');
-    if (form) {
-        form.reset();
-        form.removeAttribute('data-refund');
-        // Remove refund input if exists
-        const refundInput = document.getElementById('refund_type_input');
-        if (refundInput) refundInput.remove();
-    }
-    const otherText = document.getElementById('otherReasonText');
-    if (otherText) otherText.style.display = 'none';
 }
 </script>
 </body>

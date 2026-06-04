@@ -30,6 +30,19 @@ if (!$user) {
     exit();
 }
 
+$pendingReports = $conn->query("
+    SELECT COUNT(*) as count 
+    FROM bookings b
+    LEFT JOIN session_reports sr ON b.id = sr.booking_id
+    LEFT JOIN session_completion sc ON b.id = sc.booking_id
+    WHERE b.tutor_id = $userID 
+    AND b.status = 'completed'
+    AND (sr.id IS NULL OR sr.report_status = 'draft')
+    AND (sc.student_confirmed IS NULL OR sc.student_confirmed = 1)
+    AND (sc.no_show_type IS NULL OR sc.no_show_type != 'student_no_show')
+");
+$pendingReportCount = $pendingReports->fetch_assoc()['count'];
+
 $displayName = $user['fullname'];
 
 $profilePic = !empty($user['profile_pic'])
@@ -142,26 +155,8 @@ $stmt->execute();
 
 $upcomingSessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-/* ─────────────────────────────
-   PENDING REPORTS COUNT
-───────────────────────────── */
-$stmt = $conn->prepare("
-    SELECT COUNT(*) as count
-    FROM bookings b
-    JOIN payments p ON b.id = p.booking_id
-    LEFT JOIN session_reports sr ON b.id = sr.booking_id AND sr.report_status = 'submitted'
-    LEFT JOIN session_completion sc ON b.id = sc.booking_id
-    WHERE b.tutor_id = ?
-    AND b.status = 'completed'
-    AND p.status = 'verified'
-    AND sc.student_confirmed = 1
-    AND (sr.id IS NULL OR sr.report_status != 'submitted')
-");
 
-$stmt->bind_param("i", $userID);
-$stmt->execute();
 
-$pendingReportCount = $stmt->get_result()->fetch_assoc()['count'] ?? 0;
 
 /* ─────────────────────────────
    PENDING DISPUTES
@@ -171,7 +166,7 @@ $totalDisputeStmt = $conn->prepare("
     FROM disputes d
     JOIN bookings b ON d.booking_id = b.id
     WHERE b.tutor_id = ? 
-    AND d.status = 'pending' 
+    AND d.status = 'pending'
     AND d.resolution_type = 'student_tutor'
 ");
 $totalDisputeStmt->bind_param("i", $userID);
@@ -181,6 +176,7 @@ $totalDisputes = $totalDisputeStmt->get_result()->fetch_assoc()['count'] ?? 0;
 // Check if alerts have been dismissed this session
 $showDisputeAlert = ($totalDisputes > 0 && !isset($_SESSION['dismissed_dispute_alert']));
 $showReportAlert = ($pendingReportCount > 0 && !isset($_SESSION['dismissed_report_alert']));
+
 
 function e($value){
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');

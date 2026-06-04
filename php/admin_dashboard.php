@@ -112,21 +112,82 @@ function formatMoney($amount) {
             overflow-x: hidden;
         }
 
-        .sidebar {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 230px;
-            height: 100%;
-            background: #272754;
-            color: #E8E4F0;
-            overflow-y: auto;
-            z-index: 1000;
-            transition: transform 0.3s ease;
-            transform: translateX(0);
-            display:flex;
-            flex-direction: column;
-        }
+       /* Make sidebar fixed - NO SCROLLING */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 230px;
+    height: 100vh;
+    background: #272754;
+    color: #E8E4F0;
+    overflow-y: hidden;  /* ← CHANGE from 'auto' to 'hidden' */
+    z-index: 1000;
+    transition: transform 0.3s ease;
+    transform: translateX(0);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Make only the navigation menu scrollable if needed (optional) */
+.nav-menu {
+    padding: 16px 0;
+    flex: 1;
+    overflow-y: auto;  /* Only menu scrolls if content too long */
+    min-height: 0;
+}
+
+/* Custom scrollbar for nav-menu (optional) */
+.nav-menu::-webkit-scrollbar {
+    width: 3px;
+}
+
+.nav-menu::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.1);
+}
+
+.nav-menu::-webkit-scrollbar-thumb {
+    background: #B26EA7;
+    border-radius: 3px;
+}
+
+/* Keep header and footer fixed */
+.sidebar-header {
+    flex-shrink: 0;
+}
+
+.sidebar-footer {
+    flex-shrink: 0;
+}
+
+/* MAIN CONTENT - THIS SHOULD SCROLL */
+.main-content {
+    margin-left: 230px;
+    padding: 20px 24px;
+    transition: margin-left 0.3s ease;
+    height: 100vh;
+    overflow-y: auto;  /* ← ADD THIS - makes main content scrollable */
+    scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for main content (optional) */
+.main-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.main-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+    background: #E75A9B;
+    border-radius: 10px;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+    background: #C94F86;
+}
         
         .sidebar.closed {
             transform: translateX(-100%);
@@ -145,14 +206,6 @@ function formatMoney($amount) {
             margin-top: 4px;
         }
         
-        .nav-menu {
-            padding: 16px 0;
-            flex:1;
-            justify-content: center;
-            flex-direction: column;
-            display:flex;
-            min-height:0;
-        }
         
         .nav-item {
             padding: 10px 20px;
@@ -948,7 +1001,7 @@ function formatMoney($amount) {
         </div>
     </div>
     <div class="alert-actions">
-        <a href="admin_tutors.php" class="alert-btn">Review Now</a>
+        <a href="admin_verify_tutors.php" class="alert-btn">Review Now</a>
         <button class="alert-close" onclick="this.closest('.alert-card').classList.add('fade-out'); setTimeout(() => this.closest('.alert-card').remove(), 500);">&times;</button>
     </div>
 </div>

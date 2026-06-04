@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_assignment'])) {
     : null;
     $replace_type = $_POST['replace_type'] ?? 'keep';
     
-    $stmt = $conn->prepare("SELECT title, description, due_date, file_path, file_name, file_size, is_url, material_url FROM assignments WHERE id = ? AND tutor_id = ?");
+  $stmt = $conn->prepare("SELECT * FROM assignments WHERE id = ? AND tutor_id = ?");
     $stmt->bind_param("ii", $assignmentId, $userID);
     $stmt->execute();
     $current = $stmt->get_result()->fetch_assoc();
@@ -296,6 +296,17 @@ function getAssignmentAttachmentDisplay($assignment) {
     if ($assignment['is_url'] == 1 && !empty($assignment['material_url'])) {
         return '<div class="current-attachment"><i class="bi bi-link-45deg"></i> <a href="' . e($assignment['material_url']) . '" target="_blank">' . e($assignment['material_url']) . '</a></div>';
     } elseif (!empty($assignment['file_name'])) {
+        $fileNames = explode('|', $assignment['file_name']);
+        $filePaths = explode('|', $assignment['file_path'] ?? '');
+        if (count($fileNames) > 1) {
+            $html = '<div class="current-attachment">';
+            foreach ($fileNames as $i => $name) {
+                $path = $filePaths[$i] ?? '';
+                $html .= '<div style="margin-bottom:4px;"><i class="bi bi-file-earmark"></i> ' . e($name) . '</div>';
+            }
+            $html .= '</div>';
+            return $html;
+        }
         return '<div class="current-attachment"><i class="bi bi-file-earmark"></i> ' . e($assignment['file_name']) . ' (' . formatFileSize($assignment['file_size']) . ')</div>';
     }
     return '<div class="current-attachment"><i class="bi bi-exclamation-triangle"></i> No attachment</div>';
@@ -852,7 +863,7 @@ body::before {
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -998,8 +1009,8 @@ body::before {
                 <label>Update Attachment (Optional)</label>
                 <div class="edit-toggle-row">
                     <div class="edit-toggle-btn active" data-edit-content="keep">Keep Current</div>
-                    <div class="edit-toggle-btn" data-edit-content="file">Upload New File</div>
-                    <div class="edit-toggle-btn" data-edit-content="url">Add/Update URL</div>
+                    <div class="edit-toggle-btn" data-edit-content="file">Replace New File</div>
+                    <div class="edit-toggle-btn" data-edit-content="url">Update URL</div>
                 </div>
             </div>
             
@@ -1308,16 +1319,34 @@ function formatTime(dateString) {
     const date = new Date(dateString);
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
-
 function getAttachmentHtml(assignment) {
     if (assignment.is_url == 1 && assignment.material_url) {
         return '<i class="bi bi-link-45deg"></i> <a href="' + escapeHtml(assignment.material_url) + '" target="_blank">' + escapeHtml(assignment.material_url) + '</a>';
     } else if (assignment.file_name) {
-        return '<i class="bi bi-file-earmark"></i> ' + escapeHtml(assignment.file_name) + ' (' + formatFileSize(assignment.file_size) + ')';
-    }
-    return '<i class="bi bi-exclamation-triangle"></i> No attachment';
-}
+        // Check if pipe-separated (multiple files)
+        const fileNames = assignment.file_name.split('|');
+        const filePaths = assignment.file_path ? assignment.file_path.split('|') : [];
 
+        if (fileNames.length > 1) {
+            let html = '<div style="display:flex;flex-direction:column;gap:6px;">';
+            fileNames.forEach((name, i) => {
+                const path = filePaths[i] || '';
+                html += `<a href="../uploads/assignments/${escapeHtml(path)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;padding:5px 12px;border-radius:20px;text-decoration:none;font-size:12px;color:#1d3156;">
+                    <i class="bi bi-file-earmark"></i> ${escapeHtml(name)}
+                </a>`;
+            });
+            html += '</div>';
+            return html;
+        } else {
+            // Single file
+            const path = filePaths[0] || assignment.file_path || '';
+            return `<a href="../uploads/assignments/${escapeHtml(path)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;padding:5px 12px;border-radius:20px;text-decoration:none;font-size:12px;color:#1d3156;">
+                <i class="bi bi-file-earmark"></i> ${escapeHtml(assignment.file_name)} (${formatFileSize(assignment.file_size)})
+            </a>`;
+        }
+    }
+    return '<span style="color:#94a3b8;font-size:12px;font-style:italic;">No attachment</span>';
+}
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, function(m) {

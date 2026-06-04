@@ -2,6 +2,9 @@
 session_start();
 include 'config.php';
 $assetBase = '../assets/img';
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+require '../vendor/autoload.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
@@ -90,6 +93,189 @@ $stmt->close();
 $displayName = $user['fullname'];
 $profilePic = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
 
+function sendAdminPaymentEmail($booking_ids, $method, $receiptNo, $total_amount, $student_name, $student_email) {
+    global $conn;
+    
+    $sql = "SELECT email, fullname FROM users WHERE role = 'admin' AND status = 'approved' LIMIT 1";
+    $result = $conn->query($sql);
+    
+    if ($result->num_rows == 0) {
+        return false;
+    }
+    
+    $admin = $result->fetch_assoc();
+    
+    $placeholders = implode(',', array_fill(0, count($booking_ids), '?'));
+    $types = str_repeat('i', count($booking_ids));
+    $stmt = $conn->prepare("
+        SELECT b.id, b.language, b.booking_date, b.booking_time, tu.fullname as tutor_name
+        FROM bookings b
+        JOIN users tu ON b.tutor_id = tu.id
+        WHERE b.id IN ($placeholders)
+    ");
+    $stmt->bind_param($types, ...$booking_ids);
+    $stmt->execute();
+    $bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    
+    $is_multi = count($bookings) > 1;
+    $method_name = $method === 'online_banking' ? 'Online Banking (FPX)' : 'DuitNow';
+    
+    $sessionList = "";
+    foreach ($bookings as $booking) {
+        $sessionList .= "<tr><td style='padding:8px;border:1px solid #ddd;'>#{$booking['id']}</td>
+                        <td style='padding:8px;border:1px solid #ddd;'>{$booking['language']}</td>
+                        <td style='padding:8px;border:1px solid #ddd;'>{$booking['tutor_name']}</td>
+                        <td style='padding:8px;border:1px solid #ddd;'>" . date('d M Y, g:i A', strtotime($booking['booking_date'] . ' ' . $booking['booking_time'])) . "</td></tr>";
+    }
+    
+    $adminLink = "http://localhost/kyoshi/php/admin/pending_payments.php";
+    
+    $mail = new PHPMailer(true);
+    
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port       = 587;
+        
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($admin['email'], $admin['fullname']);
+        
+        $mail->isHTML(true);
+        $mail->Subject = 'New Payment Pending Verification - ' . ($is_multi ? count($bookings) . " Sessions" : "Booking #{$booking_ids[0]}");
+        
+        $mail->Body = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:700px;margin:auto;'>
+                <h2 style='color:#E75A9B;'>New Payment Pending</h2>
+                <p>A student has submitted a payment that requires verification.</p>
+                
+                <div style='background:#f8f9fa;padding:15px;border-radius:10px;margin:15px 0;'>
+                    <h3 style='margin:0 0 10px 0;'>Payment Details</h3>
+                    <p><strong>Payment Method:</strong> $method_name</p>
+                    <p><strong>Receipt Number:</strong> <span style='color:#E75A9B;'>$receiptNo</span></p>
+                    <p><strong>Total Amount:</strong> <strong style='color:#28a745;'>RM " . number_format($total_amount, 2) . "</strong></p>
+                    <p><strong>Student:</strong> $student_name</p>
+                    <p><strong>Student Email:</strong> $student_email</p>
+                    <p><strong>Submitted At:</strong> " . date('d M Y, g:i A') . "</p>
+                </div>
+                
+                <div style='background:#f8f9fa;padding:15px;border-radius:10px;margin:15px 0;'>
+                    <h3 style='margin:0 0 10px 0;'>Session Details</h3>
+                    <table style='width:100%;border-collapse:collapse;'>
+                        <thead><tr style='background:#e9ecef;'><th style='padding:8px;border:1px solid #ddd;'>Booking ID</th><th style='padding:8px;border:1px solid #ddd;'>Language</th><th style='padding:8px;border:1px solid #ddd;'>Tutor</th><th style='padding:8px;border:1px solid #ddd;'>Session Time</th></tr></thead>
+                        <tbody>$sessionList</tbody>
+                    </table>
+                </div>
+                
+                <div style='background:#fff3cd;padding:15px;border-radius:10px;margin:15px 0;'>
+                    <p style='margin:0;color:#856404;'><strong>Action Required:</strong> Please verify the payment proof in the admin panel.</p>
+                </div>
+                
+                <div style='text-align:center;margin:20px 0;'>
+                    <a href='$adminLink' style='display:inline-block;padding:12px 24px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>Verify Payment →</a>
+                </div>
+                
+                <p style='margin-top:20px;color:gray;font-size:13px;'>This is an automated notification. Please verify the payment proof in admin panel.<br>Kyoshi Learning Platform</p>
+            </div>
+        ";
+        
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log("Admin notification failed: " . $mail->ErrorInfo);
+        return false;
+    }
+}
+
+// EMAIL FUNCTION TO STUDENT
+function sendStudentPaymentEmail($student_email, $student_name, $booking_ids, $method, $receiptNo, $total_amount) {
+    global $conn;
+    
+    $placeholders = implode(',', array_fill(0, count($booking_ids), '?'));
+    $types = str_repeat('i', count($booking_ids));
+    $stmt = $conn->prepare("
+        SELECT b.id, b.language, b.booking_date, b.booking_time, tu.fullname as tutor_name
+        FROM bookings b
+        JOIN users tu ON b.tutor_id = tu.id
+        WHERE b.id IN ($placeholders)
+    ");
+    $stmt->bind_param($types, ...$booking_ids);
+    $stmt->execute();
+    $bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    
+    $is_multi = count($bookings) > 1;
+    $method_name = $method === 'online_banking' ? 'Online Banking (FPX)' : 'DuitNow';
+    
+    $sessionList = "";
+    foreach ($bookings as $booking) {
+        $sessionList .= "<tr><td style='padding:8px;border:1px solid #ddd;'>#{$booking['id']}</td>
+                        <td style='padding:8px;border:1px solid #ddd;'>{$booking['language']}</td>
+                        <td style='padding:8px;border:1px solid #ddd;'>{$booking['tutor_name']}</td>
+                        <td style='padding:8px;border:1px solid #ddd;'>" . date('d M Y, g:i A', strtotime($booking['booking_date'] . ' ' . $booking['booking_time'])) . "</td></tr>";
+    }
+    
+    $mail = new PHPMailer(true);
+    
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port       = 587;
+        
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($student_email, $student_name);
+        
+        $mail->isHTML(true);
+        $mail->Subject = 'Payment Submitted - Pending Verification';
+        
+        $mail->Body = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:600px;margin:auto;'>
+                <h2 style='color:#E75A9B;'>Payment Submitted</h2>
+                <p>Dear <strong>$student_name</strong>,</p>
+                <p>We have received your payment for <strong>" . ($is_multi ? count($bookings) . " sessions" : "your session") . "</strong>.</p>
+                
+                <div style='background:#f8f9fa;padding:15px;border-radius:10px;margin:15px 0;'>
+                    <h3 style='margin:0 0 10px 0;'>Payment Details</h3>
+                    <p><strong>Receipt Number:</strong> $receiptNo</p>
+                    <p><strong>Payment Method:</strong> $method_name</p>
+                    <p><strong>Amount:</strong> <strong style='color:#28a745;'>RM " . number_format($total_amount, 2) . "</strong></p>
+                </div>
+                
+                <div style='background:#f8f9fa;padding:15px;border-radius:10px;margin:15px 0;'>
+                    <h3 style='margin:0 0 10px 0;'>Session Details</h3>
+                    <table style='width:100%;border-collapse:collapse;'>
+                        <thead><tr style='background:#e9ecef;'><th style='padding:8px;border:1px solid #ddd;'>Booking ID</th><th style='padding:8px;border:1px solid #ddd;'>Language</th><th style='padding:8px;border:1px solid #ddd;'>Tutor</th><th style='padding:8px;border:1px solid #ddd;'>Session Time</th></tr></thead>
+                        <tbody>$sessionList</tbody>
+                    </table>
+                </div>
+                
+                <div style='background:#fff3cd;padding:15px;border-radius:10px;margin:15px 0;'>
+                    <p style='margin:0;color:#856404;'><strong>Payment Pending Verification</strong><br>Your payment is being reviewed by our admin. We will verify it within 1-2 business days. Once verified, your session will be confirmed.</p>
+                </div>
+                
+                <div style='text-align:center;margin:20px 0;'>
+                    <a href='http://localhost/kyoshi/php/my_payments.php' style='display:inline-block;padding:10px 25px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>View My Payments</a>
+                </div>
+                
+                <p style='margin-top:20px;color:gray;font-size:13px;'>Kyoshi Learning Platform</p>
+            </div>
+        ";
+        
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log("Student payment confirmation failed: " . $mail->ErrorInfo);
+        return false;
+    }
+}
+
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $method = trim($_POST['payment_method'] ?? '');
     $notes = trim($_POST['notes'] ?? '');
@@ -149,6 +335,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param("iiidssss", $booking['id'], $userID, $booking['tutor_id'], $booking['rate'], $method, $receiptNo, $notes, $proofImage);
                 $stmt->execute();
                 $stmt->close();
+            }
+            
+            if (in_array($method, ['online_banking', 'duitnow'])) {
+                sendAdminPaymentEmail($booking_ids, $method, $receiptNo, $total_amount, $displayName, $user['email']);
+                sendStudentPaymentEmail($user['email'], $displayName, $booking_ids, $method, $receiptNo, $total_amount);
             }
             
             if ($is_multi) {
@@ -268,6 +459,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
           <a href="booking_status.php">My Bookings</a>
           <a class="active" href="my_payments.php">My Payments</a>
           <a href="my_materials.php">My Materials</a>
+          <a href="my_assignments.php">My Assignments</a>
         </div>
         <div class="nav-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;">
           <div style="position:relative;">

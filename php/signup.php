@@ -26,7 +26,7 @@
       position: relative;
       transition: background-image 0.3s ease;
     }
-
+  
     .signup-logo {
       position: absolute;
       top: 20px;
@@ -739,6 +739,7 @@
 <button type="button" id="addCertificateBtn" class="btn btn-sm btn-secondary mb-3" style="background:#e2e8f0; border:none; padding:5px 12px; border-radius:20px;">
     <i class="bi bi-plus"></i> Add Another Certificate
 </button>
+</div>
           <button type="submit" class="btn-main mt-3" id="submitBtn">Create Account</button>
         </form>
       </div>

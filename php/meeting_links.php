@@ -37,7 +37,45 @@ $bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $success_msg = '';
 $error_msg = '';
 
-// Handle bulk update - Option 1: Overwrite All
+// Handle single update via AJAX (for the modal) - DIRECT DATABASE UPDATE
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['HTTP_CONTENT_TYPE']) && strpos($_SERVER['HTTP_CONTENT_TYPE'], 'application/json') !== false) {
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (isset($input['booking_id']) && isset($input['meeting_link'])) {
+        $booking_id = intval($input['booking_id']);
+        $meeting_link = trim($input['meeting_link']);
+        
+        if (empty($meeting_link)) {
+            echo json_encode(['success' => false, 'message' => 'Meeting link is required']);
+            exit();
+        }
+        
+        if (!filter_var($meeting_link, FILTER_VALIDATE_URL)) {
+            echo json_encode(['success' => false, 'message' => 'Please enter a valid URL starting with http:// or https://']);
+            exit();
+        }
+        
+        // Verify booking belongs to this tutor
+        $checkStmt = $conn->prepare("SELECT id FROM bookings WHERE id = ? AND tutor_id = ?");
+        $checkStmt->bind_param("ii", $booking_id, $userID);
+        $checkStmt->execute();
+        if ($checkStmt->get_result()->num_rows === 0) {
+            echo json_encode(['success' => false, 'message' => 'Booking not found']);
+            exit();
+        }
+        
+        // Update the meeting link directly
+        $updateStmt = $conn->prepare("UPDATE bookings SET meeting_link = ?, link_provided_at = NOW() WHERE id = ?");
+        $updateStmt->bind_param("si", $meeting_link, $booking_id);
+        
+        if ($updateStmt->execute()) {
+            echo json_encode(['success' => true, 'message' => 'Meeting link updated']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
+        }
+        exit();
+    }
+}
+// Handle bulk update - Overwrite All (DIRECT DATABASE UPDATE - NO CURL)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_overwrite'])) {
     $bulk_link = trim($_POST['bulk_link']);
     if (empty($bulk_link)) {
@@ -46,27 +84,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_overwrite
         $error_msg = "Please enter a valid URL starting with http:// or https://";
     } else {
         $updated_count = 0;
+        $failed_count = 0;
         foreach ($bookings as $booking) {
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, 'http://localhost/kyoshi/php/save_meeting_link.php');
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-                'booking_id' => $booking['id'],
-                'meeting_link' => $bulk_link
-            ]));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_exec($ch);
-            curl_close($ch);
-            $updated_count++;
+            $updateStmt = $conn->prepare("UPDATE bookings SET meeting_link = ?, link_provided_at = NOW() WHERE id = ? AND tutor_id = ?");
+            $updateStmt->bind_param("sii", $bulk_link, $booking['id'], $userID);
+            $updateStmt->execute();
+            
+            // Check if any row was actually affected
+            if ($updateStmt->affected_rows > 0) {
+                $updated_count++;
+            } else {
+                $failed_count++;
+            }
+            $updateStmt->close();
         }
-        $success_msg = "All $updated_count meetings updated with the same link!";
+        
+        // Refresh the bookings data after update
+        $stmt = $conn->prepare("
+            SELECT b.id, b.booking_date, b.booking_time, b.language, b.meeting_link, b.learning_mode,
+                   u.fullname as student_name, u.id as student_id
+            FROM bookings b
+            JOIN users u ON b.student_id = u.id
+            WHERE b.tutor_id = ? 
+            AND b.status = 'confirmed' 
+            AND b.learning_mode = 'online'
+            AND b.booking_date >= CURDATE()
+            ORDER BY b.booking_date ASC, b.booking_time ASC
+        ");
+        $stmt->bind_param("i", $userID);
+        $stmt->execute();
+        $bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        
+        $success_msg = "$updated_count meetings updated successfully" . ($failed_count > 0 ? " ($failed_count failed)" : "");
         header("Location: meeting_links.php?success=" . urlencode($success_msg));
         exit();
     }
 }
 
-// Handle bulk update - Option 2: Only update students WITHOUT existing links
+// Handle bulk update - Only update students WITHOUT existing links
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_skip'])) {
     $bulk_link = trim($_POST['bulk_link']);
     if (empty($bulk_link)) {
@@ -76,26 +131,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_skip'])) 
     } else {
         $updated_count = 0;
         $skipped_count = 0;
+        $failed_count = 0;
         foreach ($bookings as $booking) {
             // Only update if no meeting link exists
-            if (empty($booking['meeting_link'])) {
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, 'http://localhost/kyoshi/php/save_meeting_link.php');
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-                    'booking_id' => $booking['id'],
-                    'meeting_link' => $bulk_link
-                ]));
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_exec($ch);
-                curl_close($ch);
-                $updated_count++;
+            if (empty($booking['meeting_link']) || $booking['meeting_link'] === null) {
+                $updateStmt = $conn->prepare("UPDATE bookings SET meeting_link = ?, link_provided_at = NOW() WHERE id = ? AND tutor_id = ?");
+                $updateStmt->bind_param("sii", $bulk_link, $booking['id'], $userID);
+                $updateStmt->execute();
+                
+                if ($updateStmt->affected_rows > 0) {
+                    $updated_count++;
+                } else {
+                    $failed_count++;
+                }
+                $updateStmt->close();
             } else {
                 $skipped_count++;
             }
         }
-        $success_msg = "Updated $updated_count students (skipped $skipped_count who already had links)";
+        
+        // Refresh the bookings data after update
+        $stmt = $conn->prepare("
+            SELECT b.id, b.booking_date, b.booking_time, b.language, b.meeting_link, b.learning_mode,
+                   u.fullname as student_name, u.id as student_id
+            FROM bookings b
+            JOIN users u ON b.student_id = u.id
+            WHERE b.tutor_id = ? 
+            AND b.status = 'confirmed' 
+            AND b.learning_mode = 'online'
+            AND b.booking_date >= CURDATE()
+            ORDER BY b.booking_date ASC, b.booking_time ASC
+        ");
+        $stmt->bind_param("i", $userID);
+        $stmt->execute();
+        $bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        
+        $success_msg = "Updated $updated_count students (skipped $skipped_count who already had links)" . ($failed_count > 0 ? " ($failed_count failed)" : "");
         header("Location: meeting_links.php?success=" . urlencode($success_msg));
         exit();
     }
@@ -234,6 +305,14 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
         .alert-success { background: #d4edda; color: #155724; border-left: 3px solid #28a745; }
         .alert-error { background: #f8d7da; color: #721c24; border-left: 3px solid #dc3545; }
         
+        .alert-success, .alert-error {
+            transition: opacity 0.5s ease;
+        }
+
+        .alert-success.fade-out, .alert-error.fade-out {
+            opacity: 0;
+            display: none;
+        }
         .bulk-card {
             background: #f0f9ff;
             border-radius: 16px;
@@ -250,21 +329,6 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-        
-        .bulk-input {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-        .bulk-input input { flex: 1; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 12px; }
-        
-        .button-group {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
         }
         
         .btn-primary, .btn-outline, .btn-edit, .btn-warning {
@@ -284,7 +348,6 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
         .btn-outline { background: #e2e8f0; color: #1d3156; }
         .btn-edit { background: #e0f2fe; color: #0284c7; }
         .btn-warning { background: #fef3c7; color: #d97706; }
-        .btn-primary:hover, .btn-outline:hover, .btn-edit:hover, .btn-warning:hover { transform: translateY(-1px); }
         
         .info-message {
             background: #fef3c7;
@@ -297,7 +360,6 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
             color: #92400e;
             font-size: 14px;
         }
-        .info-message i { font-size: 24px; }
         
         table {
             width: 100%;
@@ -336,7 +398,6 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
             font-size: 12px;
         }
         
-        /* Modal Styles */
         .modal {
             display: none;
             position: fixed;
@@ -358,7 +419,6 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
             width: 450px;
             max-width: 90%;
             padding: 28px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
         .modal-header {
             font-size: 20px;
@@ -418,15 +478,11 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
         }
         
         @media (max-width: 768px) {
-            body { padding: 20px; }
             .main-container { padding: 0 16px; }
             .content-card { padding: 20px; overflow-x: auto; }
             table { min-width: 600px; }
             .nav { flex-wrap: wrap; }
             .nav-links { order: 3; width: 100%; justify-content: center; padding-bottom: 10px; }
-            .bulk-input { flex-direction: column; }
-            .button-group { width: 100%; }
-            .button-group button { flex: 1; }
         }
     </style>
 </head>
@@ -445,7 +501,7 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
             </a>
             <div class="nav-links">
                 <a href="tutor_dashboard.php">Dashboard</a>
-                <a href="booking_requests.php" class="active">My Bookings</a>
+                <a href="booking_requests.php">My Bookings</a>
                 <a href="material_overview.php">My Materials</a>
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
@@ -457,7 +513,7 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -538,19 +594,19 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
                             <div class="meeting-link-display">
                                 <?php if (!empty($booking['meeting_link'])): ?>
                                     <span class="link-text">
-                                        <i class="bi bi-link-45deg"></i> <?= e($booking['meeting_link']) ?>
+                                        <i class="bi bi-link-45deg"></i> <?= e(trim($booking['meeting_link'])) ?>
                                     </span>
                                 <?php else: ?>
                                     <span class="no-link">No meeting link set</span>
                                 <?php endif; ?>
                             </div>
-                           </td>
+                        </td>
                         <td>
                             <button type="button" class="btn-edit" onclick="openEditModal(<?= $booking['id'] ?>, '<?= e(addslashes($booking['student_name'])) ?>', '<?= e(addslashes($booking['meeting_link'])) ?>')">
                                 <i class="bi bi-pencil"></i> Edit
                             </button>
-                           </td>
-                      </tr>
+                        </td>
+                    </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
@@ -581,7 +637,20 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
         </div>
     </div>
 </div>
-
+<script>
+// Auto-hide messages after 3 seconds with fade effect
+document.addEventListener('DOMContentLoaded', function() {
+    const messages = document.querySelectorAll('.alert-success, .alert-error');
+    messages.forEach(function(message) {
+        setTimeout(function() {
+            message.classList.add('fade-out');
+            setTimeout(function() {
+                message.style.display = 'none';
+            }, 500);
+        }, 3000);
+    });
+});
+</script>
 <script>
 let currentBookingId = null;
 
@@ -611,7 +680,7 @@ function closeEditModal() {
 }
 
 async function saveModalLink() {
-    const newLink = document.getElementById('modalMeetingLink').value.trim();
+    let newLink = document.getElementById('modalMeetingLink').value.trim();
     const saveBtn = document.getElementById('saveModalBtn');
     
     if (!newLink) {
@@ -634,7 +703,8 @@ async function saveModalLink() {
     saveBtn.disabled = true;
     
     try {
-        const response = await fetch('save_meeting_link.php', {
+        // Post to the same file (meeting_links.php) which handles JSON requests
+        const response = await fetch(window.location.href, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -665,6 +735,9 @@ async function saveModalLink() {
             successDiv.innerHTML = '<i class="bi bi-check-circle-fill"></i> Meeting link updated!';
             document.querySelector('.content-card').insertBefore(successDiv, document.querySelector('.bulk-card'));
             setTimeout(() => successDiv.remove(), 3000);
+            
+            // Refresh after 1 second to show updated data
+            setTimeout(() => location.reload(), 1000);
         } else {
             alert('Error: ' + result.message);
         }

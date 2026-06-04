@@ -1,6 +1,25 @@
 <?php
 session_start();
 include 'config.php';
+// Initialize session flags for no-show messages
+if (!isset($_SESSION['shown_tutor_no_show'])) {
+    $_SESSION['shown_tutor_no_show'] = false;
+}
+if (!isset($_SESSION['shown_student_no_show'])) {
+    $_SESSION['shown_student_no_show'] = false;
+}
+
+// Handle dismissal via GET parameter
+if (isset($_GET['dismiss_tutor_no_show'])) {
+    $_SESSION['shown_tutor_no_show'] = true;
+    header("Location: earnings.php");
+    exit();
+}
+if (isset($_GET['dismiss_student_no_show'])) {
+    $_SESSION['shown_student_no_show'] = true;
+    header("Location: earnings.php");
+    exit();
+}
 
 $assetBase = '../assets/img';
 
@@ -953,20 +972,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </div>
         <?php unset($_SESSION['error_message']); ?>
     <?php endif; ?>
+<?php if ($tutorNoShowCount > 0 && !$_SESSION['shown_tutor_no_show']): ?>
+    <div class="alert alert-info" id="tutorNoShowAlert" style="position: relative;">
+        <i class="bi bi-info-circle"></i>
+        You have <?= $tutorNoShowCount ?> session(s) where you didn't attend. These sessions have been refunded to students and are not included in your earnings.
+        <button onclick="dismissAlert('tutor_no_show', this)" style="float: right; background: none; border: none; color: #0c5460; font-weight: bold; cursor: pointer; font-size: 18px;">&times;</button>
+    </div>
+    <script>
+        // Auto-dismiss after 5 seconds
+        setTimeout(function() {
+            const alert = document.getElementById('tutorNoShowAlert');
+            if (alert) {
+                alert.style.transition = 'opacity 0.5s ease';
+                alert.style.opacity = '0';
+                setTimeout(function() {
+                    if (alert) alert.remove();
+                    // Also mark as seen in session
+                    fetch('earnings.php?dismiss_tutor_no_show=1', { method: 'GET' });
+                }, 500);
+            }
+        }, 5000);
+    </script>
+<?php endif; ?>
 
-    <?php if ($tutorNoShowCount > 0): ?>
-        <div class="alert alert-info">
-            <i class="bi bi-info-circle"></i>
-            You have <?= $tutorNoShowCount ?> session(s) where you didn't attend. These sessions have been refunded to students and are not included in your earnings.
-        </div>
-    <?php endif; ?>
-
-    <?php if ($studentNoShowCount > 0): ?>
-        <div class="alert alert-info">
-            <i class="bi bi-calendar-x"></i>
-            You have <?= $studentNoShowCount ?> session(s) where the student didn't attend. You were still paid for your reserved time. No session reports needed for no-shows.
-        </div>
-    <?php endif; ?>
+<?php if ($studentNoShowCount > 0 && !$_SESSION['shown_student_no_show']): ?>
+    <div class="alert alert-info" id="studentNoShowAlert" style="position: relative;">
+        <i class="bi bi-calendar-x"></i>
+        You have a total of <?= $studentNoShowCount ?> session(s) where the student didn't attend. You were still paid for your reserved time. No session reports needed for no-shows.
+        <button onclick="dismissAlert('student_no_show', this)" style="float: right; background: none; border: none; color: #0c5460; font-weight: bold; cursor: pointer; font-size: 18px;">&times;</button>
+    </div>
+    <script>
+        // Auto-dismiss after 5 seconds
+        setTimeout(function() {
+            const alert = document.getElementById('studentNoShowAlert');
+            if (alert) {
+                alert.style.transition = 'opacity 0.5s ease';
+                alert.style.opacity = '0';
+                setTimeout(function() {
+                    if (alert) alert.remove();
+                    // Also mark as seen in session
+                    fetch('earnings.php?dismiss_student_no_show=1', { method: 'GET' });
+                }, 500);
+            }
+        }, 5000);
+    </script>
+<?php endif; ?>
 
     <?php if (empty($verifiedBookings) && $totalNet == 0): ?>
         <div class="empty-state">
@@ -992,7 +1042,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <?php if ($pendingReportCount > 0): ?>
                     <p style="color: #fef3c7; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 12px; margin-top: 8px;">
                         <i class="bi bi-exclamation-triangle"></i> 
-                        You have <?= $pendingReportCount ?> attended session(s) with payment verified but report not submitted.
+                        You have an overall of <?= $pendingReportCount ?> attended session(s) but report not submitted yet.
                         Please submit all session reports before requesting payout.
                     </p>
                 <?php endif; ?>
@@ -1555,6 +1605,23 @@ setTimeout(function() {
 }, 500);
 <?php endif; ?>
 </script>
-
+<script>
+function dismissAlert(type, buttonElement) {
+    // Hide the alert immediately
+    const alertDiv = buttonElement.closest('.alert');
+    if (alertDiv) {
+        alertDiv.style.display = 'none';
+    }
+    
+    // Send request to mark as seen in session
+    fetch(`earnings.php?dismiss_${type}=1`, { method: 'GET' })
+        .then(response => {
+            if (!response.ok) {
+                console.error('Failed to dismiss alert');
+            }
+        })
+        .catch(error => console.error('Error:', error));
+}
+</script>
 </body>
 </html>

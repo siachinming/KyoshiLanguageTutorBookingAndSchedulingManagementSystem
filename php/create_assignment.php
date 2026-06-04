@@ -7,6 +7,14 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require '../vendor/autoload.php';
 
+// Determine where to go back - MOVED HERE
+$referer = $_SERVER['HTTP_REFERER'] ?? '';
+if (strpos($referer, 'select_booking.php') !== false) {
+    $backUrl = 'select_booking.php?action=assignment';
+} else {
+    $backUrl = 'assignment_overview.php';
+}
+
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'tutor') {
     header("Location: login.php");
     exit();
@@ -91,7 +99,6 @@ function sendAssignmentEmail($booking, $title, $description, $due_date, $tutorNa
         error_log("Assignment email failed: " . $e->getMessage());
     }
 }
-
 // Handle POST
 $message     = '';
 $messageType = '';
@@ -99,7 +106,24 @@ $messageType = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title         = trim($_POST['title'] ?? '');
     $description   = trim($_POST['description'] ?? '');
-    $due_date      = $_POST['due_date'] ?? '';
+    
+
+    
+   $due_date_raw = $_POST['due_date'] ?? '';
+
+// Debug: Log the raw due date
+error_log("Raw due date from form: " . $due_date_raw);
+$due_date = null;
+if (!empty($due_date_raw)) {
+    $due_date = str_replace('T', ' ', $due_date_raw) . ':00';
+}
+
+// Double-check: Make sure it's not empty or invalid
+if ($due_date && $due_date == '0000-00-00 00:00:00') {
+    $due_date = null; // Don't save zeros
+    error_log("Reset zero date to NULL");
+}
+    
     $total_points  = intval($_POST['total_points'] ?? 100);
     $allowLate = isset($_POST['allow_late_submission']) ? 1 : 0;
     $attachment_type = $_POST['attachment_type'] ?? 'none';
@@ -113,48 +137,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $file_path = null;
         $file_size = null;
         $file_type = null;
+        $is_url = 0;
         
         // Handle file upload
-        if ($attachment_type === 'file' && isset($_FILES['assignment_file']) && $_FILES['assignment_file']['error'] === UPLOAD_ERR_OK) {
-            $uploadDir = '../uploads/assignments/';
-            if (!file_exists($uploadDir)) mkdir($uploadDir, 0777, true);
-            
-            $fileExt = pathinfo($_FILES['assignment_file']['name'], PATHINFO_EXTENSION);
+       // Handle multiple file uploads
+if ($attachment_type === 'file' && isset($_FILES['assignment_files']) && count($_FILES['assignment_files']['name']) > 0) {
+    $uploadDir = '../uploads/assignments/';
+    if (!file_exists($uploadDir)) mkdir($uploadDir, 0777, true);
+    
+    $uploadedFiles = [];
+    $uploadErrors = [];
+    
+    $totalFiles = count($_FILES['assignment_files']['name']);
+    error_log("Uploading $totalFiles files");
+    
+    for ($i = 0; $i < $totalFiles; $i++) {
+        if ($_FILES['assignment_files']['error'][$i] === UPLOAD_ERR_OK) {
+            $fileExt = pathinfo($_FILES['assignment_files']['name'][$i], PATHINFO_EXTENSION);
             $fileName = time() . '_' . bin2hex(random_bytes(8)) . '.' . $fileExt;
-            $filePath = $uploadDir . $fileName;
-            $originalName = $_FILES['assignment_file']['name'];
-            $fileSize = $_FILES['assignment_file']['size'];
-            $fileMime = $_FILES['assignment_file']['type'];
+            $fullFilePath = $uploadDir . $fileName;
+            $originalName = $_FILES['assignment_files']['name'][$i];
+            $fileSize = $_FILES['assignment_files']['size'][$i];
+            $fileMime = $_FILES['assignment_files']['type'][$i];
             
-            if (move_uploaded_file($_FILES['assignment_file']['tmp_name'], $filePath)) {
-                $file_name = $originalName;
-                $file_path = $filePath;
-                $file_size = $fileSize;
-                $file_type = $fileMime;
+            if (move_uploaded_file($_FILES['assignment_files']['tmp_name'][$i], $fullFilePath)) {
+                $uploadedFiles[] = [
+                    'name' => $originalName,
+                    'path' => $fileName,
+                    'size' => $fileSize,
+                    'type' => $fileMime
+                ];
+                error_log("File uploaded: " . $fileName);
             } else {
-                $message = "Failed to upload file.";
-                $messageType = "error";
+                $uploadErrors[] = "Failed to upload: " . $originalName;
             }
+        } else {
+            $uploadErrors[] = "Error uploading file " . ($i+1);
+        }
+    }
+    
+    if (!empty($uploadErrors)) {
+        $message = implode(", ", $uploadErrors);
+        $messageType = "error";
+    } else {
+        // Store as JSON or pipe-separated values
+        // Single file — store plain string
+// Multiple files — store pipe-separated
+$file_name = implode('|', array_column($uploadedFiles, 'name'));
+$file_path = implode('|', array_column($uploadedFiles, 'path'));
+$file_size = array_sum(array_column($uploadedFiles, 'size'));
+$file_type = implode('|', array_column($uploadedFiles, 'type'));
+    }
         } elseif ($attachment_type === 'url') {
             $material_url = trim($_POST['material_url'] ?? '');
             if (!empty($material_url) && !filter_var($material_url, FILTER_VALIDATE_URL)) {
                 $message = "Please enter a valid URL.";
                 $messageType = "error";
+            } else {
+                $is_url = 1;
+                error_log("URL set: " . $material_url);
             }
         }
         
         if (empty($message)) {
-
-            
+            error_log("Attempting to insert assignment with due_date: " . ($due_date ?? 'NULL'));
             $stmt = $conn->prepare("
-    INSERT INTO assignments (booking_id, tutor_id, student_id, title, description, due_date, total_points, allow_late_submission, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
-");
- $due_date_sql = !empty($due_date) ? $due_date : null;
-$stmt->bind_param("iiissiii", $booking_id, $userID, $booking['student_id'], $title, $description, $due_date_sql, $total_points, $allowLate);
-        
+                INSERT INTO assignments (
+                    booking_id, tutor_id, student_id, title, description, 
+                    due_date, total_points, allow_late_submission,
+                    file_name, file_path, file_size, file_type,
+                    is_url, material_url, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ");
             
+           $stmt->bind_param(
+    "iiisssiissisis",
+//                ^^ file_size = i now
+    $booking_id,
+    $userID,
+    $booking['student_id'],
+    $title,
+    $description,
+    $due_date,
+    $total_points,
+    $allowLate,
+    $file_name,
+    $file_path,
+    $file_size,
+    $file_type,
+    $is_url,
+    $material_url
+);
+                        
             if ($stmt->execute()) {
+                $assignment_id = $conn->insert_id;
+                error_log("SUCCESS! Assignment created with ID: " . $assignment_id);
+                
                 // Insert notification for student
                 $due_text = !empty($due_date) ? " (Due: " . date('d M Y, g:i A', strtotime($due_date)) . ")" : "";
                 $notification_title = "New Assignment: " . $title;
@@ -169,7 +247,11 @@ $stmt->bind_param("iiissiii", $booking_id, $userID, $booking['student_id'], $tit
             } else {
                 $message = "Error: " . $conn->error;
                 $messageType = "error";
-                if ($file_path && file_exists($file_path)) unlink($file_path);
+                error_log("Database error: " . $conn->error);
+                // Delete uploaded file if database insert failed
+                if ($file_path && file_exists('../uploads/assignments/' . $file_path)) {
+                    unlink('../uploads/assignments/' . $file_path);
+                }
             }
         }
     }
@@ -394,17 +476,6 @@ $stmt->bind_param("iiissiii", $booking_id, $userID, $booking['student_id'], $tit
 </header>
 
 <div class="main">
-    
-    <?php
-// Determine where to go back
-$referer = $_SERVER['HTTP_REFERER'] ?? '';
-if (strpos($referer, 'select_booking.php') !== false) {
-    $backUrl = 'select_booking.php?action=assignment';
-} else {
-    $backUrl = 'assignments_overview.php';
-}
-?>
-
     <div class="card">
                 <a href="<?= $backUrl ?>" class="btn-back">
             <i class="bi bi-arrow-left"></i> Back
@@ -475,19 +546,16 @@ if (strpos($referer, 'select_booking.php') !== false) {
             </div>
 
             <div id="fileSection" class="hidden">
-                <div class="drop-wrapper">
-                    <div class="drop-zone" id="dropZone">
-                        <i class="bi bi-cloud-arrow-up"></i>
-                        <p>Drag & drop or click to browse</p>
-                        <small>PDF, Word, PPT, Images, MP4, ZIP (Max 50MB)</small>
-                    </div>
-                    <input type="file" name="assignment_file" id="fileInput" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.zip" onchange="previewFile(this)">
-                </div>
-                <div class="file-preview" id="filePreview">
-                    <i class="bi bi-file-earmark-check"></i>
-                    <div><strong id="fileName"></strong> <span id="fileSize"></span></div>
-                </div>
-            </div>
+    <div class="drop-wrapper">
+        <div class="drop-zone" id="dropZone">
+            <i class="bi bi-cloud-arrow-up"></i>
+            <p>Drag & drop or click to browse</p>
+            <small>PDF, Word, PPT, Images, MP4, ZIP (Max 50MB each)</small>
+        </div>
+        <input type="file" name="assignment_files[]" id="fileInput" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.zip" multiple onchange="previewMultipleFiles(this)">
+    </div>
+    <div id="filePreviewList" style="margin-top: 10px; max-height: 200px; overflow-y: auto;"></div>
+</div>
 
             <div id="urlSection" class="hidden">
                 <div class="form-group">
@@ -556,20 +624,75 @@ if (strpos($referer, 'select_booking.php') !== false) {
             }
         });
     });
+let selectedFiles = [];
 
-    function previewFile(input) {
-        const preview = document.getElementById('filePreview');
-        const nameEl = document.getElementById('fileName');
-        const sizeEl = document.getElementById('fileSize');
-        if (input.files && input.files[0]) {
-            const f = input.files[0];
-            nameEl.textContent = f.name;
-            sizeEl.textContent = '(' + (f.size / 1024 / 1024).toFixed(2) + ' MB)';
-            preview.style.display = 'flex';
-        } else {
-            preview.style.display = 'none';
+function previewMultipleFiles(input) {
+    // ADD new files to existing selection, don't replace
+    if (input.files && input.files.length > 0) {
+        for (let i = 0; i < input.files.length; i++) {
+            selectedFiles.push(input.files[i]);
         }
+        // Sync back to input
+        syncFilesToInput();
     }
+    renderFilePreview();
+}
+
+function syncFilesToInput() {
+    const dataTransfer = new DataTransfer();
+    selectedFiles.forEach(file => dataTransfer.items.add(file));
+    document.getElementById('fileInput').files = dataTransfer.files;
+}
+
+function renderFilePreview() {
+    const previewContainer = document.getElementById('filePreviewList');
+    previewContainer.innerHTML = '';
+
+    selectedFiles.forEach((file, i) => {
+        const fileDiv = document.createElement('div');
+        fileDiv.style.cssText = 'display:flex;align-items:center;justify-content:space-between;background:#eef2ff;border-radius:12px;padding:10px 12px;margin-bottom:8px;';
+        fileDiv.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;">
+                <i class="bi bi-file-earmark" style="color:#E75A9B;font-size:18px;"></i>
+                <div>
+                    <strong style="font-size:13px;">${escapeHtml(file.name)}</strong>
+                    <span style="font-size:11px;color:#64748b;display:block;">${(file.size/1024/1024).toFixed(2)} MB</span>
+                </div>
+            </div>
+            <button type="button" onclick="removeFile(${i})" 
+                style="background:#dc2626;color:white;border:none;border-radius:20px;padding:4px 12px;cursor:pointer;font-size:12px;">
+                <i class="bi bi-x"></i> Remove
+            </button>
+        `;
+        previewContainer.appendChild(fileDiv);
+    });
+
+    // Update drop zone text
+    const dropZone = document.getElementById('dropZone');
+    if (selectedFiles.length > 0) {
+        dropZone.querySelector('p').textContent = `${selectedFiles.length} file(s) selected — click to add more`;
+        dropZone.querySelector('i').style.color = '#28a745';
+    } else {
+        dropZone.querySelector('p').textContent = 'Drag & drop or click to browse';
+        dropZone.querySelector('i').style.color = '#E75A9B';
+    }
+}
+
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    syncFilesToInput();
+    renderFilePreview();
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
 
     let isSubmitting = false;
 
@@ -614,13 +737,13 @@ if (strpos($referer, 'select_booking.php') !== false) {
                 return;
             }
         } else if (attachmentType === 'file') {
-            const fileInput = document.getElementById('fileInput');
-            if (!fileInput.files || !fileInput.files[0]) {
-                e.preventDefault();
-                showToast('Please select a file to upload', 'error');
-                return;
-            }
-        }
+    const fileInput = document.getElementById('fileInput');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        e.preventDefault();
+        showToast('Please select at least one file to upload', 'error');
+        return;
+    }
+}
         
         isSubmitting = true;
         const submitBtn = document.getElementById('submitBtn');
@@ -636,9 +759,10 @@ if (strpos($referer, 'select_booking.php') !== false) {
         dropZone.addEventListener('drop', e => {
             e.preventDefault();
             fileInput.files = e.dataTransfer.files;
-            previewFile(fileInput);
+            previewMultipleFiles(fileInput);
         });
     }
+
 </script>
 </body>
 </html>

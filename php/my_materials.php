@@ -263,7 +263,18 @@ function getFileIcon($fileName) {
     .filter-select:focus,.filter-input:focus{border-color:var(--hot-pink);box-shadow:0 0 0 3px rgba(231,90,155,.12)}
     .btn-reset{padding:9px 18px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:none;color:var(--muted);font-size:13px;font-weight:900;cursor:pointer;white-space:nowrap;align-self:flex-end;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
     .btn-reset:hover{background:rgba(255,255,255,.88)}
-
+    .filter-applied {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 15px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
     /* Materials */
     .materials-card{background:var(--paper);border:1px solid rgba(255,255,255,.55);box-shadow:var(--shadow);border-radius:var(--radius-xl);overflow:hidden;padding:28px}
     .materials-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px;margin-top:16px;}
@@ -482,7 +493,7 @@ function getFileIcon($fileName) {
         </select>
     </div>
     <button type="submit" class="btn-search" style="background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:white;border:none;padding:9px 18px;border-radius:12px;font-weight:700;cursor:pointer;">
-        <i class="bi bi-funnel"></i> Apply Filters
+        <i class="bi bi-search"></i> Search
     </button>
     <a href="my_materials.php" class="btn-reset"><i class="bi bi-x"></i> Reset</a>
 </form>
@@ -528,14 +539,16 @@ function getFileIcon($fileName) {
     <span style="line-height: 1;">Find a Tutor</span>
 </a>
       </div>
-    <?php elseif (!$hasFilteredMaterials && $hasActiveFilters): ?>
+   <?php elseif (!$hasFilteredMaterials && $hasActiveFilters): ?>
       <div class="empty-state">
         <i class="bi bi-funnel"></i>
-        <h3>No materials match your filters</h3>
-        <p>Try changing your filter criteria to see more materials.</p>
-        <a href="my_materials.php" class="btn-download" style="display:inline-block;padding:12px 28px;width:auto;margin-top:16px;">
-          <i class="bi bi-arrow-repeat"></i> Clear Filters
-        </a>
+        <h3>No materials found</h3>
+        <p>We couldn't find any materials matching your search criteria.</p>
+        <div style="margin-top: 20px;">
+            <a href="my_materials.php" class="btn-download" style="display:inline-block;padding:12px 28px;width:auto;background: linear-gradient(135deg, #E75A9B, #F28AB2);">
+                <i class="bi bi-arrow-repeat" style="font-size: 50px;"></i> Clear All Filters
+            </a>
+        </div>
       </div>
     <?php elseif (!$hasFilteredMaterials && !$hasActiveFilters): ?>
       <div class="empty-state">
@@ -572,6 +585,16 @@ document.addEventListener('click', function(e) {
     const dd = document.getElementById('profileDropdown');
     if (btn && dd && !btn.contains(e.target) && !dd.contains(e.target)) {
         dd.style.display = 'none';
+    }
+});
+
+
+document.addEventListener('DOMContentLoaded', function() {
+    const hasFilters = <?= json_encode($hasActiveFilters) ?>;
+    const hasResults = <?= json_encode($hasFilteredMaterials) ?>;
+    
+    if (hasFilters && !hasResults) {
+        showToast('No materials found matching your search criteria', '#dc2626');
     }
 });
 
