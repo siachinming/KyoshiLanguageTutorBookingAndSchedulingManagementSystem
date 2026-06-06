@@ -458,9 +458,15 @@ function e($value) {
         
         .actions-grid {
             display: grid;
-            grid-template-columns: repeat(2, 280px);
+            grid-template-columns: repeat(3, 280px);
             gap: 24px;
             margin: 0 auto;
+        }
+
+        .action-card:last-child:nth-child(odd) {
+            grid-column: span 3;
+            justify-self: center;
+            width: 280px;
         }
         
         .action-card {
@@ -607,7 +613,7 @@ function e($value) {
                 <i class="bi bi-person-badge"></i><span>Tutors</span>
                 <span class="nav-badge"><?= $totalTutors ?></span>
             </a>
-            <a href="admin_students.php" class="nav-item">
+            <a href="admin_student_actions.php" class="nav-item">
                 <i class="bi bi-person"></i><span>Students</span>
                 <span class="nav-badge"><?= $totalStudents ?></span>
             </a>
@@ -686,6 +692,17 @@ function e($value) {
             <div class="card-title">Verify Tutors</div>
             <div class="card-desc">Approve or reject new tutor applications</div>
         </a>
+        
+                <a href="admin_manage_qualifications.php" class="action-card">
+            <div class="card-icon">
+                <i class="bi bi-file-earmark-text"></i>
+                <?php if ($pendingQualifications > 0): ?>
+                    <span class="card-badge pending"><?= $pendingQualifications ?></span>
+                <?php endif; ?>
+            </div>
+            <div class="card-title">Add New Qualifications</div>
+            <div class="card-desc">View and verify tutor uploaded certificates</div>
+        </a>
 
         <a href="admin_manage_reviews.php" class="action-card">
             <div class="card-icon">
@@ -697,17 +714,23 @@ function e($value) {
             <div class="card-title">Manage Reviews</div>
             <div class="card-desc">View and delete tutor reviews</div>
         </a>
-        
-        <a href="admin_manage_qualifications.php" class="action-card">
-            <div class="card-icon">
-                <i class="bi bi-file-earmark-text"></i>
-                <?php if ($pendingQualifications > 0): ?>
-                    <span class="card-badge pending"><?= $pendingQualifications ?></span>
-                <?php endif; ?>
-            </div>
-            <div class="card-title">Add New Qualifications</div>
-            <div class="card-desc">View and verify tutor uploaded certificates</div>
-        </a>
+
+
+
+        <a href="admin_session_reports.php" class="action-card">
+    <div class="card-icon">
+        <i class="bi bi-file-text"></i>
+        <?php 
+        // Get pending session reports count
+        $pendingReports = $conn->query("SELECT COUNT(*) as count FROM session_reports WHERE report_status = 'submitted'")->fetch_assoc()['count'];
+        if ($pendingReports > 0): 
+        ?>
+            <span class="card-badge pending"><?= $pendingReports ?></span>
+        <?php endif; ?>
+    </div>
+    <div class="card-title">Session Reports</div>
+    <div class="card-desc">Review and verify tutor session reports before payouts</div>
+</a>
 
         <a href="admin_payouts.php" class="action-card">
             <div class="card-icon">
@@ -719,8 +742,7 @@ function e($value) {
             <div class="card-title">Payout Requests</div>
             <div class="card-desc">Review and process tutor payout requests</div>
         </a>
-
-        <a href="admin_create_tutor.php" class="action-card">
+        <a href="admin_create_user.php?return_to=admin_tutor_actions.php&role=tutor" class="action-card">
             <div class="card-icon">
                 <i class="bi bi-person-plus"></i>
             </div>
@@ -728,7 +750,7 @@ function e($value) {
             <div class="card-desc">Manually create new tutor account</div>
         </a>
 
-        <a href="admin_all_tutors.php" class="action-card">
+        <a href="admin_all_users.php?role=tutor" class="action-card">
             <div class="card-icon">
                 <i class="bi bi-people"></i>
             </div>

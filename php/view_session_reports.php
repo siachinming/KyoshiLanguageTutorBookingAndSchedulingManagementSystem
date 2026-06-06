@@ -21,7 +21,7 @@ $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
 $displayName = $user['fullname'];
-$profilePic = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
+$profilePic = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-tutor.png';
 
 // Get back URL based on where user came from
 $backUrl = ($role === 'tutor') ? 'tutor_dashboard.php' : 'student_dashboard.php';
@@ -38,8 +38,6 @@ if ($role === 'tutor') {
     $tutorLanguages = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
-// Get reports - filter by booking_id if provided
-// Get reports - filter by booking_id if provided
 if ($role === 'tutor') {
     if ($booking_id > 0) {
         $stmt = $conn->prepare("
@@ -63,14 +61,14 @@ if ($role === 'tutor') {
         $stmt->bind_param("i", $userID);
     }
 } else {
-    // Students only see submitted reports
+    // Students see ALL submitted, approved, and rejected reports (not drafts)
     if ($booking_id > 0) {
         $stmt = $conn->prepare("
             SELECT sr.*, b.language, b.booking_date, b.booking_time, u.fullname as tutor_name
             FROM session_reports sr
             JOIN bookings b ON sr.booking_id = b.id
             JOIN users u ON sr.tutor_id = u.id
-            WHERE sr.student_id = ? AND sr.report_status = 'submitted' AND sr.booking_id = ?
+            WHERE sr.student_id = ? AND sr.report_status IN ('submitted', 'approved', 'rejected') AND sr.booking_id = ?
             ORDER BY sr.session_date DESC
         ");
         $stmt->bind_param("ii", $userID, $booking_id);
@@ -80,7 +78,7 @@ if ($role === 'tutor') {
             FROM session_reports sr
             JOIN bookings b ON sr.booking_id = b.id
             JOIN users u ON sr.tutor_id = u.id
-            WHERE sr.student_id = ? AND sr.report_status = 'submitted'
+            WHERE sr.student_id = ? AND sr.report_status IN ('submitted', 'approved', 'rejected')
             ORDER BY sr.session_date DESC
         ");
         $stmt->bind_param("i", $userID);
@@ -351,6 +349,11 @@ function e($value) {
             font-size: 10px;
             font-weight: 600;
         }
+        /* Additional status badges */
+        .badge-approved { background: #d4edda; color: #28a745; }
+        .badge-rejected { background: #f8d7da; color: #dc2626; }
+        .badge-submitted { background: #cfe2ff; color: #084298; }
+        .badge-draft { background: #d7d5ce; color: #fcebcd; }
         .badge-attended { background: #d4edda; color: #28a745; }
         .badge-late { background: #fff3e0; color: #f59e0b; }
         .badge-absent { background: #fee2e2; color: #dc2626; }
@@ -499,7 +502,7 @@ function e($value) {
                 <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b; font-size: 24px;"></i>
                 <div>
                     <strong style="color: #92400e;">Action Required: <?= $pendingReportCount ?> Session Report<?= $pendingReportCount != 1 ? 's' : '' ?> Pending</strong>
-                    <p style="margin: 4px 0 0; font-size: 13px; color: #b45309;">Payment will only be released after you submit session reports.</p>
+                    <p style="margin: 4px 0 0; font-size: 13px; color: #b45309;">Payment will only be released after you submit AND admin verifies session reports.</p>
                 </div>
             </div>
             <a href="submit_session_report.php" style="background: #f59e0b; color: white; padding: 10px 24px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 13px;">
@@ -541,13 +544,17 @@ function e($value) {
                 <option value="absent">Absent</option>
             </select>
         </div>
-        <!-- NEW: Status Filter for report_status -->
+        <!-- Status Filter for report_status -->
         <div class="filter-group">
             <label>Report Status</label>
             <select id="statusFilter">
                 <option value="all">All Reports</option>
                 <option value="submitted">Submitted Only</option>
-                <option value="draft">Draft Only</option>
+                <?php if ($role === 'tutor'): ?>
+                    <option value="draft">Draft Only</option>
+                <?php endif; ?>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
             </select>
         </div>
         <div class="filter-group">
@@ -709,7 +716,33 @@ function submitReport(bookingId) {
         document.body.appendChild(form);
         form.submit();
     }
+}function getReportStatusBadge(status) {
+    switch(status) {
+        case 'approved':
+            return '<span class="report-badge" style="background: #d4edda; color: #28a745;"><i class="bi bi-check-circle-fill"></i> Approved</span>';
+        case 'rejected':
+            return '<span class="report-badge" style="background: #f8d7da; color: #dc2626;"><i class="bi bi-x-circle-fill"></i> Rejected</span>';
+        case 'submitted':
+            return '<span class="report-badge" style="background: #cfe2ff; color: #084298;"><i class="bi bi-send"></i> Submitted (Pending)</span>';
+        case 'draft':
+            return '<span class="report-badge" style="background: #fef3c7; color: #f59e0b;"><i class="bi bi-pencil"></i> Draft</span>';
+        default:
+            return '';
+    }
 }
+
+function getAdminNotesHtml(adminNotes) {
+    if (adminNotes && adminNotes.trim() !== '') {
+        return `
+            <div style="margin-top: 8px; padding: 8px; background: #fef3c7; border-radius: 8px; border-left: 3px solid #f59e0b;">
+                <strong style="color: #92400e; font-size: 10px;"><i class="bi bi-chat"></i> Admin Note:</strong>
+                <p style="color: #b45309; font-size: 10px; margin-top: 2px;">${escapeHtml(adminNotes)}</p>
+            </div>
+        `;
+    }
+    return '';
+}
+
 function renderReports(reports) {
     const container = document.getElementById('reportsContainer');
     
@@ -728,9 +761,18 @@ function renderReports(reports) {
         const sessionTime = formatTime(report.session_time);
         const submittedDate = report.submitted_at ? formatDate(report.submitted_at) : 'Not submitted';
         
-        const reportStatusBadge = (userRole === 'tutor' && report.report_status === 'draft') 
-            ? '<span class="report-badge" style="background: #fef3c7; color: #f59e0b;"><i class="bi bi-pencil"></i> Draft</span>' 
-            : (report.report_status === 'submitted' ? '<span class="report-badge" style="background: #d4edda; color: #28a745;"><i class="bi bi-check-circle"></i> Submitted</span>' : '');
+        const reportStatusBadge = getReportStatusBadge(report.report_status);
+        const adminNotesHtml = getAdminNotesHtml(report.admin_notes);
+        
+        const rejectionNoteHtml = (report.report_status === 'rejected' && report.admin_notes) ? `
+            <div style="margin-top: 8px; padding: 12px; background: #fee2e2; border-radius: 8px; border-left: 4px solid #dc2626;">
+                <strong style="color: #991b1b; font-size: 12px;"><i class="bi bi-exclamation-triangle-fill"></i> Report Rejected:</strong>
+                <p style="color: #7f1d1d; font-size: 11px; margin-top: 6px; margin-bottom: 0;">${escapeHtml(report.admin_notes)}</p>
+                <p style="color: #991b1b; font-size: 10px; margin-top: 6px; margin-bottom: 0;">
+                    <i class="bi bi-arrow-repeat"></i> Please edit and resubmit your report.
+                </p>
+            </div>
+        ` : '';
         
         let lessonPreview = '';
         if (report.lesson_summary && report.lesson_summary.trim() !== '') {
@@ -748,39 +790,44 @@ function renderReports(reports) {
             lessonPreview = `
                 <div style="margin-top: 8px; padding: 8px; background: #fef3c7; border-radius: 8px; border-left: 3px solid #f59e0b;">
                     <strong style="color: #92400e; font-size: 10px;"><i class="bi bi-exclamation-triangle"></i> No Lesson Summary Yet</strong>
-                    <p style="color: #b45309; font-size: 10px; margin-top: 2px;">You haven't added a lesson summary yet. Click "Continue Editing' to add details to submit.</p>
+                    <p style="color: #b45309; font-size: 10px; margin-top: 2px;">You haven't added a lesson summary yet. Click "Continue Editing" to add details to submit.</p>
                 </div>
             `;
         }
 
         let actionButtons = '';
-        if (userRole === 'tutor') {
-            if (report.report_status === 'draft') {
-                actionButtons = `
-                    <div class="card-actions" style="justify-content: center;">
-                        <a href="submit_session_report.php?booking_id=${report.booking_id}" class="btn-edit" style="background: linear-gradient(135deg, #E75A9B, #F28AB2); color: white; padding: 6px 16px; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
-                            <i class="bi bi-pencil-square"></i> Continue Editing
-                        </a>
-                    </div>
-                `;
-            } else if (report.report_status === 'submitted') {
-                actionButtons = `
-                    <div class="card-actions" style="justify-content: center;">
-                        <a href="view_report_detail.php?report_id=${report.id}&booking_id=${report.booking_id}" class="btn-view" style="background: #1d3156; color: white; padding: 6px 16px; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
-                            <i class="bi bi-eye"></i> View Full Report
-                        </a>
-                    </div>
-                `;
-            }
-        } else {
-            actionButtons = `
-                <div class="card-actions" style="justify-content: center;">
-                    <a href="view_report_detail.php?report_id=${report.id}&booking_id=${report.booking_id}" class="btn-view" style="background: #1d3156; color: white; padding: 6px 16px; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
-                        <i class="bi bi-eye"></i> View Full Report
-                    </a>
-                </div>
-            `;
-        }
+if (userRole === 'tutor') {
+    if (report.report_status === 'draft') {
+        actionButtons = `
+            <div class="card-actions" style="justify-content: center;">
+                <a href="submit_session_report.php?booking_id=${report.booking_id}" class="btn-edit" style="background: linear-gradient(135deg, #E75A9B, #F28AB2); color: white; padding: 6px 16px; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                    <i class="bi bi-pencil-square"></i> Continue Editing
+                </a>
+            </div>
+        `;
+    } else if (report.report_status === 'rejected') {
+        // For rejected reports - allow resubmission
+        actionButtons = `
+            <div class="card-actions" style="justify-content: center;">
+                <a href="view_report_detail.php?report_id=${report.id}&booking_id=${report.booking_id}" class="btn-view" style="background: #1d3156; color: white; padding: 6px 16px; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; margin-right: 8px;">
+                    <i class="bi bi-eye"></i> View Rejection Reason
+                </a>
+                <a href="submit_session_report.php?booking_id=${report.booking_id}&resubmit=1&report_id=${report.id}" class="btn-edit" style="background: linear-gradient(135deg, #E75A9B, #F28AB2); color: white; padding: 6px 16px; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                    <i class="bi bi-arrow-repeat"></i> Edit & Resubmit
+                </a>
+            </div>
+        `;
+    } else {
+        // For submitted, approved - just view
+        actionButtons = `
+            <div class="card-actions" style="justify-content: center;">
+                <a href="view_report_detail.php?report_id=${report.id}&booking_id=${report.booking_id}" class="btn-view" style="background: #1d3156; color: white; padding: 6px 16px; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                    <i class="bi bi-eye"></i> View Full Report
+                </a>
+            </div>
+        `;
+    }
+}
         
         html += `
             <div class="report-card">
@@ -803,6 +850,8 @@ function renderReports(reports) {
                 </div>
                 <div class="report-content">
                     ${lessonPreview}
+                    ${adminNotesHtml}
+                    ${rejectionNoteHtml}
                 </div>
                 ${actionButtons}
             </div>
@@ -812,42 +861,53 @@ function renderReports(reports) {
     container.innerHTML = html;
 }
 
-// Function to apply ALL filters (search + manual filters)
+// Update the filter application to handle new statuses
+function applyManualFilters() {
+    // Get values from dropdowns
+    if (document.getElementById('languageFilter')) {
+        currentLanguageFilter = document.getElementById('languageFilter').value;
+    }
+    currentAttendanceFilter = document.getElementById('attendanceFilter').value;
+    currentStatusFilter = document.getElementById('statusFilter').value;
+    currentSortBy = document.getElementById('sortBy').value;
+    
+    applyAllFilters();
+    showToast('Filters applied', '#28a745');
+}
+
+// Update the filter logic in applyAllFilters
 function applyAllFilters() {
     let filtered = [...allReports];
     
-    // Apply search filter (automatic)
+    // Apply search filter
     if (currentSearchTerm) {
         filtered = filtered.filter(r => {
             const studentName = (r.student_name || '').toLowerCase();
+            const tutorName = (r.tutor_name || '').toLowerCase();
             const language = (r.language || '').toLowerCase();
             
-            
             return studentName.includes(currentSearchTerm) || 
+                   tutorName.includes(currentSearchTerm) ||
                    language.includes(currentSearchTerm);
         });
     }
     
-    // Apply language filter (manual)
-    if (currentLanguageFilter !== 'all') {
+    // Apply language filter
+    if (currentLanguageFilter && currentLanguageFilter !== 'all') {
         filtered = filtered.filter(r => r.language === currentLanguageFilter);
     }
     
-    // Apply attendance filter (manual)
+    // Apply attendance filter
     if (currentAttendanceFilter !== 'all') {
         filtered = filtered.filter(r => r.attendance_status === currentAttendanceFilter);
     }
     
-    // Apply status filter (manual)
+    // Apply status filter - UPDATED for new statuses
     if (currentStatusFilter !== 'all') {
-        if (currentStatusFilter === 'submitted') {
-            filtered = filtered.filter(r => r.report_status === 'submitted');
-        } else if (currentStatusFilter === 'draft') {
-            filtered = filtered.filter(r => r.report_status === 'draft');
-        }
+        filtered = filtered.filter(r => r.report_status === currentStatusFilter);
     }
     
-    // Apply sort (manual)
+    // Apply sort
     if (currentSortBy === 'latest') {
         filtered.sort((a, b) => new Date(b.session_date) - new Date(a.session_date));
     } else if (currentSortBy === 'oldest') {
@@ -858,6 +918,8 @@ function applyAllFilters() {
     
     renderReports(filtered);
 }
+
+
 
 // Automatic search - triggered when user types
 function onSearchInput() {

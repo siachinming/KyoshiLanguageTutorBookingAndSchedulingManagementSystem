@@ -15,26 +15,128 @@ $userID = $_SESSION['user_id'];
 
 // Handle both single and multiple booking IDs
 $booking_ids = [];
+$is_partial = false;
+$original_payment_id = 0;
+$partial_amount = 0;
 
-// Check for multiple bookings
-if (isset($_GET['booking_ids']) && is_array($_GET['booking_ids'])) {
-    $booking_ids = array_map('intval', $_GET['booking_ids']);
+
+// FIRST: Check if this is a partial payment with payment_id (from rejected payment)
+if (isset($_GET['payment_id']) && isset($_GET['type']) && $_GET['type'] === 'partial') {
+    $original_payment_id = intval($_GET['payment_id']);
+    $is_partial = true;
+    
+    error_log("PARTIAL PAYMENT DETECTED! Payment ID: " . $original_payment_id);
+    
+    // Get the booking_id from the original payment
+    $pStmt = $conn->prepare("SELECT booking_id, amount, actual_paid_amount FROM payments WHERE id = ? AND student_id = ?");
+    $pStmt->bind_param("ii", $original_payment_id, $userID);
+    $pStmt->execute();
+    $paymentData = $pStmt->get_result()->fetch_assoc();
+    $pStmt->close();
+    
+    if ($paymentData) {
+        $booking_ids = [$paymentData['booking_id']];
+        // Calculate remaining amount
+        $paid_amount = $paymentData['actual_paid_amount'] ?? $paymentData['amount'];
+        
+        error_log("Original payment - paid_amount: " . $paid_amount);
+        
+        // Get the full rate for this booking
+        $rateStmt = $conn->prepare("
+            SELECT tp.rate FROM bookings b 
+            JOIN tutor_profiles tp ON b.tutor_id = tp.user_id 
+            WHERE b.id = ?
+        ");
+        $rateStmt->bind_param("i", $booking_ids[0]);
+        $rateStmt->execute();
+        $rateData = $rateStmt->get_result()->fetch_assoc();
+        $rateStmt->close();
+        
+        if ($rateData) {
+            $partial_amount = $rateData['rate'] - $paid_amount;
+            if ($partial_amount <= 0) $partial_amount = $rateData['rate'];
+            error_log("Calculated partial_amount: " . $partial_amount);
+        }
+    } else {
+        error_log("Payment not found for ID: " . $original_payment_id);
+    }
 } 
-// Check for single booking
+// Check for regular booking_id or booking_ids (NOT partial payment)
+elseif (isset($_GET['booking_ids']) && is_array($_GET['booking_ids'])) {
+    $booking_ids = array_map('intval', $_GET['booking_ids']);
+    error_log("Regular payment - booking_ids array: " . implode(',', $booking_ids));
+} 
 elseif (isset($_GET['booking_id'])) {
     $booking_ids = [intval($_GET['booking_id'])];
+    error_log("Regular payment - single booking_id: " . $booking_ids[0]);
 }
 // Check POST data
 elseif (isset($_POST['booking_ids']) && is_array($_POST['booking_ids'])) {
     $booking_ids = array_map('intval', $_POST['booking_ids']);
+    error_log("POST payment - booking_ids array: " . implode(',', $booking_ids));
 }
 elseif (isset($_POST['booking_id'])) {
     $booking_ids = [intval($_POST['booking_id'])];
+    error_log("POST payment - single booking_id: " . $booking_ids[0]);
 }
 
 if (empty($booking_ids)) {
+    error_log("No booking_ids found, redirecting to booking_status.php");
     header("Location: booking_status.php?error=no_booking_selected");
     exit();
+}
+
+// Check for mixed payments (regular + partial)
+if (isset($_GET['booking_ids']) || isset($_GET['partial_payments'])) {
+    $booking_ids = isset($_GET['booking_ids']) && is_array($_GET['booking_ids']) 
+        ? array_map('intval', $_GET['booking_ids']) : [];
+    
+    $partial_payment_ids = isset($_GET['partial_payments']) && is_array($_GET['partial_payments']) 
+        ? array_map('intval', $_GET['partial_payments']) : [];
+    
+    $partial_amounts = isset($_GET['partial_amounts']) && is_array($_GET['partial_amounts']) 
+        ? array_map('floatval', $_GET['partial_amounts']) : [];
+    
+    // If there are partial payments, handle them
+    if (!empty($partial_payment_ids)) {
+        $is_mixed_payment = true;
+        // Store partial payment info in session
+        $_SESSION['mixed_payment'] = [
+            'partial_payment_ids' => $partial_payment_ids,
+            'partial_amounts' => $partial_amounts,
+            'regular_booking_ids' => $booking_ids
+        ];
+        
+        // For now, let's handle them one by one or show a summary
+        if (count($partial_payment_ids) == 1 && count($booking_ids) == 0) {
+            // Single partial payment - use existing logic
+            $_GET['payment_id'] = $partial_payment_ids[0];
+            $_GET['type'] = 'partial';
+            // Re-run the partial payment logic
+        }
+    }
+}
+// Check if this is a bulk remaining payment
+if (isset($_GET['type']) && $_GET['type'] === 'bulk_remaining' && isset($_GET['payment_id'])) {
+    $remaining_payment_id = intval($_GET['payment_id']);
+    $bulk_booking_ids = isset($_GET['booking_ids']) ? explode(',', $_GET['booking_ids']) : [];
+    
+    if (!empty($bulk_booking_ids)) {
+        // Override booking_ids with the bulk ones
+        $booking_ids = array_map('intval', $bulk_booking_ids);
+        
+        // Get the remaining payment amount
+        $stmt = $conn->prepare("SELECT amount FROM payments WHERE id = ? AND student_id = ? AND payment_method = 'remaining_balance' AND status = 'pending'");
+        $stmt->bind_param("ii", $remaining_payment_id, $userID);
+        $stmt->execute();
+        $remaining = $stmt->get_result()->fetch_assoc();
+        if ($remaining) {
+            $total_amount = $remaining['amount'];
+            $is_partial = false; // This is a full payment for the remaining balance
+            $is_bulk_remaining = true; // Flag to skip verification check
+        }
+        $stmt->close();
+    }
 }
 
 // Get all bookings info
@@ -43,12 +145,13 @@ $types = str_repeat('i', count($booking_ids));
 
 $stmt = $conn->prepare("
     SELECT b.*, u.fullname AS tutor_name, u.profile_pic AS tutor_pic,
-           tp.rate, p.id AS payment_id, p.status AS payment_status
+           tp.rate, p.id AS payment_id, p.status AS payment_status,
+           b.learning_mode
     FROM bookings b
     JOIN users u ON b.tutor_id = u.id
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
     LEFT JOIN payments p ON p.booking_id = b.id
-    WHERE b.id IN ($placeholders) AND b.student_id = ? AND b.status IN ('accepted','confirmed')
+    WHERE b.id IN ($placeholders) AND b.student_id = ? AND b.status NOT IN ('cancelled','completed')
 ");
 $all_params = array_merge($booking_ids, [$userID]);
 $all_types = $types . 'i';
@@ -62,16 +165,7 @@ if (empty($bookings)) {
     exit();
 }
 
-// Check if any payment is already verified
-foreach ($bookings as $booking) {
-    if ($booking['payment_status'] === 'verified') {
-        header("Location: booking_detail.php?id=" . $booking['id']);
-        exit();
-    }
-}
-
 // Calculate total amount
-// Calculate total amount - use total_amount from bookings if available, otherwise use rate
 $total_amount = 0;
 foreach ($bookings as $booking) {
     if (isset($booking['total_amount']) && $booking['total_amount'] > 0) {
@@ -80,6 +174,38 @@ foreach ($bookings as $booking) {
         $total_amount += $booking['rate'];
     }
 }
+
+// Override for partial payment (calculated from database, not URL)
+if ($is_partial && $partial_amount > 0) {
+    $total_amount = $partial_amount;
+    error_log("Using partial amount for total: " . $total_amount);
+}
+
+// Override for bulk remaining payment (already set above)
+if (isset($is_bulk_remaining) && $is_bulk_remaining && isset($remaining['amount'])) {
+    $total_amount = $remaining['amount'];
+}
+
+// Store partial payment info in session
+if ($is_partial && $original_payment_id > 0 && $partial_amount > 0) {
+    $_SESSION['partial_payment'] = [
+        'original_payment_id' => $original_payment_id,
+        'remaining_amount' => $partial_amount,
+        'booking_ids' => $booking_ids
+    ];
+}
+
+// Check if any payment is already verified (SKIP for bulk remaining payments)
+$skip_verification = (isset($_GET['type']) && $_GET['type'] === 'bulk_remaining');
+if (!$skip_verification) {
+    foreach ($bookings as $booking) {
+        if (isset($booking['payment_status']) && $booking['payment_status'] === 'verified') {
+            header("Location: booking_detail.php?id=" . $booking['id']);
+            exit();
+        }
+    }
+}
+
 $is_multi = count($bookings) > 1;
 $first_booking = $bookings[0];
 
@@ -280,10 +406,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $method = trim($_POST['payment_method'] ?? '');
     $notes = trim($_POST['notes'] ?? '');
     
+    $is_partial_payment = isset($_POST['is_partial']) && $_POST['is_partial'] == '1';
+    $original_payment_id = isset($_POST['original_payment_id']) ? intval($_POST['original_payment_id']) : 0;
+    $remaining_amount = isset($_POST['remaining_amount']) ? floatval($_POST['remaining_amount']) : 0;
+    
     if (!$method) {
         $error = 'Please select a payment method.';
     } else {
-        // Handle proof upload
         $proofImage = null;
         if (isset($_FILES['proof_image']) && $_FILES['proof_image']['error'] === 0) {
             $allowed = ['image/jpeg','image/png','image/jpg','image/webp','application/pdf'];
@@ -299,13 +428,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // Check if proof is required
         $requires_proof = in_array($method, ['online_banking', 'duitnow']);
         if ($requires_proof && !$proofImage) {
             $error = 'Payment proof is required for this method.';
         }
         
-        // Check cash for online sessions
         if ($method === 'cash') {
             foreach ($bookings as $booking) {
                 if ($booking['learning_mode'] === 'online') {
@@ -318,21 +445,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!isset($error)) {
             $receiptNo = 'RCP-' . date('Y') . '-' . str_pad(rand(1, 99999), 6, '0', STR_PAD_LEFT);
             
-            // Insert/Update payments for each booking
             foreach ($bookings as $booking) {
+                if ($is_partial_payment && $remaining_amount > 0) {
+                    $amount_to_pay = $remaining_amount;
+                } else {
+                    $amount_to_pay = $booking['rate'];
+                }
+                
+                $notes_with_partial = $notes;
+                if ($is_partial_payment && $original_payment_id) {
+                    $notes_with_partial = "Partial payment for original payment #$original_payment_id. Remaining amount paid: RM " . number_format($remaining_amount, 2) . ". " . $notes;
+                }
+                
                 $stmt = $conn->prepare("
                     INSERT INTO payments (booking_id, student_id, tutor_id, amount, payment_method, status, receipt_number, notes, proof_image, created_at)
                     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, NOW())
-                    ON DUPLICATE KEY UPDATE
-                        amount = VALUES(amount),
-                        payment_method = VALUES(payment_method),
-                        status = 'pending',
-                        receipt_number = VALUES(receipt_number),
-                        notes = VALUES(notes),
-                        proof_image = VALUES(proof_image),
-                        created_at = NOW()
                 ");
-                $stmt->bind_param("iiidssss", $booking['id'], $userID, $booking['tutor_id'], $booking['rate'], $method, $receiptNo, $notes, $proofImage);
+                $stmt->bind_param("iiidssss", $booking['id'], $userID, $booking['tutor_id'], $amount_to_pay, $method, $receiptNo, $notes_with_partial, $proofImage);
                 $stmt->execute();
                 $stmt->close();
             }
@@ -351,7 +480,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
 function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 ?>
 <!DOCTYPE html>
@@ -542,7 +670,9 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
               <div id="detailsStripe" style="display:none;padding:16px;border-radius:16px;background:rgba(99,91,255,.06);border:1px solid rgba(99,91,255,.15);text-align:center;">
                 <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#4B44E0;"><i class="bi bi-shield-lock-fill"></i> Secure payment powered by Stripe</p>
                 <button type="button" onclick="submitStripe()" class="btn-primary"><i class="bi bi-credit-card"></i> Pay with Card</button>
+                <!-- TEMPORARY DEBUG BUTTON - REMOVE AFTER FIXING -->
               </div>
+
               <div id="detailsBanking" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);text-align:center;">
                 <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-bank"></i> Transfer to this account:</p>
                 <div style="display:grid;gap:8px;">
@@ -568,16 +698,6 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
           </div>
           
           <div class="card">
-            <div class="card-title"><i class="bi bi-cash-coin"></i> Payment Amount</div>
-            <div style="text-align:center;padding:16px;border-radius:16px;background:linear-gradient(135deg,rgba(231,90,155,.10),rgba(255,195,216,.15));border:1px solid rgba(242,138,178,.22);">
-              <p style="margin:0 0 4px;font-size:12px;color:var(--muted);font-weight:700;"><?= $is_multi ? 'Total Amount' : 'Session Rate' ?></p>
-              <strong style="font-size:36px;color:var(--hot-pink);font-weight:900;">RM <?= number_format($total_amount, 2) ?></strong>
-              <?php if ($is_multi): ?>
-                <p style="margin:8px 0 0;font-size:12px;color:var(--muted);"><?= count($bookings) ?> sessions total</p>
-              <?php else: ?>
-                <p style="margin:8px 0 0;font-size:12px;color:var(--muted);">per hour · non-refundable after session</p>
-              <?php endif; ?>
-            </div>
             <div class="info-note" id="paymentStatusMsg" style="margin-top:12px;">
               <i class="bi bi-info-circle"></i> Select a payment method above to continue.
             </div>
@@ -643,10 +763,15 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
           </div>
         <?php endif; ?>
         
-        <div class="amount-box">
-          <p>Total Amount</p>
-          <strong id="summaryAmount">RM <?= number_format($total_amount, 2) ?></strong>
-        </div>
+       <div class="amount-box">
+          <p><?= $is_partial ? 'Remaining Amount to Pay' : ($is_multi ? 'Total Amount' : 'Session Rate') ?></p>
+          <strong style="font-size:36px;color:var(--hot-pink);font-weight:900;">RM <?= number_format($total_amount, 2) ?></strong>
+          <?php if ($is_partial): ?>
+              <p style="margin:8px 0 0;font-size:12px;color:#dc2626;font-weight:700;">
+                  <i class="bi bi-info-circle"></i> This is the remaining amount after your previous payment
+              </p>
+          <?php endif; ?>
+      </div>
         
         <button class="btn-primary" style="margin-top:16px;" onclick="submitPayment()">
           <i class="bi bi-lock-fill"></i> Confirm Payment
@@ -666,7 +791,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   let totalAmount = <?= $total_amount ?>;
   let firstBookingId = <?= $first_booking['id'] ?>;
 
-  function submitPayment() {
+function submitPayment() {
     if (!selectedMethod) {
         showToast('Please select a payment method');
         return;
@@ -690,8 +815,30 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         }
     }
 
+    // For partial payment, add hidden fields to the form
+    <?php if ($is_partial): ?>
+    const form = document.getElementById('paymentForm');
+    const partialInput = document.createElement('input');
+    partialInput.type = 'hidden';
+    partialInput.name = 'is_partial';
+    partialInput.value = '1';
+    form.appendChild(partialInput);
+    
+    const originalPaymentInput = document.createElement('input');
+    originalPaymentInput.type = 'hidden';
+    originalPaymentInput.name = 'original_payment_id';
+    originalPaymentInput.value = '<?= $original_payment_id ?>';
+    form.appendChild(originalPaymentInput);
+    
+    const remainingInput = document.createElement('input');
+    remainingInput.type = 'hidden';
+    remainingInput.name = 'remaining_amount';
+    remainingInput.value = '<?= $partial_amount ?>';
+    form.appendChild(remainingInput);
+    <?php endif; ?>
+    
     document.getElementById('paymentForm').submit();
-  }
+}
 
   function selectMethod(el, val) {
     document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
@@ -709,27 +856,30 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     const paymentInfo = document.getElementById('paymentInfo');
     const paymentStatusMsg = document.getElementById('paymentStatusMsg');
 
-    if (val === 'stripe') {
-        paymentInfo.innerHTML = '<i class="bi bi-shield-check"></i> Card → Instant confirmation';
-        paymentStatusMsg.innerHTML = '<i class="bi bi-info-circle"></i> Card payment will be confirmed immediately after successful payment';
+   if (val === 'stripe') {
+    paymentInfo.innerHTML = '<i class="bi bi-shield-check"></i> Card → Instant confirmation';
+    paymentStatusMsg.innerHTML = '<i class="bi bi-info-circle"></i> Card payment will be confirmed immediately after successful payment';
     } else if (val === 'online_banking' || val === 'duitnow') {
         paymentInfo.innerHTML = '<i class="bi bi-shield-check"></i> Banking / DuitNow → Admin verification required';
-        paymentStatusMsg.innerHTML = '<i class="bi bi-info-circle"></i> Upload payment proof for admin verification';
-    } else if (val === 'cash') {
-        paymentInfo.innerHTML = '<i class="bi bi-shield-check"></i> Cash → Tutor confirms after session';
-        paymentStatusMsg.innerHTML = '<i class="bi bi-info-circle"></i> Pay tutor during session. No payment proof required';
+        paymentStatusMsg.innerHTML = '<?= $is_partial ? "This is a partial payment for the remaining amount. Upload proof for RM " . number_format($total_amount, 2) : "Upload payment proof for admin verification" ?>';
     }
   }
-
-  function submitStripe() {
-    if (isMulti) {
+function submitStripe() {
+    <?php if ($is_partial && $partial_amount > 0): ?>
+        // For partial payment, send the remaining amount to Stripe
+        var amount = <?= $partial_amount ?>;
+        var originalPayment = <?= $original_payment_id ?>;
+        var bookingId = firstBookingId;
+        window.location.href = 'create_stripe_session.php?booking_id=' + bookingId + '&amount=' + amount + '&is_partial=1&original_payment=' + originalPayment;
+    <?php elseif ($is_multi): ?>
         // For multiple bookings, send all booking IDs to Stripe
         const bookingIds = <?= json_encode(array_column($bookings, 'id')) ?>;
         window.location.href = 'create_stripe_session.php?booking_ids=' + bookingIds.join(',');
-    } else {
+    <?php else: ?>
+        // For regular single booking
         window.location.href = 'create_stripe_session.php?booking_id=' + firstBookingId;
-    }
-  }
+    <?php endif; ?>
+}
 
   let toastTimer;
   function showToast(msg) {

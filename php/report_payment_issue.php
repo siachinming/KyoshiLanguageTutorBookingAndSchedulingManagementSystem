@@ -1,308 +1,242 @@
 <?php
 session_start();
-include 'config.php';
-include 'insert_notification.php';
-
+error_reporting(0);
 header('Content-Type: application/json');
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-require '../vendor/autoload.php';
+include 'config.php';
 
 if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Not logged in']);
+    echo json_encode(['success' => false, 'message' => 'Please login again']);
     exit();
 }
 
-$student_id = $_SESSION['user_id'];
-$data = json_decode(file_get_contents('php://input'), true);
-$payment_id = $data['payment_id'] ?? 0;
-$booking_id = $data['booking_id'] ?? 0;
-$amount = $data['amount'] ?? 0;
+$userID = $_SESSION['user_id'];
 
-if (!$payment_id || !$booking_id) {
-    echo json_encode(['success' => false, 'message' => 'Invalid payment data']);
+// Get form data
+$payment_id = isset($_POST['payment_id']) ? intval($_POST['payment_id']) : 0;
+$booking_id = isset($_POST['booking_id']) ? intval($_POST['booking_id']) : 0;
+$resolution_requested = isset($_POST['resolution_requested']) ? $_POST['resolution_requested'] : '';
+$description = isset($_POST['description']) ? trim($_POST['description']) : '';
+$preferred_datetime = isset($_POST['preferred_datetime']) ? $_POST['preferred_datetime'] : null;
+$bank_name = isset($_POST['bank_name']) ? trim($_POST['bank_name']) : null;
+$bank_account_number = isset($_POST['bank_account_number']) ? trim($_POST['bank_account_number']) : null;
+$bank_account_name = isset($_POST['bank_account_name']) ? trim($_POST['bank_account_name']) : null;
+
+// Validate
+if ($payment_id <= 0 || $booking_id <= 0) {
+    echo json_encode(['success' => false, 'message' => 'Invalid payment or booking ID']);
     exit();
 }
 
-// Verify payment belongs to this student and is failed
-$checkStmt = $conn->prepare("
-    SELECT p.id, p.status, p.amount, b.student_id, b.tutor_id, b.language, b.booking_date, b.total_amount
+if (empty($resolution_requested)) {
+    echo json_encode(['success' => false, 'message' => 'Please select what you would like to happen']);
+    exit();
+}
+
+if (empty($description)) {
+    echo json_encode(['success' => false, 'message' => 'Please describe what happened']);
+    exit();
+}
+
+// For reschedule, check if preferred datetime is provided
+if ($resolution_requested === 'reschedule' && empty($preferred_datetime)) {
+    echo json_encode(['success' => false, 'message' => 'Please select a preferred new date and time for reschedule']);
+    exit();
+}
+
+// For refund, check if bank details are provided
+if ($resolution_requested === 'refund') {
+    if (empty($bank_name) || empty($bank_account_number) || empty($bank_account_name)) {
+        echo json_encode(['success' => false, 'message' => 'Please provide all bank account details for refund']);
+        exit();
+    }
+}
+
+// Handle file upload (only for refund)
+$proof_path = null;
+if ($resolution_requested === 'refund') {
+    if (!isset($_FILES['proof_image']) || $_FILES['proof_image']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['success' => false, 'message' => 'Please upload proof of deduction']);
+        exit();
+    }
+    
+    $upload_dir = '../uploads/dispute_proofs/';
+    if (!file_exists($upload_dir)) {
+        mkdir($upload_dir, 0777, true);
+    }
+    
+    $file_ext = strtolower(pathinfo($_FILES['proof_image']['name'], PATHINFO_EXTENSION));
+    $allowed = ['jpg', 'jpeg', 'png', 'pdf'];
+    
+    if (!in_array($file_ext, $allowed)) {
+        echo json_encode(['success' => false, 'message' => 'Only JPG, PNG, or PDF files allowed']);
+        exit();
+    }
+    
+    $file_name = 'dispute_' . time() . '_' . rand(1000, 9999) . '.' . $file_ext;
+    $file_path = $upload_dir . $file_name;
+    
+    if (!move_uploaded_file($_FILES['proof_image']['tmp_name'], $file_path)) {
+        echo json_encode(['success' => false, 'message' => 'Failed to upload file']);
+        exit();
+    }
+    $proof_path = 'uploads/dispute_proofs/' . $file_name;
+}
+
+// Get payment and booking details
+$query = $conn->prepare("
+    SELECT p.*, b.student_id, b.tutor_id, b.language, b.booking_date, b.booking_time, b.status as booking_status,
+           u.fullname as tutor_name, s.fullname as student_name, s.email as student_email
     FROM payments p
     JOIN bookings b ON p.booking_id = b.id
-    WHERE p.id = ? AND b.student_id = ? AND p.status = 'failed'
+    JOIN users u ON b.tutor_id = u.id
+    JOIN users s ON b.student_id = s.id
+    WHERE p.id = ? AND b.student_id = ?
 ");
-$checkStmt->bind_param("ii", $payment_id, $student_id);
-$checkStmt->execute();
-$payment = $checkStmt->get_result()->fetch_assoc();
+$query->bind_param("ii", $payment_id, $userID);
+$query->execute();
+$payment = $query->get_result()->fetch_assoc();
 
 if (!$payment) {
-    echo json_encode(['success' => false, 'message' => 'Payment not found or not in failed status']);
+    echo json_encode(['success' => false, 'message' => 'Payment not found']);
     exit();
 }
 
-// Prevent duplicate disputes
-$checkDispute = $conn->prepare("
-    SELECT id 
-    FROM disputes 
-    WHERE booking_id = ? 
-      AND student_id = ? 
-      AND status IN ('pending', 'escalated')
-");
-$checkDispute->bind_param("ii", $booking_id, $student_id);
-$checkDispute->execute();
-$existingDispute = $checkDispute->get_result()->fetch_assoc();
-
-if ($existingDispute) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'You have already submitted a dispute for this payment.'
-    ]);
+// Check if booking is cancelled
+if ($payment['booking_status'] === 'cancelled') {
+    echo json_encode(['success' => false, 'message' => 'This booking has been cancelled. Please contact support.']);
     exit();
 }
 
-// ============================================
-// INSERT INTO DISPUTES TABLE
-// ============================================
-$issueType = "payment_failed_but_deducted";
-$message = "Student reported money deducted but payment shows failed. Payment ID: $payment_id. Amount: RM $amount";
+// Parse preferred date and time if reschedule
+$preferred_date = null;
+$preferred_time = null;
+if ($resolution_requested === 'reschedule' && $preferred_datetime) {
+    $preferred_date = date('Y-m-d', strtotime($preferred_datetime));
+    $preferred_time = date('H:i:s', strtotime($preferred_datetime));
+    
+    // Check if the preferred time is in the future
+    if (strtotime($preferred_datetime) < time()) {
+        echo json_encode(['success' => false, 'message' => 'Please select a future date and time for reschedule']);
+        exit();
+    }
+    
+    // Check if tutor is available at that time
+    $check_availability = $conn->prepare("
+        SELECT COUNT(*) as count 
+        FROM bookings 
+        WHERE tutor_id = ? 
+        AND booking_date = ? 
+        AND booking_time = ?
+        AND status NOT IN ('cancelled', 'rejected')
+        AND id != ?
+    ");
+    $check_availability->bind_param("issi", $payment['tutor_id'], $preferred_date, $preferred_time, $booking_id);
+    $check_availability->execute();
+    $availability = $check_availability->get_result()->fetch_assoc();
+    
+    if ($availability['count'] > 0) {
+        echo json_encode([
+            'success' => false, 
+            'message' => 'The tutor already has a booking at your preferred time. Please select a different time.'
+        ]);
+        exit();
+    }
+}
 
-$disputeStmt = $conn->prepare("
+// Build detailed message
+$message = "=== DISPUTE REPORT ===\n\n";
+$message .= "Payment ID: #{$payment_id}\n";
+$message .= "Booking ID: #{$booking_id}\n";
+$message .= "Resolution: " . ucfirst($resolution_requested) . "\n";
+if ($resolution_requested === 'reschedule' && $preferred_datetime) {
+    $message .= "Preferred new date/time: " . date('d M Y, h:i A', strtotime($preferred_datetime)) . "\n";
+}
+$message .= "Description: {$description}\n";
+if ($proof_path) {
+    $message .= "Proof: {$proof_path}\n";
+}
+if ($bank_name) {
+    $message .= "\n=== BANK DETAILS FOR REFUND ===\n";
+    $message .= "Bank: {$bank_name}\n";
+    $message .= "Account Number: {$bank_account_number}\n";
+    $message .= "Account Name: {$bank_account_name}\n";
+}
+
+// Check for existing dispute
+$check = $conn->prepare("SELECT id FROM disputes WHERE payment_id = ? AND student_id = ? AND status = 'pending'");
+$check->bind_param("ii", $payment_id, $userID);
+$check->execute();
+if ($check->get_result()->num_rows > 0) {
+    echo json_encode(['success' => false, 'message' => 'You already have a pending dispute for this payment']);
+    exit();
+}
+
+// Insert dispute with all fields
+$resolution_type = 'admin';
+
+$insert = $conn->prepare("
     INSERT INTO disputes (
-        booking_id,
-        student_id,
-        tutor_id,
-        issue_type,
-        message,
-        status,
-        resolution_type,
+        booking_id, 
+        payment_id, 
+        student_id, 
+        tutor_id, 
+        issue_type, 
+        dispute_type, 
+        message, 
+        proof_image, 
+        status, 
+        resolution_type, 
+        resolution_requested,
+        preferred_date,
+        preferred_time,
+        bank_name,
+        bank_account_number,
+        bank_account_name,
         created_at
-    )
-    VALUES (?, ?, ?, ?, ?, 'pending', 'admin', NOW())
+    ) VALUES (?, ?, ?, ?, 'money_deducted', 'payment', ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, NOW())
 ");
 
-$disputeStmt->bind_param(
-    "iiiss",
-    $booking_id,
-    $student_id,
-    $payment['tutor_id'],
-    $issueType,
-    $message
+$insert->bind_param("iiissssssssss", 
+    $booking_id,           // i
+    $payment_id,           // i  
+    $userID,               // i
+    $payment['tutor_id'],  // i
+    $message,              // s
+    $proof_path,           // s
+    $resolution_type,      // s
+    $resolution_requested, // s
+    $preferred_date,       // s
+    $preferred_time,       // s
+    $bank_name,            // s
+    $bank_account_number,  // s
+    $bank_account_name     // s
 );
 
-if (!$disputeStmt->execute()) {
-    echo json_encode(['success' => false, 'message' => 'Failed to create dispute: ' . $conn->error]);
-    exit();
-}
-$dispute_id = $conn->insert_id;
-$disputeStmt->close();
-
-// ============================================
-// UPDATE PAYMENT STATUS TO 'DISPUTED'
-// ============================================
-$updateStmt = $conn->prepare("
-    UPDATE payments 
-    SET status = 'disputed', 
-        notes = CONCAT(IFNULL(notes, ''), '\n[', NOW(), '] Student reported: Money deducted but payment shows failed. Amount: RM', ?)
-    WHERE id = ?
-");
-$updateStmt->bind_param("di", $amount, $payment_id);
-$updateStmt->execute();
-$updateStmt->close();
-
-// ============================================
-// UPDATE BOOKING STATUS TO 'DISPUTED' (since payment issue is serious)
-// ============================================
-$updateBooking = $conn->prepare("
-    UPDATE bookings 
-    SET status = 'disputed' 
-    WHERE id = ?
-");
-$updateBooking->bind_param("i", $booking_id);
-$updateBooking->execute();
-$updateBooking->close();
-
-// ============================================
-// SEND NOTIFICATIONS
-// ============================================
-
-// Get student name
-$studentStmt = $conn->prepare("SELECT fullname, email FROM users WHERE id = ?");
-$studentStmt->bind_param("i", $student_id);
-$studentStmt->execute();
-$student = $studentStmt->get_result()->fetch_assoc();
-$studentStmt->close();
-
-// Get tutor name and email
-$tutorStmt = $conn->prepare("SELECT fullname, email FROM users WHERE id = ?");
-$tutorStmt->bind_param("i", $payment['tutor_id']);
-$tutorStmt->execute();
-$tutor = $tutorStmt->get_result()->fetch_assoc();
-$tutorStmt->close();
-
-// Get admin ID (user with role 'admin' or specific ID)
-$adminStmt = $conn->prepare("SELECT id, email FROM users WHERE role = 'admin' LIMIT 1");
-$adminStmt->execute();
-$admin = $adminStmt->get_result()->fetch_assoc();
-$admin_id = $admin['id'] ?? 1;
-$adminStmt->close();
-
-// Student notification
-$studentMsg = "Your payment dispute has been submitted. Admin will review within 24 hours.";
-insertNotification($conn, $student_id, "Payment Dispute Submitted", $studentMsg, "payment_dispute", "my_payments.php");
-
-// Tutor notification (inform tutor about dispute)
-$tutorMsg = "A student has disputed a payment for your {$payment['language']} session. Admin will review the case.";
-insertNotification($conn, $payment['tutor_id'], "Payment Dispute - Under Review", $tutorMsg, "payment_dispute", "tutor_earnings.php");
-
-// Admin notification
-$adminMsg = "New payment dispute #$dispute_id\n";
-$adminMsg .= "Student: {$student['fullname']}\n";
-$adminMsg .= "Tutor: {$tutor['fullname']}\n";
-$adminMsg .= "Booking ID: $booking_id\n";
-$adminMsg .= "Amount: RM $amount\n";
-$adminMsg .= "Issue: Money deducted but payment shows as failed.";
-insertNotification($conn, $admin_id, "Payment Dispute Reported", $adminMsg, "payment_dispute", "admin/payments.php?status=disputed");
-
-// ============================================
-// SEND EMAILS
-// ============================================
-$bookingDate = date('l, d F Y', strtotime($payment['booking_date']));
-
-// Email to STUDENT
-sendStudentPaymentDisputeEmail($student, $payment, $amount, $bookingDate);
-
-// Email to ADMIN
-sendAdminPaymentDisputeEmail($admin, $student, $tutor, $payment, $amount, $bookingDate, $dispute_id);
-
-// ============================================
-// RESPONSE
-// ============================================
-echo json_encode([
-    'success' => true, 
-    'message' => 'Payment dispute reported. Admin will verify within 24 hours.',
-    'dispute_id' => $dispute_id
-]);
-exit();
-
-// ============================================
-// EMAIL FUNCTIONS
-// ============================================
-
-function sendStudentPaymentDisputeEmail($student, $payment, $amount, $bookingDate) {
-    $mail = new PHPMailer(true);
+if ($insert->execute()) {
+    $dispute_id = $conn->insert_id;
     
-    try {
-        $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
-        $mail->SMTPAuth   = true;
-        $mail->Username   = SMTP_USER;
-        $mail->Password   = SMTP_PASS;
-        $mail->SMTPSecure = 'tls';
-        $mail->Port       = 587;
-        $mail->CharSet = 'UTF-8';
-        $mail->isHTML(true); 
-        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
-        $mail->addAddress($student['email'], $student['fullname']);
-        $mail->Subject = 'Payment Dispute Submitted - Kyoshi';
-        $mail->Body = "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <div style='text-align:center;'>
-                <h2 style='color:#E75A9B;'>Payment Dispute Submitted</h2>
-            </div>
-            <p>Dear <strong>{$student['fullname']}</strong>,</p>
-            <p>We have received your payment dispute for the following session:</p>
-            <div style='background:#f0f9ff;border-radius:12px;padding:16px;margin:20px 0;'>
-                <p><strong>Booking ID:</strong> {$payment['id']}</p>
-                <p><strong>Language:</strong> {$payment['language']}</p>
-                <p><strong>Session Date:</strong> {$bookingDate}</p>
-                <p><strong>Amount:</strong> RM " . number_format($amount, 2) . "</p>
-            </div>
-            <div style='background:#fff3cd;padding:16px;border-radius:12px;margin:20px 0;border-left:4px solid #ffc107;'>
-                <p style='margin:0;color:#856404;'>Our admin team will verify your payment within 24 hours. We will update you via email and notification.</p>
-            </div>
-            <div style='text-align:center;margin-top:20px;'>
-                <a href='http://localhost/kyoshi/php/my_payments.php' 
-                   style='display:inline-block;padding:10px 20px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
-                    View My Payments →
-                </a>
-            </div>
-        </div>
-        ";
-        $mail->send();
-    } catch (Exception $e) {
-        error_log("Student payment dispute email failed: " . $e->getMessage());
+    // Send notification to admin (optional - you can use email or database notification)
+    // You can uncomment this if you have mail configured
+    /*
+    $admin_email = "admin@kyoshi.com";
+    $subject = "New Payment Dispute #$dispute_id";
+    $email_body = "A new payment dispute has been submitted.\n\n";
+    $email_body .= "Student: " . $payment['student_name'] . "\n";
+    $email_body .= "Booking ID: #$booking_id\n";
+    $email_body .= "Tutor: " . $payment['tutor_name'] . "\n";
+    $email_body .= "Resolution: " . ucfirst($resolution_requested) . "\n";
+    if ($resolution_requested === 'reschedule' && $preferred_datetime) {
+        $email_body .= "Preferred New Time: " . date('d M Y, h:i A', strtotime($preferred_datetime)) . "\n";
     }
-}
-
-function sendAdminPaymentDisputeEmail($admin, $student, $tutor, $payment, $amount, $bookingDate, $dispute_id) {
-    $mail = new PHPMailer(true);
+    mail($admin_email, $subject, $email_body);
+    */
     
-    try {
-        $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
-        $mail->SMTPAuth   = true;
-        $mail->Username   = SMTP_USER;
-        $mail->Password   = SMTP_PASS;
-        $mail->SMTPSecure = 'tls';
-        $mail->Port       = 587;
-        $mail->CharSet = 'UTF-8';
-        $mail->isHTML(true); 
-        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi System');
-        $mail->addAddress($admin['email'], 'Admin');
-        $mail->Subject = '⚠️ Payment Dispute #' . $dispute_id . ' - Kyoshi';
-        $mail->Body = "
-        <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
-            <div style='text-align:center;'>
-                <h2 style='color:#dc2626;'>⚠️ Payment Dispute Reported</h2>
-                <p style='font-size:12px;color:#999;'>Dispute ID: #{$dispute_id}</p>
-            </div>
-            <p>A student has reported that money was deducted but payment shows as FAILED.</p>
-            <table style='width:100%;border-collapse:collapse;margin:15px 0;'>
-                <tr style='background:#f5f5f5;'>
-                    <td style='padding:10px;border:1px solid #ddd;'><strong>Payment ID:</strong></td>
-                    <td style='padding:10px;border:1px solid #ddd;'>{$payment['id']}</td>
-                </tr>
-                <tr>
-                    <td style='padding:10px;border:1px solid #ddd;'><strong>Booking ID:</strong></td>
-                    <td style='padding:10px;border:1px solid #ddd;'>{$payment['booking_id']}</td>
-                </tr>
-                <tr style='background:#f5f5f5;'>
-                    <td style='padding:10px;border:1px solid #ddd;'><strong>Student:</strong></td>
-                    <td style='padding:10px;border:1px solid #ddd;'>{$student['fullname']} ({$student['email']})</td>
-                </tr>
-                <tr>
-                    <td style='padding:10px;border:1px solid #ddd;'><strong>Tutor:</strong></td>
-                    <td style='padding:10px;border:1px solid #ddd;'>{$tutor['fullname']} ({$tutor['email']})</td>
-                </tr>
-                <tr style='background:#f5f5f5;'>
-                    <td style='padding:10px;border:1px solid #ddd;'><strong>Language:</strong></td>
-                    <td style='padding:10px;border:1px solid #ddd;'>{$payment['language']}</td>
-                </tr>
-                <tr>
-                    <td style='padding:10px;border:1px solid #ddd;'><strong>Session Date:</strong></td>
-                    <td style='padding:10px;border:1px solid #ddd;'>{$bookingDate}</td>
-                </tr>
-                <tr style='background:#f5f5f5;'>
-                    <td style='padding:10px;border:1px solid #ddd;'><strong>Amount:</strong></td>
-                    <td style='padding:10px;border:1px solid #ddd;' style='color:#dc2626;'>RM " . number_format($amount, 2) . "</td>
-                </tr>
-            </table>
-            <div style='background:#fff3cd;padding:16px;border-radius:12px;margin:20px 0;border-left:4px solid #ffc107;'>
-                <p><strong>Student's Message:</strong></p>
-                <p>Money was deducted from my account but the payment shows as failed. Please verify with the payment gateway.</p>
-            </div>
-            <div style='text-align:center;margin-top:20px;'>
-                <a href='http://localhost/kyoshi/admin/payment_disputes.php?id={$dispute_id}' 
-                   style='display:inline-block;padding:10px 20px;background:#dc2626;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
-                    Review Dispute →
-                </a>
-            </div>
-        </div>
-        ";
-        $mail->send();
-    } catch (Exception $e) {
-        error_log("Admin payment dispute email failed: " . $e->getMessage());
-    }
+    echo json_encode([
+        'success' => true,
+        'message' => 'Dispute submitted successfully! Admin will review within 24-48 hours.'
+    ]);
+} else {
+    echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
 }
 ?>

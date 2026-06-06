@@ -1211,16 +1211,15 @@ body::before {
         </div>
         
         <?php if (!$tutor_confirmed): ?>
-            <!-- Show proof upload ONLY if disputed or has pending report -->
             <?php if ($show_proof_upload): ?>
                 <div style="margin-bottom: 12px; background: #fff3cd; padding: 12px; border-radius: 8px;">
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                         <i class="bi bi-info-circle-fill" style="color: #f59e0b;"></i>
-                        <span style="font-size: 12px; font-weight: bold;">Student has reported an issue. Please provide proof to support your confirmation.</span>
+                        <span style="font-size: 12px; font-weight: bold;">Student claims you did not attend. Please upload proof that you were present.</span>
                     </div>
-                    <label style="font-size: 12px; display: block; margin-bottom: 5px;">Upload Screenshot as Proof:</label>
-                    <input type="file" id="onlineProof_<?= $booking_id ?>" accept="image/*" style="margin-bottom: 8px; width: 100%;">
-                    <small style="font-size: 11px; color: #666;">Upload a screenshot showing you were present (e.g., meeting room, chat, shared screen)</small>
+                    <label style="font-size: 12px; display: block; margin-bottom: 5px;">Upload Photo Proof (Required):</label>
+                    <input type="file" id="attendanceProof_<?= $booking_id ?>" accept="image/*" required style="margin-bottom: 8px; width: 100%;">
+                    <small style="font-size: 11px; color: #666;">Upload a photo showing you were at the meeting location</small>
                 </div>
             <?php endif; ?>
             

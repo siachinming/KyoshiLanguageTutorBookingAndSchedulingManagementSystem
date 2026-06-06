@@ -86,16 +86,17 @@ $stmt->execute();
 $verifiedPayments = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $verifiedBookingIds = array_column($verifiedPayments, 'booking_id');
 
-// Check which sessions have reports submitted
+
+
 $stmt = $conn->prepare("
     SELECT booking_id, report_status 
     FROM session_reports 
-    WHERE tutor_id = ? AND report_status = 'submitted'
+    WHERE tutor_id = ? AND report_status = 'approved'
 ");
 $stmt->bind_param("i", $userID);
 $stmt->execute();
-$submittedReports = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$submittedBookingIds = array_column($submittedReports, 'booking_id');
+$approvedReports = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$approvedBookingIds = array_column($approvedReports, 'booking_id');
 
 // Filter bookings based on attendance type
 $verifiedBookings = [];        // Sessions that count for earnings (attended + verified + has report) OR (student no-show + verified)
@@ -106,25 +107,25 @@ $tutorNoShowCount = 0;         // Tutor no-show (refunded, no payment)
 
 foreach ($allCompletedBookings as $booking) {
     $isVerified = in_array($booking['id'], $verifiedBookingIds);
-    $hasReport = in_array($booking['id'], $submittedBookingIds);
+    $hasReport = in_array($booking['id'], $approvedBookingIds);
     
     // Determine attendance type
     $studentConfirmed = $booking['student_confirmed'];
     $noShowType = $booking['no_show_type'];
     
     // Case 1: Student attended the session (confirmed = 1)
-    if ($studentConfirmed == 1) {
-        if ($isVerified) {
-            if ($hasReport) {
-                $verifiedBookings[] = $booking;
-            } else {
-                // Attended, payment verified, but report not submitted
-                $pendingReportCount++;
-            }
+if ($studentConfirmed == 1) {
+    if ($isVerified) {
+        if ($hasReport) {
+            $verifiedBookings[] = $booking;
         } else {
-            $pendingVerificationCount++;
+            // Attended, payment verified, but report NOT approved by admin yet
+            $pendingReportCount++;
         }
+    } else {
+        $pendingVerificationCount++;
     }
+}
     // Case 2: Student no-show (didn't come) - Tutor still gets paid, NO report needed
     elseif ($studentConfirmed == 0 && $noShowType == 'student_no_show') {
         if ($isVerified) {
@@ -227,6 +228,26 @@ foreach ($verifiedBookings as $booking) {
     $languageEarnings[$booking['language']]['count']++;
 }
 
+$stmt = $conn->prepare("
+    SELECT SUM(amount) as total_requested 
+    FROM payout_requests 
+    WHERE tutor_id = ? AND status IN ('pending', 'approved', 'completed')
+");
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$requestedResult = $stmt->get_result()->fetch_assoc();
+$totalRequested = $requestedResult['total_requested'] ?? 0;
+
+// Calculate AVAILABLE balance (earnings - already requested)
+$availableBalance = $totalNet - $totalRequested;
+
+// Update the canRequestPayout condition to use available balance
+$canRequestPayout = ($availableBalance >= 50) && ($pendingReportCount == 0);
+
+// Also update the max amount for payout request
+$maxPayoutAmount = $availableBalance;
+
+
 // Sort months in ascending order for chart
 ksort($monthlyEarnings);
 foreach ($monthlyEarnings as $month => $data) {
@@ -247,9 +268,6 @@ $currentMonth = date('Y-m');
 $currentMonthEarnings = $monthlyEarnings[$currentMonth] ?? ['gross' => 0, 'commission' => 0, 'net' => 0, 'count' => 0];
 $totalSessions = count($verifiedBookings);
 
-// Check if tutor can request payout (must have at least RM50 and NO pending reports for attended sessions)
-// Note: Student no-shows don't require reports, so they don't block payout
-$canRequestPayout = ($totalNet >= 50) && ($pendingReportCount == 0);
 
 // Get payout history
 $payoutHistory = [];
@@ -331,9 +349,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
     } elseif ($amount <= 0) {
         $payoutMessage = "Please enter a valid amount";
         $payoutMessageType = "error";
-    } elseif ($amount > $totalNet) {
-        $payoutMessage = "Request amount exceeds your available balance";
-        $payoutMessageType = "error";
+    } elseif ($amount > $availableBalance) {
+    $payoutMessage = "Request amount exceeds your available balance (Already requested a total amount of " . formatMoney($totalRequested) . ")";
     } elseif ($amount < 50) {
         $payoutMessage = "Minimum payout amount is RM50";
         $payoutMessageType = "error";
@@ -1037,13 +1054,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
             <div>
                 <h3><i class="bi bi-cash"></i> Available for Payout</h3>
-                <div class="payout-amount"><?= formatMoney($totalNet) ?></div>
+                <div class="payout-amount"><?= formatMoney($availableBalance) ?></div>
                 <p>After 20% platform commission | Minimum payout: RM50</p>
                 <?php if ($pendingReportCount > 0): ?>
                     <p style="color: #fef3c7; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 12px; margin-top: 8px;">
                         <i class="bi bi-exclamation-triangle"></i> 
-                        You have an overall of <?= $pendingReportCount ?> attended session(s) but report not submitted yet.
-                        Please submit all session reports before requesting payout.
+                        You have <?= $pendingReportCount ?> attended session(s) pending report submission.
+                        <strong>Payment requires: Submit Report → Admin Verification → Payment Release</strong>
                     </p>
                 <?php endif; ?>
                 <?php if ($pendingVerificationCount > 0): ?>
@@ -1054,49 +1071,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <?php endif; ?>
             </div>
             <div>
-                <button class="btn-payout <?= (!$canRequestPayout) ? 'disabled' : '' ?>" 
-                        onclick="openPayoutModal(<?= $totalNet ?>)"
-                        <?= (!$canRequestPayout) ? 'disabled' : '' ?>>
+            <button class="btn-payout <?= (!$canRequestPayout) ? 'disabled' : '' ?>" 
+        onclick="openPayoutModal(<?= $availableBalance ?>)"
+        <?= (!$canRequestPayout) ? 'disabled' : '' ?>>
                     <i class="bi bi-cash-stack"></i> Request Payout
                 </button>
             </div>
         </div>
     </div>
-
-    <!-- Payout History -->
-    <?php if (!empty($payoutHistory)): ?>
-    <div class="glass-card">
-        <div class="card-header">
-            <h2><i class="bi bi-clock-history"></i> Payout History</h2>
-            <p>Your previous withdrawal requests</p>
-        </div>
-        <table class="earnings-table">
-            <thead>
-                <tr>
-                    <th>Date Requested</th>
-                    <th>Amount</th>
-                    <th>Bank Account</th>
-                    <th>Status</th>
-                    <th>Processed Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($payoutHistory as $payout): ?>
-                <tr>
-                    <td><?= date('d M Y', strtotime($payout['requested_at'])) ?></td>
-                    <td class="positive"><?= formatMoney($payout['amount']) ?></td>
-                    <td style="font-size: 11px;">
-                        <?= e($payout['bank_name']) ?><br>
-                        ****<?= substr(e($payout['bank_account_number']), -4) ?>
-                    </td>
-                    <td><span class="status-<?= $payout['status'] ?>"><?= ucfirst($payout['status']) ?></span></td>
-                    <td><?= $payout['processed_at'] ? date('d M Y', strtotime($payout['processed_at'])) : '-' ?></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+<!-- Payout History -->
+<?php if (!empty($payoutHistory)): ?>
+<div class="glass-card">
+    <div class="card-header">
+        <h2><i class="bi bi-clock-history"></i> Payout History</h2>
+        <p>Your previous withdrawal requests</p>
     </div>
-    <?php endif; ?>
+    <table class="earnings-table">
+        <thead>
+            <tr>
+                <th>Date Requested</th>
+                <th>Amount</th>
+                <th>Bank Account</th>
+                <th>Status</th>
+                <th>Processed Date</th>
+                <th>Admin Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($payoutHistory as $payout): ?>
+            <tr>
+                <td><?= date('d M Y', strtotime($payout['requested_at'])) ?></td>
+                <td class="positive"><?= formatMoney($payout['amount']) ?></td>
+                <td style="font-size: 11px;">
+                    <?= e($payout['bank_name']) ?><br>
+                    ****<?= substr(e($payout['bank_account_number']), -4) ?>
+                </td>
+                <td>
+                    <span class="status-<?= $payout['status'] ?>">
+                        <?= ucfirst($payout['status']) ?>
+                    </span>
+                </td>
+                <td><?= $payout['processed_at'] ? date('d M Y', strtotime($payout['processed_at'])) : '-' ?></td>
+                <td style="max-width: 200px; font-size: 11px; color: #64748b;">
+                    <?php if ($payout['status'] == 'rejected' && !empty($payout['admin_notes'])): ?>
+                        <span style="color: #dc2626;">
+                            <i class="bi bi-exclamation-triangle"></i> 
+                            <?= e($payout['admin_notes']) ?>
+                        </span>
+                    <?php elseif ($payout['status'] == 'approved' && !empty($payout['admin_notes'])): ?>
+                        <span style="color: #28a745; font-size: 10px;">
+                            <?= e($payout['admin_notes']) ?>
+                        </span>
+                    <?php elseif ($payout['status'] == 'completed' && !empty($payout['transaction_reference'])): ?>
+                        <span style="font-size: 10px;">
+                            Ref: <?= e($payout['transaction_reference']) ?>
+                        </span>
+                    <?php else: ?>
+                        —
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 
     <!-- Charts Section -->
     <div class="charts-grid">
@@ -1112,52 +1151,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <div class="chart-card">
             <div class="chart-title">
                 <i class="bi bi-pie-chart" style="color: #E75A9B;"></i>
-                Earnings by Language
+                Total Earnings by Language
             </div>
             <div class="chart-container">
                 <canvas id="languagePieChart"></canvas>
             </div>
         </div>
     </div>
-
-    <!-- Stats Cards -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon"><i class="bi bi-cash-stack"></i></div>
-            <div class="stat-value"><?= formatMoney($totalGross) ?></div>
-            <div class="stat-label">Total Gross Earnings</div>
-            <div class="stat-sub">Before commission</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon"><i class="bi bi-percent"></i></div>
-            <div class="stat-value"><?= formatMoney($totalCommission) ?></div>
-            <div class="stat-label">Platform Commission (20%)</div>
-            <div class="stat-sub">Automatically deducted</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon"><i class="bi bi-wallet2"></i></div>
-            <div class="stat-value"><?= formatMoney($totalNet) ?></div>
-            <div class="stat-label">Your Net Earnings</div>
-            <div class="stat-sub"><?= $totalSessions ?> total sessions</div>
-            <?php if ($studentNoShowCount > 0): ?>
-                <div class="stat-info">
-                    <i class="bi bi-calendar-x"></i> <?= $studentNoShowCount ?> student no-shows
+    <!-- Two Column Layout -->
+    <div style="display: grid; grid-template-columns: 0.4fr 1fr; gap: 24px;">
+        <!-- Top Students -->
+        <div class="glass-card">
+            <div class="card-header" style="padding: 12px 16px;'>
+                <h2><i class="bi bi-trophy"></i> Top Students</h2>
+                <p>Students who generated the most earnings</p>
+            </div>
+            <div>
+                <?php 
+                $rank = 1;
+                foreach ($topStudents as $studentName => $data): 
+                    $rankClass = $rank == 1 ? 'gold' : ($rank == 2 ? 'silver' : ($rank == 3 ? 'bronze' : ''));
+                ?>
+                <div class="top-student-card">
+                    <div class="rank-badge <?= $rankClass ?>"><?= $rank ?></div>
+                    <div style="flex: 1;">
+                        <strong><?= e($studentName) ?></strong>
+                        <div style="font-size: 11px; color: #64748b;">
+                            <?= $data['count'] ?> session(s) · <?= implode(', ', $data['languages']) ?>
+                            <?php if ($data['no_shows'] > 0): ?>
+                                <span class="badge-no-show"><?= $data['no_shows'] ?> no-show(s)</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div>
+                        <strong class="positive"><?= formatMoney($data['total']) ?></strong>
+                    </div>
                 </div>
-            <?php endif; ?>
-            <?php if ($pendingReportCount > 0): ?>
-                <div class="stat-warning">
-                    <i class="bi bi-clock-history"></i> <?= $pendingReportCount ?> reports pending
-                </div>
-            <?php endif; ?>
+                <?php 
+                    $rank++;
+                    if ($rank > 5) break;
+                endforeach; 
+                ?>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-icon"><i class="bi bi-calendar-check"></i></div>
-            <div class="stat-value"><?= formatMoney($currentMonthEarnings['net']) ?></div>
-            <div class="stat-label">This Month</div>
-            <div class="stat-sub"><?= $currentMonthEarnings['count'] ?> sessions this month</div>
-        </div>
-    </div>
-
     <!-- Monthly Breakdown -->
     <div class="glass-card">
         <div class="card-header">
@@ -1193,77 +1229,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </tbody>
         </table>
     </div>
-
-    <!-- Two Column Layout -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-        <!-- Top Students -->
-        <div class="glass-card">
-            <div class="card-header">
-                <h2><i class="bi bi-trophy"></i> Top Students</h2>
-                <p>Students who generated the most earnings</p>
-            </div>
-            <div>
-                <?php 
-                $rank = 1;
-                foreach ($topStudents as $studentName => $data): 
-                    $rankClass = $rank == 1 ? 'gold' : ($rank == 2 ? 'silver' : ($rank == 3 ? 'bronze' : ''));
-                ?>
-                <div class="top-student-card">
-                    <div class="rank-badge <?= $rankClass ?>"><?= $rank ?></div>
-                    <div style="flex: 1;">
-                        <strong><?= e($studentName) ?></strong>
-                        <div style="font-size: 11px; color: #64748b;">
-                            <?= $data['count'] ?> session(s) · <?= implode(', ', $data['languages']) ?>
-                            <?php if ($data['no_shows'] > 0): ?>
-                                <span class="badge-no-show"><?= $data['no_shows'] ?> no-show(s)</span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div>
-                        <strong class="positive"><?= formatMoney($data['total']) ?></strong>
-                    </div>
-                </div>
-                <?php 
-                    $rank++;
-                    if ($rank > 5) break;
-                endforeach; 
-                ?>
-            </div>
-        </div>
-
-        <!-- Earnings by Language Table -->
-        <div class="glass-card">
-            <div class="card-header">
-                <h2><i class="bi bi-translate"></i> Earnings by Language</h2>
-                <p>Breakdown of earnings by language taught</p>
-            </div>
-            <table class="earnings-table">
-                <thead>
-                    <tr>
-                        <th>Language</th>
-                        <th>Sessions</th>
-                        <th>Total Earnings</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($languageEarnings as $language => $data): ?>
-                    <tr>
-                        <td><strong><?= e($language) ?></strong></td>
-                        <td><?= $data['count'] ?></td>
-                        <td class="positive"><?= formatMoney($data['total']) ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Recent Earnings Table -->
-    <div class="glass-card" style="margin-top: 24px;">
-        <div class="card-header">
+</div>
+<!-- Recent Earnings Table -->
+<div class="glass-card" style="margin-top: 24px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
             <h2><i class="bi bi-clock-history"></i> Recent Earnings</h2>
             <p>Transaction history - Includes both attended sessions and student no-shows</p>
         </div>
+        <?php if (count($verifiedBookings) > 5): ?>
+            <button id="toggleEarningsBtn" style="background: none; border: none; color: #E75A9B; font-size: 12px; cursor: pointer;">
+                <i class="bi bi-eye"></i> View All (<?= count($verifiedBookings) ?>)
+            </button>
+        <?php endif; ?>
+    </div>
+    <div id="recentEarningsContainer">
         <table class="earnings-table">
             <thead>
                 <tr>
@@ -1276,14 +1256,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <th>Status</th>
                 </tr>
             </thead>
-            <tbody>
-                <?php foreach ($verifiedBookings as $booking): 
+            <tbody id="earningsTableBody">
+                <?php 
+                $count = 0;
+                foreach ($verifiedBookings as $booking): 
+                    $count++;
+                    if ($count > 5) continue;
                     $amount = floatval($booking['total_amount']);
                     $commission = $amount * $COMMISSION_RATE;
                     $net = $amount - $commission;
                     $isNoShow = ($booking['student_confirmed'] == 0 && $booking['no_show_type'] == 'student_no_show');
                 ?>
-                <tr>
+                <tr class="earning-row">
+                    <td><?= date('d M Y', strtotime($booking['booking_date'])) ?></td>
+                    <td><?= e($booking['student_name']) ?> <?php if ($isNoShow): ?><span class="badge-no-show">No-Show</span><?php endif; ?></td>
+                    <td><?= e($booking['language']) ?></td>
+                    <td><?= formatMoney($amount) ?></td>
+                    <td class="commission">- <?= formatMoney($commission) ?></td>
+                    <td class="positive"><?= formatMoney($net) ?></td>
+                    <td>
+                        <?php if ($isNoShow): ?>
+                            <span class="status-approved"><i class="bi bi-calendar-x"></i> No report needed</span>
+                        <?php else: ?>
+                            <span class="status-approved"><i class="bi bi-check-circle"></i> Report submitted</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+            <tbody id="moreEarningsBody" style="display: none;">
+                <?php 
+                $count = 0;
+                foreach ($verifiedBookings as $booking): 
+                    $count++;
+                    if ($count <= 5) continue;
+                    $amount = floatval($booking['total_amount']);
+                    $commission = $amount * $COMMISSION_RATE;
+                    $net = $amount - $commission;
+                    $isNoShow = ($booking['student_confirmed'] == 0 && $booking['no_show_type'] == 'student_no_show');
+                ?>
+                <tr class="earning-row">
                     <td><?= date('d M Y', strtotime($booking['booking_date'])) ?></td>
                     <td><?= e($booking['student_name']) ?> <?php if ($isNoShow): ?><span class="badge-no-show">No-Show</span><?php endif; ?></td>
                     <td><?= e($booking['language']) ?></td>
@@ -1302,6 +1314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </tbody>
         </table>
     </div>
+</div>
 </div><!-- Payout Modal - Shows ALL bank accounts -->
 <div id="payoutModal" class="modal-overlay">
     <div class="modal-container" style="max-width: 500px;">
@@ -1323,7 +1336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 
                 <div class="form-group">
                     <label>Payout Amount (RM)</label>
-                    <input type="number" name="amount" id="payoutAmount" step="0.01" min="50" max="<?= $totalNet ?>" required>
+                    <input type="number" name="amount" id="payoutAmount" step="0.01" min="50" max="<?= $availableBalance ?>" required>
                     <small style="font-size: 11px; color: #64748b;">Minimum: RM50 | Maximum: <?= formatMoney($totalNet) ?></small>
                 </div>
                 
@@ -1560,12 +1573,12 @@ if (monthlyCtx) {
             responsive: true,
             maintainAspectRatio: true,
             plugins: { legend: { position: 'top' } },
-            scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return 'RM ' + value; } } } }
+            scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return ' ' + value; } } } }
         }
     });
 }
 
-// Language Pie Chart
+// Language Pie Chart - Clean tooltip without duplicate label
 const pieCtx = document.getElementById('languagePieChart')?.getContext('2d');
 if (pieCtx) {
     new Chart(pieCtx, {
@@ -1581,7 +1594,33 @@ if (pieCtx) {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            plugins: { legend: { position: 'right' } }
+            plugins: {
+                legend: { 
+                    position: 'right',
+                    labels: {
+                        font: { size: 11 }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'white',
+                    titleColor: '#1d3156',
+                    bodyColor: '#475569',
+                    borderColor: '#e2e8f0',
+                    borderWidth: 1,
+                    callbacks: {
+                        title: (tooltipItems) => {
+                            // Language name appears once as title
+                            return tooltipItems[0].label;
+                        },
+                        label: (context) => {
+                            // Everything combined in one line
+                            const value = context.raw || 0;
+                            const sessions = <?= json_encode(array_values(array_column($languageEarnings, 'count'))) ?>[context.dataIndex];
+                            return `RM${value.toFixed(2)} (${sessions} sessions)`;
+                        }
+                    }
+                }
+            }
         }
     });
 }
@@ -1592,7 +1631,35 @@ window.onclick = function(event) {
         closePayoutModal();
     }
 }
-
+// Toggle Recent Earnings View (without page refresh)
+const toggleBtn = document.getElementById('toggleEarningsBtn');
+if (toggleBtn) {
+    toggleBtn.addEventListener('click', function() {
+        const moreRows = document.getElementById('moreEarningsBody');
+        const isShowingAll = moreRows.style.display !== 'none';
+        
+        if (isShowingAll) {
+            moreRows.style.display = 'none';
+            toggleBtn.innerHTML = '<i class="bi bi-eye"></i> View All (<?= count($verifiedBookings) ?>)';
+        } else {
+            moreRows.style.display = 'table-row-group';
+            toggleBtn.innerHTML = '<i class="bi bi-eye-slash"></i> Show Less';
+        }
+        
+        // Save preference to localStorage
+        localStorage.setItem('showAllEarnings', !isShowingAll);
+    });
+    
+    // Load saved preference
+    const savedPreference = localStorage.getItem('showAllEarnings');
+    if (savedPreference === 'true') {
+        const moreRows = document.getElementById('moreEarningsBody');
+        if (moreRows) {
+            moreRows.style.display = 'table-row-group';
+            toggleBtn.innerHTML = '<i class="bi bi-eye-slash"></i> Show Less';
+        }
+    }
+}
 // Auto-open payout modal when bank_added parameter is present
 <?php if (isset($_GET['bank_added']) && $_GET['bank_added'] == 1): ?>
 setTimeout(function() {

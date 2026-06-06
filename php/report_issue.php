@@ -32,6 +32,44 @@ if (!$booking_id || !$issue_type) {
     exit();
 }
 
+// ============================================
+// VALIDATION FOR TUTOR NO-SHOW - PROOF REQUIRED
+// ============================================
+if ($issue_type === 'tutor_no_show') {
+    // Check if proof file was uploaded
+    if (!isset($_FILES['proof']) || $_FILES['proof']['error'] !== UPLOAD_ERR_OK) {
+        $_SESSION['error'] = "⚠️ PROOF REQUIRED: For 'Tutor didn't show up' reports, you MUST upload proof (screenshot or photo).";
+        header("Location: booking_detail.php?id=" . $booking_id);
+        exit();
+    }
+    
+    // Check if file is empty
+    if ($_FILES['proof']['size'] === 0) {
+        $_SESSION['error'] = "The uploaded file is empty. Please upload a valid proof file.";
+        header("Location: booking_detail.php?id=" . $booking_id);
+        exit();
+    }
+    
+    // Check file size (max 5MB)
+    if ($_FILES['proof']['size'] > 5 * 1024 * 1024) {
+        $_SESSION['error'] = "Proof file is too large. Maximum size is 5MB.";
+        header("Location: booking_detail.php?id=" . $booking_id);
+        exit();
+    }
+    
+    // Check file type
+    $allowed_types = ['image/jpeg', 'image/png', 'application/pdf'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $file_type = finfo_file($finfo, $_FILES['proof']['tmp_name']);
+    finfo_close($finfo);
+    
+    if (!in_array($file_type, $allowed_types)) {
+        $_SESSION['error'] = "Invalid file type. Please upload JPG, PNG, or PDF only.";
+        header("Location: booking_detail.php?id=" . $booking_id);
+        exit();
+    }
+}
+
 // Get booking details
 $stmt = $conn->prepare("
     SELECT b.*, 
@@ -131,10 +169,6 @@ if ($is_serious) {
     $tutorMsg = "A student has reported a SERIOUS issue with your {$booking['language']} session. Admin will review and contact you.";
     insertNotification($conn, $booking['tutor_id'], "Serious Issue Reported - Under Review", $tutorMsg, "dispute", "tutor_booking_detail.php?id={$booking_id}");
     
-    // Admin notification (insert into admin_notifications or send email)
-    $adminMsg = "New serious dispute #$dispute_id for booking #$booking_id\nStudent: {$booking['student_name']}\nTutor: {$booking['tutor_name']}\nIssue: $issue_type\nMessage: $message";
-    // You can add admin notification here
-    
 } else {
     // Minor issue - notify tutor for resolution
     
@@ -178,10 +212,6 @@ if ($role === 'student') {
     header("Location: tutor_booking_detail.php?id=" . $booking_id . "&reported=1");
 }
 exit();
-
-// ============================================
-// EMAIL FUNCTIONS
-// ============================================
 
 function sendStudentReportEmail($booking, $issue_type, $message, $is_serious, $bookingDate, $bookingTime) {
     $mail = new PHPMailer(true);

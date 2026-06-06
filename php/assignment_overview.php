@@ -70,7 +70,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_assignment'])) {
     ? str_replace('T', ' ', $_POST['due_date']) . ':00'
     : null;
     $replace_type = $_POST['replace_type'] ?? 'keep';
+    $late_cutoff_type = $_POST['late_cutoff_type'] ?? 'no_limit';
+    $late_days = isset($_POST['late_days']) ? intval($_POST['late_days']) : null;
+    $late_cutoff_date_raw = $_POST['late_cutoff_date'] ?? '';
     
+    // Process late cutoff date
+    if (!empty($late_cutoff_date_raw)) {
+        $late_cutoff_date = str_replace('T', ' ', $late_cutoff_date_raw) . ':00';
+    } else {
+        $late_cutoff_date = null;
+    }
+
   $stmt = $conn->prepare("SELECT * FROM assignments WHERE id = ? AND tutor_id = ?");
     $stmt->bind_param("ii", $assignmentId, $userID);
     $stmt->execute();
@@ -104,7 +114,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_assignment'])) {
     $updateFields[] = "allow_late_submission = ?";
     $updateValues[] = $allowLate;
 }
+        if ($current && $current['late_cutoff_type'] != $late_cutoff_type) {
+        $hasChanges = true;
+        $updateFields[] = "late_cutoff_type = ?";
+        $updateValues[] = $late_cutoff_type;
+    }
     
+    if ($current && $current['late_days'] != $late_days) {
+        $hasChanges = true;
+        $updateFields[] = "late_days = ?";
+        $updateValues[] = $late_days;
+    }
+    
+    if ($current && $current['late_cutoff_date'] != $late_cutoff_date) {
+        $hasChanges = true;
+        $updateFields[] = "late_cutoff_date = ?";
+        $updateValues[] = $late_cutoff_date;
+    }
     if ($replace_type === 'file' && isset($_FILES['new_assignment_file']) && $_FILES['new_assignment_file']['error'] === UPLOAD_ERR_OK) {
         $hasChanges = true;
         $file = $_FILES['new_assignment_file'];
@@ -291,23 +317,42 @@ function formatFileSize($bytes) {
     if ($bytes >= 1024) return round($bytes / 1024, 1) . ' KB';
     return $bytes . ' bytes';
 }
-
 function getAssignmentAttachmentDisplay($assignment) {
     if ($assignment['is_url'] == 1 && !empty($assignment['material_url'])) {
-        return '<div class="current-attachment"><i class="bi bi-link-45deg"></i> <a href="' . e($assignment['material_url']) . '" target="_blank">' . e($assignment['material_url']) . '</a></div>';
-    } elseif (!empty($assignment['file_name'])) {
-        $fileNames = explode('|', $assignment['file_name']);
-        $filePaths = explode('|', $assignment['file_path'] ?? '');
-        if (count($fileNames) > 1) {
-            $html = '<div class="current-attachment">';
-            foreach ($fileNames as $i => $name) {
-                $path = $filePaths[$i] ?? '';
-                $html .= '<div style="margin-bottom:4px;"><i class="bi bi-file-earmark"></i> ' . e($name) . '</div>';
+        // Handle multiple URLs (pipe-separated)
+        $urls = explode('|', $assignment['material_url']);
+        if (count($urls) > 1) {
+            $html = '<div class="current-attachment"><i class="bi bi-link-45deg"></i> Multiple Links:<br>';
+            foreach ($urls as $url) {
+                $html .= '<div style="margin-left: 20px; margin-top: 5px;">
+                            <i class="bi bi-link"></i> <a href="' . e($url) . '" target="_blank">' . e($url) . '</a>
+                          </div>';
             }
             $html .= '</div>';
             return $html;
         }
-        return '<div class="current-attachment"><i class="bi bi-file-earmark"></i> ' . e($assignment['file_name']) . ' (' . formatFileSize($assignment['file_size']) . ')</div>';
+        return '<div class="current-attachment"><i class="bi bi-link-45deg"></i> <a href="' . e($assignment['material_url']) . '" target="_blank">' . e($assignment['material_url']) . '</a></div>';
+    } elseif (!empty($assignment['file_name'])) {
+        // Handle multiple files (pipe-separated)
+        $fileNames = explode('|', $assignment['file_name']);
+        $filePaths = !empty($assignment['file_path']) ? explode('|', $assignment['file_path']) : [];
+        
+        if (count($fileNames) > 1) {
+            $html = '<div class="current-attachment"><i class="bi bi-files"></i> Multiple Files:<br>';
+            foreach ($fileNames as $i => $name) {
+                $path = isset($filePaths[$i]) ? $filePaths[$i] : '';
+                $html .= '<div style="margin-left: 20px; margin-top: 5px;">
+                            <i class="bi bi-file-earmark"></i> ' . e($name) . ' 
+                            <a href="../uploads/assignments/' . e($path) . '" target="_blank" style="margin-left: 10px; font-size: 11px;">[Download]</a>
+                          </div>';
+            }
+            $html .= '</div>';
+            return $html;
+        } else {
+            // Single file
+            $path = !empty($filePaths[0]) ? $filePaths[0] : $assignment['file_path'];
+            return '<div class="current-attachment"><i class="bi bi-file-earmark"></i> ' . e($assignment['file_name']) . ' (' . formatFileSize($assignment['file_size']) . ')</div>';
+        }
     }
     return '<div class="current-attachment"><i class="bi bi-exclamation-triangle"></i> No attachment</div>';
 }
@@ -329,6 +374,11 @@ body {
     background-size: cover;
     min-height: 100vh;
     position: relative;
+}
+.form-hint-small {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-top: 4px;
 }
 body::before {
     content: '';
@@ -713,14 +763,7 @@ body::before {
     font-size: 13px;
 }
 .form-group textarea { resize: vertical; }
-.current-attachment {
-    background: #f1f5f9;
-    padding: 10px 14px;
-    border-radius: 12px;
-    font-size: 13px;
-    word-break: break-all;
-}
-.current-attachment i { margin-right: 8px; }
+
 .edit-toggle-row {
     display: flex;
     gap: 12px;
@@ -831,7 +874,21 @@ body::before {
     flex-wrap: wrap;
 }
 .url-input-wrapper input { flex: 1; }
-
+.current-attachment {
+    background: #f1f5f9;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    word-break: break-all;
+}
+.current-attachment i { margin-right: 8px; }
+.current-attachment button {
+    transition: 0.2s;
+}
+.current-attachment button:hover {
+    opacity: 0.8;
+    transform: scale(1.02);
+}
 @media (max-width: 900px) {
     .submission-row { flex-direction: column; align-items: flex-start; gap: 12px; }
     .actions-col { text-align: left; width: 100%; }
@@ -922,6 +979,16 @@ body::before {
                 </select>
             </div>
             <div class="filter-group">
+                <label><i class="bi bi-clock-history"></i> Late Policy</label>
+                <select id="latePolicyFilter">
+                    <option value="all">All Policies</option>
+                    <option value="no_late">No late submissions</option>
+                    <option value="always">Always accept late</option>
+                    <option value="days">X days after due date</option>
+                    <option value="specific">Until specific date</option>
+                </select>
+            </div>
+            <div class="filter-group">
                 <label><i class="bi bi-sort-alpha-down"></i> Sort By</label>
                 <select id="sortBy">
                     <option value="latest">Latest First</option>
@@ -930,7 +997,7 @@ body::before {
                     <option value="title_az">Title (A-Z)</option>
                 </select>
             </div>
-            <div><button class="btn-search" onclick="applyFilters()"><i class="bi bi-funnel"></i> Apply</button></div>
+            <div><button class="btn-search" onclick="applyFilters()"><i class="bi bi-search"></i>Search</button></div>
             <div><button class="btn-reset" onclick="resetFilters()"><i class="bi bi-arrow-counterclockwise"></i> Reset</button></div>
         </div>
     </div>
@@ -960,7 +1027,6 @@ body::before {
         </div>
     </div>
 </div>
-
 <!-- Edit Assignment Modal -->
 <div id="editAssignmentModal" class="modal-overlay">
     <div class="modal-container">
@@ -983,12 +1049,46 @@ body::before {
                 <textarea name="description" id="edit_description" rows="3"></textarea>
             </div>
             
+            <!-- ADD THE MISSING DUE DATE INPUT -->
             <div class="form-group">
                 <label>Due Date & Time</label>
-                <input type="datetime-local" name="due_date" id="edit_due_date">
+                <input type="datetime-local" name="due_date" id="edit_due_date" class="form-control">
                 <small style="font-size:11px;color:#94a3b8;margin-top:4px;display:block;">
                     Leave empty for no due date.
                 </small>
+            </div>
+            
+            <!-- Late Policy Section (only one) -->
+            <div id="edit_latePolicyDiv" style="display: none;">
+                <div class="form-group">
+                    <label>Late Submission Policy</label>
+                    <div style="margin-bottom: 10px;">
+                        <input type="checkbox" name="allow_late_submission" id="edit_allow_late" value="1" style="width: auto; margin-right: 8px;" onchange="toggleEditLateOptions()">
+                        <label style="display: inline; font-weight: normal;">Allow late submissions</label>
+                    </div>
+                    
+                    <div id="edit_lateOptions" style="display: none; margin-top: 10px; padding: 12px; background: #f8fafc; border-radius: 12px;">
+                        <label style="font-size: 12px; margin-bottom: 8px;">Late submission cutoff:</label>
+                   <select name="late_cutoff_type" id="edit_lateCutoffType" class="form-control" style="margin-bottom: 10px;" onchange="updateEditLateOptions()">
+                        <option value="no_limit" selected>No limit (always accept late)</option>
+                        <option value="days_after">Allow X days after due date</option>
+                        <option value="specific_date">Allow until specific date</option>
+                    </select>
+                        
+                        <div id="edit_daysAfterOption" style="display: none; margin-top: 10px;">
+                            <label style="font-size: 12px;">Days allowed after due date:</label>
+                            <input type="number" name="late_days" id="edit_lateDays" min="1" max="30" value="7" class="form-control" style="width: 100px;">
+                            <small class="form-hint-small">Example: 7 days after due date</small>
+                        </div>
+                        
+                        <div id="edit_specificDateOption" style="display: none; margin-top: 10px;">
+                            <label style="font-size: 12px;">Cutoff date & time:</label>
+                            <input type="datetime-local" name="late_cutoff_date" id="edit_lateCutoffDate" class="form-control">
+                            <small class="form-hint-small">Submissions accepted until this date/time</small>
+                        </div>
+                    </div>
+                    <div class="form-hint-small">Define when late submissions will be accepted until</div>
+                </div>
             </div>
             
             <div class="form-group">
@@ -997,50 +1097,41 @@ body::before {
             </div>
             
             <div class="form-group">
-                <label>
-                    <input type="checkbox" name="allow_late_submission" id="edit_allow_late" value="1" style="width: auto; margin-right: 8px;">
-                    Allow late submissions after due date
-                </label>
-                <small style="font-size: 11px; color: #64748b; display: block; margin-top: 4px;">
-                    If enabled, students can still submit after the due date passes
-                </small>
-            </div>
-            <div class="form-group">
                 <label>Update Attachment (Optional)</label>
                 <div class="edit-toggle-row">
                     <div class="edit-toggle-btn active" data-edit-content="keep">Keep Current</div>
-                    <div class="edit-toggle-btn" data-edit-content="file">Replace New File</div>
-                    <div class="edit-toggle-btn" data-edit-content="url">Update URL</div>
+                    <div class="edit-toggle-btn" data-edit-content="file">Replace with New File</div>
+                    <div class="edit-toggle-btn" data-edit-content="url">Replace with URL</div>
                 </div>
             </div>
             
             <div id="edit_file_section" style="display: none;">
-    <div class="form-group">
-        <label>New File</label>
-        <div class="file-input-wrapper">
-            <input type="file" name="new_assignment_file" id="edit_new_file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.mp3,.zip,.txt">
-            <button type="button" class="btn-clear-file" id="clearFileBtn" onclick="clearSelectedFile()" style="display: none;">
-                <i class="bi bi-x-circle"></i> Clear
-            </button>
-        </div>
-        <div id="selectedFileName" class="selected-file-name" style="display: none;"></div>
-        <small style="font-size: 11px; color: #64748b;">Allowed: PDF, Word, PowerPoint, Excel, Images, Video, Audio, ZIP, TXT</small>
-    </div>
-</div>
-
-<div id="edit_url_section" style="display: none;">
-    <div class="form-group">
-        <label>New URL</label>
-        <div class="url-input-wrapper">
-            <input type="url" name="new_material_url" id="edit_new_url" placeholder="https://...">
-            <button type="button" id="clearUrlBtn" class="btn-clear-file" style="display: none;" onclick="clearUrlInput()">
-                <i class="bi bi-x-circle"></i> Clear
-            </button>
-        </div>
-        <div id="selectedUrlDisplay" class="selected-file-name" style="display: none;"></div>
-        <small style="font-size: 11px; color: #64748b;">Students will be able to access this link</small>
-    </div>
-</div>
+                <div class="form-group">
+                    <label>New File</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" name="new_assignment_file" id="edit_new_file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.mp3,.zip,.txt">
+                        <button type="button" class="btn-clear-file" id="clearFileBtn" onclick="clearSelectedFile()" style="display: none;">
+                            <i class="bi bi-x-circle"></i> Clear
+                        </button>
+                    </div>
+                    <div id="selectedFileName" class="selected-file-name" style="display: none;"></div>
+                    <small style="font-size: 11px; color: #64748b;">Allowed: PDF, Word, PowerPoint, Excel, Images, Video, Audio, ZIP, TXT (Max 50MB)</small>
+                </div>
+            </div>
+            
+            <div id="edit_url_section" style="display: none;">
+                <div class="form-group">
+                    <label>New URL</label>
+                    <div class="url-input-wrapper">
+                        <input type="url" name="new_material_url" id="edit_new_url" placeholder="https://...">
+                        <button type="button" id="clearUrlBtn" class="btn-clear-file" style="display: none;" onclick="clearUrlInput()">
+                            <i class="bi bi-x-circle"></i> Clear
+                        </button>
+                    </div>
+                    <div id="selectedUrlDisplay" class="selected-file-name" style="display: none;"></div>
+                    <small style="font-size: 11px; color: #64748b;">Students will be able to access this link</small>
+                </div>
+            </div>
             
             <div class="modal-buttons">
                 <button type="button" class="btn-cancel" onclick="closeEditAssignmentModal()">Cancel</button>
@@ -1083,6 +1174,58 @@ function showToast(message, color) {
     toast.innerHTML = `<i class="bi bi-info-circle"></i> ${message}`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
+}
+
+function deleteIndividualFile(assignmentId, fileIndex) {
+    if (confirm('Are you sure you want to remove this file? This action cannot be undone.')) {
+        fetch('delete_assignment_file.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                assignment_id: assignmentId,
+                file_index: fileIndex
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('File removed successfully!', '#28a745');
+                location.reload();
+            } else {
+                showToast('Error: ' + data.message, '#dc2626');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Network error', '#dc2626');
+        });
+    }
+}
+
+function deleteIndividualUrl(assignmentId, urlIndex) {
+    if (confirm('Are you sure you want to remove this URL? This action cannot be undone.')) {
+        fetch('delete_assignment_url.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                assignment_id: assignmentId,
+                url_index: urlIndex
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('URL removed successfully!', '#28a745');
+                location.reload();
+            } else {
+                showToast('Error: ' + data.message, '#dc2626');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Network error', '#dc2626');
+        });
+    }
 }
 
 function toggleDropdown() {
@@ -1194,38 +1337,112 @@ function resetUrlInputs() {
     }
 }
 
-function openEditAssignmentModal(assignmentId, title, description, dueDate, attachmentHtml, allowLate) {
+function openEditAssignmentModal(assignmentId, title, description, dueDate, attachmentHtml, allowLate, lateCutoffType, lateDays, lateCutoffDate) {
+    // Set basic fields
     document.getElementById('edit_assignment_id').value = assignmentId;
     document.getElementById('edit_title').value = title || '';
     document.getElementById('edit_description').value = description || '';
     
+    // Set due date
     let formattedDueDate = '';
     if (dueDate && dueDate !== 'null' && dueDate !== 'undefined' && dueDate.trim() !== '') {
         formattedDueDate = dueDate.trim().substring(0, 16).replace(' ', 'T');
     }
     document.getElementById('edit_due_date').value = formattedDueDate;
     
+    // Set allow late checkbox
     const allowLateCheckbox = document.getElementById('edit_allow_late');
     if (allowLateCheckbox) {
         allowLateCheckbox.checked = (allowLate == 1 || allowLate === true || allowLate === '1');
     }
+    // Set late cutoff type and values
+    const lateCutoffTypeSelect = document.getElementById('edit_lateCutoffType');
+    const lateDaysInput = document.getElementById('edit_lateDays');
+    const lateCutoffDateInput = document.getElementById('edit_lateCutoffDate');
     
+    if (lateCutoffTypeSelect && lateCutoffType) {
+        lateCutoffTypeSelect.value = lateCutoffType;
+        updateEditLateOptions();
+        
+        if (lateDays && lateDays > 0) {
+            lateDaysInput.value = lateDays;
+        }
+        if (lateCutoffDate && lateCutoffDate !== '0000-00-00 00:00:00' && lateCutoffDate !== 'null') {
+            lateCutoffDateInput.value = lateCutoffDate.replace(' ', 'T').substring(0, 16);
+        }
+    }
     document.getElementById('edit_current_attachment').innerHTML = attachmentHtml || '<i class="bi bi-exclamation-triangle"></i> No attachment';
     
+    // Reset file and URL inputs
     resetFileInputs();
     resetUrlInputs();
     
+    // Reset replace type to "keep"
     document.getElementById('edit_replace_type').value = 'keep';
     document.getElementById('edit_file_section').style.display = 'none';
     document.getElementById('edit_url_section').style.display = 'none';
     
+    // Reset toggle buttons
     document.querySelectorAll('.edit-toggle-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     const keepBtn = document.querySelector('.edit-toggle-btn[data-edit-content="keep"]');
     if (keepBtn) keepBtn.classList.add('active');
     
+    // Trigger due date change to show/hide late policy
+    toggleEditLateOptionsByDueDate();
+    
+    // If allow late is checked, show the late options
+    if (allowLateCheckbox && allowLateCheckbox.checked) {
+        const lateOptions = document.getElementById('edit_lateOptions');
+        if (lateOptions) lateOptions.style.display = 'block';
+    }
+    
+    // Show the modal
     document.getElementById('editAssignmentModal').classList.add('active');
+}
+
+function toggleEditLateOptions() {
+    const checkbox = document.getElementById('edit_allow_late');
+    const lateOptions = document.getElementById('edit_lateOptions');
+    
+    if (checkbox.checked) {
+        lateOptions.style.display = 'block';
+    } else {
+        lateOptions.style.display = 'none';
+    }
+}
+
+function updateEditLateOptions() {
+    const cutoffType = document.getElementById('edit_lateCutoffType').value;
+    const daysAfterDiv = document.getElementById('edit_daysAfterOption');
+    const specificDateDiv = document.getElementById('edit_specificDateOption');
+    
+    // Hide both by default
+    daysAfterDiv.style.display = 'none';
+    specificDateDiv.style.display = 'none';
+    
+    // Show only the selected option's div
+    if (cutoffType === 'days_after') {
+        daysAfterDiv.style.display = 'block';
+    } else if (cutoffType === 'specific_date') {
+        specificDateDiv.style.display = 'block';
+    }
+}
+
+function toggleEditLateOptionsByDueDate() {
+    const dueDateInput = document.getElementById('edit_due_date');
+    const latePolicyDiv = document.getElementById('edit_latePolicyDiv');
+    const allowLateCheckbox = document.getElementById('edit_allow_late');
+    const lateOptions = document.getElementById('edit_lateOptions');
+    
+    if (dueDateInput && dueDateInput.value) {
+        latePolicyDiv.style.display = 'block';
+    } else if (latePolicyDiv) {
+        latePolicyDiv.style.display = 'none';
+        if (allowLateCheckbox) allowLateCheckbox.checked = false;
+        if (lateOptions) lateOptions.style.display = 'none';
+    }
 }
 
 function closeEditAssignmentModal() {
@@ -1305,7 +1522,9 @@ function formatFileSize(bytes) {
 }
 
 function formatDate(dateString) {
-    if (!dateString) return '';
+    if (!dateString || dateString === '0000-00-00 00:00:00') {
+        return 'No due date';
+    }
     let datePart = dateString;
     if (dateString.includes(' ')) {
         datePart = dateString.split(' ')[0];
@@ -1318,31 +1537,45 @@ function formatTime(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-function getAttachmentHtml(assignment) {
+}function getAttachmentHtml(assignment, showDeleteButtons = false) {
     if (assignment.is_url == 1 && assignment.material_url) {
-        return '<i class="bi bi-link-45deg"></i> <a href="' + escapeHtml(assignment.material_url) + '" target="_blank">' + escapeHtml(assignment.material_url) + '</a>';
+        const urls = assignment.material_url.split('|');
+        if (urls.length > 1) {
+            let html = '<div><i class="bi bi-link-45deg"></i> Multiple Links:<br>';
+            urls.forEach((url, i) => {
+                html += `<div style="margin-left: 20px; margin-top: 5px; display: flex; justify-content: space-between; align-items: center;">
+                            <div><i class="bi bi-link"></i> <a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a></div>
+                            ${showDeleteButtons ? `<button type="button" onclick="deleteIndividualUrl(${assignment.id}, ${i})" style="background: #dc2626; color: white; border: none; border-radius: 20px; padding: 2px 10px; cursor: pointer; font-size: 11px;">Delete</button>` : ''}
+                        </div>`;
+            });
+            html += '</div>';
+            return html;
+        }
+        return `<i class="bi bi-link-45deg"></i> <a href="${escapeHtml(assignment.material_url)}" target="_blank">${escapeHtml(assignment.material_url)}</a>`;
     } else if (assignment.file_name) {
         // Check if pipe-separated (multiple files)
         const fileNames = assignment.file_name.split('|');
         const filePaths = assignment.file_path ? assignment.file_path.split('|') : [];
-
+        
         if (fileNames.length > 1) {
-            let html = '<div style="display:flex;flex-direction:column;gap:6px;">';
+            let html = '<div><i class="bi bi-files"></i> Multiple Files:<br>';
             fileNames.forEach((name, i) => {
                 const path = filePaths[i] || '';
-                html += `<a href="../uploads/assignments/${escapeHtml(path)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;padding:5px 12px;border-radius:20px;text-decoration:none;font-size:12px;color:#1d3156;">
-                    <i class="bi bi-file-earmark"></i> ${escapeHtml(name)}
-                </a>`;
+                html += `<div style="margin-left: 20px; margin-top: 5px; display: flex; justify-content: space-between; align-items: center;">
+                            <div><i class="bi bi-file-earmark"></i> ${escapeHtml(name)} 
+                            <a href="../uploads/assignments/${escapeHtml(path)}" target="_blank" style="margin-left: 10px; font-size: 11px;">[Download]</a></div>
+                            ${showDeleteButtons ? `<button type="button" onclick="deleteIndividualFile(${assignment.id}, ${i})" style="background: #dc2626; color: white; border: none; border-radius: 20px; padding: 2px 10px; cursor: pointer; font-size: 11px;">Delete</button>` : ''}
+                        </div>`;
             });
             html += '</div>';
             return html;
         } else {
             // Single file
             const path = filePaths[0] || assignment.file_path || '';
-            return `<a href="../uploads/assignments/${escapeHtml(path)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;padding:5px 12px;border-radius:20px;text-decoration:none;font-size:12px;color:#1d3156;">
-                <i class="bi bi-file-earmark"></i> ${escapeHtml(assignment.file_name)} (${formatFileSize(assignment.file_size)})
-            </a>`;
+            return `<div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div><i class="bi bi-file-earmark"></i> ${escapeHtml(assignment.file_name)} (${formatFileSize(assignment.file_size)})</div>
+                        ${showDeleteButtons ? `<button type="button" onclick="deleteIndividualFile(${assignment.id}, 0)" style="background: #dc2626; color: white; border: none; border-radius: 20px; padding: 2px 10px; cursor: pointer; font-size: 11px;">Delete</button>` : ''}
+                    </div>`;
         }
     }
     return '<span style="color:#94a3b8;font-size:12px;font-style:italic;">No attachment</span>';
@@ -1356,6 +1589,100 @@ function escapeHtml(str) {
         return m;
     });
 }
+
+function getSubmissionStatusHtml(submittedAt, dueDate) {
+    if (!dueDate || dueDate === '0000-00-00 00:00:00') {
+        return '<span style="color: #28a745; margin-left: 8px;"><i class="bi bi-check-circle"></i> No deadline</span>';
+    }
+    
+    const submitted = new Date(submittedAt);
+    const due = new Date(dueDate);
+    
+    if (submitted <= due) {
+        // Early or on-time submission
+        const diffMs = due - submitted;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        let earlyText = '';
+        if (diffDays > 0) {
+            earlyText = `Submitted ${diffDays} day${diffDays > 1 ? 's' : ''} early`;
+        } else if (diffHours > 0) {
+            earlyText = `Submitted ${diffHours} hour${diffHours > 1 ? 's' : ''} early`;
+        } else if (diffMins > 0) {
+            earlyText = `Submitted ${diffMins} minute${diffMins > 1 ? 's' : ''} early`;
+        } else {
+            earlyText = 'On time';
+        }
+        return `<span style="color: #28a745; margin-left: 8px;"><i class="bi bi-clock"></i> ${earlyText}</span>`;
+    } else {
+        // Late submission
+        const diffMs = submitted - due;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        let lateText = '';
+        if (diffDays > 0) {
+            lateText = `Submitted ${diffDays} day${diffDays > 1 ? 's' : ''} late`;
+        } else if (diffHours > 0) {
+            lateText = `Submitted ${diffHours} hour${diffHours > 1 ? 's' : ''} late`;
+        } else {
+            lateText = `Submitted ${diffMins} minute${diffMins > 1 ? 's' : ''} late`;
+        }
+        return `<span style="color: #dc2626; margin-left: 8px;"><i class="bi bi-exclamation-triangle"></i> ${lateText}</span>`;
+    }
+}
+function getLatePolicyBadge(assignment) {
+    // If no due date, don't show any badge
+    if (!assignment.due_date || assignment.due_date === '0000-00-00 00:00:00') {
+        return '';
+    }
+    
+    // If late submissions are NOT allowed
+    if (assignment.allow_late_submission != 1) {
+        return `<span style="display: inline-block; background: #fee2e2; color: #dc2626; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-weight: 500; margin-left: 8px;">No late submissions
+                </span>`;
+    }
+    
+    // If late submissions ARE allowed, show the policy
+    let policyText = '';
+    let badgeColor = '';
+    let textColor = '';
+    
+    switch (assignment.late_cutoff_type) {
+        case 'no_limit':
+            policyText = 'Always accept late';
+            badgeColor = '#e0e7ff';
+            textColor = '#4338ca';
+            break;
+        case 'days_after':
+            const days = assignment.late_days || 7;
+            policyText = `Late allowed: ${days} day${days > 1 ? 's' : ''} after due`;
+            badgeColor = '#fef3c7';
+            textColor = '#f59e0b';
+            break;
+        case 'specific_date':
+            if (assignment.late_cutoff_date) {
+                const cutoffDate = new Date(assignment.late_cutoff_date);
+                policyText = `Late allowed until ${cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            } else {
+                policyText = 'Late allowed until specific date';
+            }
+            badgeColor = '#d1fae5';
+            textColor = '#059669';
+            break;
+        default:
+            policyText = 'Late submissions allowed';
+            badgeColor = '#e2e8f0';
+            textColor = '#475569';
+    }
+    
+    return `<span style="display: inline-block; background: ${badgeColor}; color: ${textColor}; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-weight: 500; margin-left: 8px;">${policyText}
+            </span>`;
+}
+
 
 function renderAssignments(assignments) {
     const container = document.getElementById('assignmentsContainer');
@@ -1373,7 +1700,8 @@ function renderAssignments(assignments) {
         
         let dueDateDisplay = '';
         if (assignment.due_date && assignment.due_date !== '0000-00-00 00:00:00') {
-            dueDateDisplay = `<span><i class="bi bi-calendar"></i> Due: ${formatDate(assignment.due_date)}</span>`;
+            const lateBadge = getLatePolicyBadge(assignment);
+            dueDateDisplay = `<span><i class="bi bi-calendar"></i> Due: ${formatDate(assignment.due_date)} ${lateBadge}</span>`;
         } else {
             dueDateDisplay = '<span><i class="bi bi-calendar"></i> No due date</span>';
         }
@@ -1384,7 +1712,17 @@ function renderAssignments(assignments) {
                     <div class="assignment-header-top">
                         <div class="assignment-title">${escapeHtml(assignment.title)}</div>
                         <div class="assignment-actions">
-                            <button class="btn-edit-assignment" onclick='openEditAssignmentModal(${assignment.id}, ${JSON.stringify(escapeHtml(assignment.title))}, ${JSON.stringify(escapeHtml(assignment.description || ''))}, ${JSON.stringify(assignment.due_date || '')}, ${JSON.stringify(attachmentHtml)}, ${assignment.allow_late_submission || 0})'>
+                            <button class="btn-edit-assignment" onclick='openEditAssignmentModal(
+                                ${assignment.id}, 
+                                ${JSON.stringify(escapeHtml(assignment.title))}, 
+                                ${JSON.stringify(escapeHtml(assignment.description || ''))}, 
+                                ${JSON.stringify(assignment.due_date || '')}, 
+                                ${JSON.stringify(attachmentHtml)}, 
+                                ${assignment.allow_late_submission || 0},
+                                ${JSON.stringify(assignment.late_cutoff_type || 'days_after')},
+                                ${assignment.late_days || null},
+                                ${JSON.stringify(assignment.late_cutoff_date || '')}
+                            )'>
                                 <i class="bi bi-pencil"></i> Edit
                             </button>
                             <button class="btn-delete-assignment" onclick="openDeleteAssignmentModal(${assignment.id})">
@@ -1425,7 +1763,10 @@ function renderAssignments(assignments) {
                     <div class="submission-row">
                         <div class="student-col">
                             <div class="student-name">${escapeHtml(sub.student_name)}</div>
-                            <div class="submission-time">${formatDate(sub.submitted_at)} at ${formatTime(sub.submitted_at)}</div>
+                            <div class="submission-time">
+                                ${formatDate(sub.submitted_at)} at ${formatTime(sub.submitted_at)}
+                                ${getSubmissionStatusHtml(sub.submitted_at, assignment.due_date)}
+                            </div>
                         </div>
                         <div class="status-col">
                             <span class="status-badge ${statusClass}">${statusIcon} ${statusText}</span>
@@ -1451,12 +1792,39 @@ function renderAssignments(assignments) {
     container.innerHTML = html;
 }
 
+function getAttachmentHtmlWithDelete(assignmentId, originalHtml) {
+    // Just return the original HTML without delete buttons
+    return originalHtml;
+}
+
 function applyFilters() {
     const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
     const languageFilter = document.getElementById('languageFilter').value;
     const statusFilter = document.getElementById('statusFilter').value;
     const sortBy = document.getElementById('sortBy').value;
-    
+    // Filter by late policy
+const latePolicyFilter = document.getElementById('latePolicyFilter').value;
+if (latePolicyFilter !== 'all') {
+    filtered = filtered.filter(a => {
+        // Skip assignments without due date
+        if (!a.due_date || a.due_date === '0000-00-00 00:00:00') {
+            return latePolicyFilter === 'no_late' ? false : (latePolicyFilter === 'all');
+        }
+        
+        switch (latePolicyFilter) {
+            case 'no_late':
+                return a.allow_late_submission != 1;
+            case 'always':
+                return a.allow_late_submission == 1 && a.late_cutoff_type === 'no_limit';
+            case 'days':
+                return a.allow_late_submission == 1 && a.late_cutoff_type === 'days_after';
+            case 'specific':
+                return a.allow_late_submission == 1 && a.late_cutoff_type === 'specific_date';
+            default:
+                return true;
+        }
+    });
+}
     let filtered = [...allAssignments];
     
     if (searchTerm) {
@@ -1505,6 +1873,7 @@ function resetFilters() {
     document.getElementById('languageFilter').value = 'all';
     document.getElementById('statusFilter').value = 'all';
     document.getElementById('sortBy').value = 'latest';
+    document.getElementById('latePolicyFilter').value = 'all';
     renderAssignments(allAssignments);
     showToast('Filters cleared', '#64748b');
 }
@@ -1606,6 +1975,26 @@ if (urlInput) {
 function isValidUrl(string) {
     try { new URL(string); return true; } catch(_) { return false; }
 }
+
+// Add event listeners for edit modal
+const editDueDateInput = document.getElementById('edit_due_date');
+if (editDueDateInput) {
+    editDueDateInput.addEventListener('change', toggleEditLateOptionsByDueDate);
+    editDueDateInput.addEventListener('input', toggleEditLateOptionsByDueDate);
+}
+
+// Add event listener for allow late checkbox
+const editAllowLate = document.getElementById('edit_allow_late');
+if (editAllowLate) {
+    editAllowLate.addEventListener('change', toggleEditLateOptions);
+}
+
+// Add event listener for cutoff type
+const editLateCutoffType = document.getElementById('edit_lateCutoffType');
+if (editLateCutoffType) {
+    editLateCutoffType.addEventListener('change', updateEditLateOptions);
+}
+
 </script>
 </body>
 </html>

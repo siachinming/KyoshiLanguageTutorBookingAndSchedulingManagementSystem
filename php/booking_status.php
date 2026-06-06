@@ -715,9 +715,6 @@ function statusCfg($s) {
   <button type="button" class="select-mode-btn" id="btnSelectReschedule" onclick="toggleSelectMode('reschedule')">
     <i class="bi bi-calendar-plus"></i> Rescheduling
   </button>
-  <button type="button" class="select-mode-btn" id="btnSelectCancel" onclick="toggleSelectMode('cancel')">
-    <i class="bi bi-x-circle"></i> Cancelling
-  </button>
   <button type="button" class="select-mode-btn" id="btnSelectRate" onclick="toggleSelectMode('rate')">
     <i class="bi bi-star"></i> Rating
   </button>
@@ -873,9 +870,6 @@ $is_completed = ($b['status'] === 'completed');
                 <i class="bi bi-check-circle"></i> Awaiting Confirmation
             </span>
         <?php else: ?>
-            <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-action purple">
-                <i class="bi bi-credit-card"></i> Pay Now
-            </a>
             <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
                 <i class="bi bi-x-circle"></i> Cancel
             </button>
@@ -889,26 +883,8 @@ $is_completed = ($b['status'] === 'completed');
     $is_future_session = $session_datetime > $current_time;
     $hoursUntilSession = ($session_datetime - $current_time) / 3600;
     ?>
-    <?php if ($is_future_session): ?>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <a href="reschedule_booking.php?id=<?= $b['id'] ?>" class="btn-action ghost">
-                <i class="bi bi-calendar-plus"></i> Reschedule
-            </a>
-            <?php if ($hoursUntilSession >= 24): ?>
-            <button onclick="confirmCancel(<?= $b['id'] ?>, 'confirmed', true)" class="btn-action ghost" style="color:#28a745; border-color:#28a745;">
-                <i class="bi bi-cash-stack"></i> Cancel (Full Refund)
-            </button>
-            <?php elseif ($hoursUntilSession > 0 && $hoursUntilSession < 24): ?>
-            <button onclick="confirmCancel(<?= $b['id'] ?>, 'confirmed', false)" class="btn-action ghost" style="color:#f59e0b; border-color:#f59e0b;">
-                <i class="bi bi-exclamation-triangle"></i> Cancel (No Refund)
-            </button>
-            <?php endif; ?>
-        </div>
-    <?php else: ?>
-        <span class="btn-action muted">
-            <i class="bi bi-clock-history"></i> Session Ended
-        </span>
-    <?php endif; ?>
+
+
 
 <?php elseif ($b['status'] === 'rescheduled'): ?>
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">

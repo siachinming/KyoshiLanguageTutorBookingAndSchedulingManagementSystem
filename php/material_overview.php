@@ -374,6 +374,7 @@ function formatSessionDateTime($date, $time) {
     }
     return $formattedDate;
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -1870,6 +1871,8 @@ window.onclick = function(event) {
     const editModal = document.getElementById('editModal');
     if (event.target === editModal) closeEditModal();
 }
+
+
 </script>
 
 </body>

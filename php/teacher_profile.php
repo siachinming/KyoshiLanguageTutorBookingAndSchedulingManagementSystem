@@ -1500,9 +1500,9 @@ body::before {
             <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="upload_certificate">
                 <div class="form-group">
-                    <label>Certificate/Qualification Name</label>
+                    <label>Qualification Name</label>
                     <input type="text" name="certificate_name" placeholder="e.g., HSK Level 5 Certificate, TESOL Certification, Bachelor's Degree" required>
-                    <small>Give your certificate a clear name</small>
+                    <small>Give your qualification a clear title</small>
                 </div>
                 <div class="form-group">
                     <label>Certificate File</label>
@@ -1514,7 +1514,7 @@ body::before {
             
             <?php if (!empty($certificates)): ?>
             <div class="section-divider"></div>
-            <h3><i class="bi bi-file-earmark-text"></i> My Certificates & Qualifications</h3>
+            <h3><i class="bi bi-file-earmark-text"></i> My Qualifications</h3>
             <p class="sub" style="font-size: 12px;">Certificates with "Approved" status will be shown on your profile</p>
             
             <?php foreach ($certificates as $cert): ?>
@@ -1522,7 +1522,7 @@ body::before {
                 <div>
                     <i class="bi bi-file-earmark-pdf"></i>
                     <strong><?= e($cert['certificate_name']) ?></strong>
-                    <div style="font-size: 11px; color: #64748b;">Uploaded: <?= date('d M Y', strtotime($cert['uploaded_at'])) ?></div>
+                    <div style="font-size: 11px; color: #64748b;">Uploaded on <?= date('d M Y', strtotime($cert['uploaded_at'])) ?></div>
                 </div>
                 <div>
                     <?php if ($cert['status'] == 'pending'): ?>

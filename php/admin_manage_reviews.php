@@ -742,7 +742,7 @@ function e($value) {
                 <i class="bi bi-person-badge"></i><span>Tutors</span>
                 <span class="nav-badge"><?= $totalTutors ?></span>
             </a>
-            <a href="admin_students.php" class="nav-item">
+            <a href="admin_student_actions.php" class="nav-item">
                 <i class="bi bi-person"></i><span>Students</span>
                 <span class="nav-badge"><?= $totalStudents ?></span>
             </a>
@@ -797,24 +797,29 @@ function e($value) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
+   <div class="top-bar">
+    <div style="display: flex; align-items: center; gap: 16px;">
+        <a href="admin_tutor_actions.php" class="btn-back" style="display: inline-flex; align-items: center; gap: 8px; background: #e2e8f0; color: #1d3156; padding: 8px 16px; border-radius: 40px; text-decoration: none; font-size: 13px; font-weight: 600; transition: 0.2s;">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
         <div class="page-title">
             <h1>Manage Reviews</h1>
         </div>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
+    </div>
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
+    <div class="relative">
+        <button class="admin-profile" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin">
+            <span><?= e($displayName) ?></span>
+            <i class="bi bi-chevron-down"></i>
+        </button>
+        <div class="dropdown" id="profileDropdown">
+            <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+            <hr>
+            <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
         </div>
     </div>
+</div>
 
    <?php if (isset($_SESSION['success_message'])): ?>
     <div class="alert alert-success" id="successAlert">

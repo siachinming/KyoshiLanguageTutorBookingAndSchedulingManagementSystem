@@ -420,12 +420,6 @@ function formatMoney($amount) {
             text-overflow: ellipsis;
         }
 
-        .admin-role {
-            font-size: 0.6rem;
-            color: #B26EA7;
-            margin-top: 2px;
-        }
-
         .logout-icon {
             display: flex;
             align-items: center;
@@ -909,7 +903,7 @@ function formatMoney($amount) {
     <i class="bi bi-person-badge"></i><span>Tutors</span>
             <span class="nav-badge"><?= $totalTutors ?></span>
         </a>
-        <a href="admin_students.php" class="nav-item">
+        <a href="admin_student_actions.php" class="nav-item">
             <i class="bi bi-person"></i><span>Students</span>
             <span class="nav-badge"><?= $totalStudents ?></span>
         </a>

@@ -1,7 +1,7 @@
 <?php
 session_start();
 include 'config.php';
-
+include 'send_tutor_email.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
@@ -67,8 +67,12 @@ if (isset($_POST['approve_with_qualification'])) {
     $tutor_id = intval($_POST['tutor_id']);
     $qualifications = $_POST['qualifications'] ?? [];
     
+    // Get tutor email and name first
+    $tutorInfo = $conn->query("SELECT email, fullname FROM users WHERE id = $tutor_id")->fetch_assoc();
+    
     $conn->query("UPDATE users SET status = 'approved' WHERE id = $tutor_id");
     
+    $qualificationList = [];
     // Insert each qualification into tutor_qualifications table
     if (!empty($qualifications)) {
         foreach ($qualifications as $qualification) {
@@ -77,11 +81,21 @@ if (isset($_POST['approve_with_qualification'])) {
                 $stmt = $conn->prepare("INSERT INTO tutor_qualifications (tutor_id, qualification_name, created_at) VALUES (?, ?, NOW())");
                 $stmt->bind_param("is", $tutor_id, $qual);
                 $stmt->execute();
+                $qualificationList[] = $qual;
             }
         }
     }
     
     $conn->query("UPDATE tutor_certificates SET status = 'approved' WHERE tutor_id = $tutor_id AND status = 'pending'");
+    
+    // Send email notification
+    $emailSent = sendTutorNotificationEmail($tutorInfo['email'], $tutorInfo['fullname'], 'approved', null, $qualificationList);
+    
+    if ($emailSent) {
+        $_SESSION['success_message'] = "Tutor approved and email notification sent!";
+    } else {
+        $_SESSION['warning_message'] = "Tutor approved but email notification failed to send.";
+    }
     
     header("Location: admin_verify_tutors.php?msg=approved");
     exit();
@@ -89,9 +103,22 @@ if (isset($_POST['approve_with_qualification'])) {
 
 if (isset($_POST['reject'])) {
     $tutor_id = intval($_POST['tutor_id']);
+    $rejection_reason = $_POST['rejection_reason'] ?? '';
+    
+    // Get tutor email and name first
+    $tutorInfo = $conn->query("SELECT email, fullname FROM users WHERE id = $tutor_id")->fetch_assoc();
     
     $conn->query("UPDATE users SET status = 'rejected' WHERE id = $tutor_id");
     $conn->query("UPDATE tutor_certificates SET status = 'rejected' WHERE tutor_id = $tutor_id AND status = 'pending'");
+    
+    // Send email notification with rejection reason
+    $emailSent = sendTutorNotificationEmail($tutorInfo['email'], $tutorInfo['fullname'], 'rejected', $rejection_reason);
+    
+    if ($emailSent) {
+        $_SESSION['success_message'] = "Tutor rejected and email notification sent!";
+    } else {
+        $_SESSION['warning_message'] = "Tutor rejected but email notification failed to send.";
+    }
     
     header("Location: admin_verify_tutors.php?msg=rejected");
     exit();
@@ -102,6 +129,7 @@ if (isset($_GET['msg'])) {
     if ($_GET['msg'] == 'approved') $message = 'Tutor approved successfully! Certificates verified and qualifications added.';
     if ($_GET['msg'] == 'rejected') $message = 'Tutor rejected.';
 }
+
 
 function e($value) {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
@@ -1039,7 +1067,7 @@ function e($value) {
         <div class="nav-section">
             <div class="nav-section-label">USERS</div>
             <a href="admin_tutor_actions.php" class="nav-item active"><i class="bi bi-person-badge"></i><span>Tutors</span><span class="nav-badge"><?= $totalTutors ?></span></a>
-            <a href="admin_students.php" class="nav-item"><i class="bi bi-person"></i><span>Students</span><span class="nav-badge"><?= $totalStudents ?></span></a>
+            <a href="admin_student_actions.php" class="nav-item"><i class="bi bi-person"></i><span>Students</span><span class="nav-badge"><?= $totalStudents ?></span></a>
         </div>
         <div class="nav-section">
             <div class="nav-section-label">FINANCE</div>
@@ -1066,28 +1094,46 @@ function e($value) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
+<div class="top-bar">
+    <div style="display: flex; align-items: center; gap: 16px;">
+        <a href="admin_tutor_actions.php" class="btn-back" style="display: inline-flex; align-items: center; gap: 8px; background: #e2e8f0; color: #1d3156; padding: 8px 16px; border-radius: 40px; text-decoration: none; font-size: 13px; font-weight: 600; transition: 0.2s;">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
         <div class="page-title">
             <h1>Verify Tutors</h1>
         </div>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
+    </div>
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
+    <div class="relative">
+        <button class="admin-profile" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin">
+            <span><?= e($displayName) ?></span>
+            <i class="bi bi-chevron-down"></i>
+        </button>
+        <div class="dropdown" id="profileDropdown">
+            <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+            <hr>
+            <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
         </div>
     </div>
+</div>
 
     <?php if ($message): ?>
     <div class="message"><?= $message ?></div>
     <?php endif; ?>
+    <?php if (isset($_SESSION['success_message'])): ?>
+    <div class="message" style="background: #d4edda; color: #155724;">
+        <i class="bi bi-check-circle"></i> <?= $_SESSION['success_message'] ?>
+    </div>
+    <?php unset($_SESSION['success_message']); ?>
+<?php endif; ?>
 
+<?php if (isset($_SESSION['warning_message'])): ?>
+    <div class="message" style="background: #fff3cd; color: #856404;">
+        <i class="bi bi-exclamation-triangle"></i> <?= $_SESSION['warning_message'] ?>
+    </div>
+    <?php unset($_SESSION['warning_message']); ?>
+<?php endif; ?>
     <form method="GET" class="filter-bar">
         <div class="search-box">
             <i class="bi bi-search"></i>
@@ -1104,7 +1150,7 @@ function e($value) {
             <a style="text-decoration: none !important;" href="admin_verify_tutors.php" class="filter-btn reset-btn"><i class="bi bi-x-circle"></i> Clear</a>
         <?php endif; ?>
     </form>
-
+    
     <div class="tutors-table-container">
         <table>
             <thead>

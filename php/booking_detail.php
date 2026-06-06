@@ -14,7 +14,6 @@ if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 $userID = $_SESSION['user_id'];
 $bookingID = intval($_GET['id'] ?? 0);
 if (!$bookingID) { header("Location: booking_status.php"); exit(); }
-
 $stmt = $conn->prepare("
     SELECT b.*, 
            u.fullname AS tutor_name, 
@@ -23,13 +22,15 @@ $stmt = $conn->prepare("
            u.phone AS tutor_phone,
            tp.rate, tp.bio, tp.experience,
            GROUP_CONCAT(DISTINCT tl.language) AS tutor_languages,
-           p.id AS payment_id, 
-           p.amount AS payment_amount, 
-           p.payment_method, 
-           p.status AS payment_status,
-           p.receipt_number AS receipt_number, 
-           p.receipt_url AS receipt_url,
-           p.created_at AS paid_at,
+           -- Get the LATEST payment info for display (any status except rejected for display)
+           (SELECT amount FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS payment_amount,
+           (SELECT payment_method FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS payment_method,
+           (SELECT status FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS payment_status,
+           (SELECT receipt_number FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS receipt_number,
+           (SELECT receipt_url FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS receipt_url,
+           (SELECT created_at FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS paid_at,
+           -- Calculate TOTAL PAID amount from ALL payments (including rejected ones, since money was still deducted)
+           (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE booking_id = b.id) AS total_paid_amount,
            r.id AS rated, 
            r.rating AS my_rating, 
            r.comment AS my_comment,
@@ -38,7 +39,6 @@ $stmt = $conn->prepare("
     JOIN users u ON b.tutor_id = u.id
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
     LEFT JOIN tutor_languages tl ON b.tutor_id = tl.user_id
-    LEFT JOIN payments p ON p.booking_id = b.id
     LEFT JOIN ratings r ON r.booking_id = b.id AND r.student_id = ?
     WHERE b.id = ? AND b.student_id = ?
     GROUP BY b.id
@@ -46,9 +46,62 @@ $stmt = $conn->prepare("
 $stmt->bind_param("iii", $userID, $bookingID, $userID);
 $stmt->execute();
 $b = $stmt->get_result()->fetch_assoc();
+// Calculate total paid from ALL payments (regardless of status)
+$totalPaidStmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE booking_id = ?");
+$totalPaidStmt->bind_param("i", $bookingID);
+$totalPaidStmt->execute();
+$totalPaidResult = $totalPaidStmt->get_result()->fetch_assoc();
+$b['total_paid_amount'] = $totalPaidResult['total'] ?? 0;
+$totalPaidStmt->close();
 
-$stmt->close();
+// Get ALL payments and calculate properly
+$allPaymentsStmt = $conn->prepare("SELECT id, amount, actual_paid_amount, payment_method, status, created_at FROM payments WHERE booking_id = ? ORDER BY created_at ASC");
+$allPaymentsStmt->bind_param("i", $bookingID);
+$allPaymentsStmt->execute();
+$paymentResults = $allPaymentsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$allPaymentsStmt->close();
 
+// Build payment list - handle the case where actual_paid_amount represents a separate payment
+$allPaymentsForDisplay = [];
+$totalPaidSum = 0;
+
+foreach ($paymentResults as $payment) {
+    // If actual_paid_amount exists and is different from amount, treat it as a separate payment
+    if (!empty($payment['actual_paid_amount']) && $payment['actual_paid_amount'] != $payment['amount']) {
+        // Add the original payment (actual_paid_amount)
+        $allPaymentsForDisplay[] = [
+            'amount' => $payment['actual_paid_amount'],
+            'payment_method' => 'online_banking', // or original method
+            'status' => 'rejected',
+            'created_at' => $payment['created_at'],
+            'is_original' => true
+        ];
+        $totalPaidSum += $payment['actual_paid_amount'];
+    }
+    
+    // Add the current payment
+    $allPaymentsForDisplay[] = [
+        'amount' => $payment['amount'],
+        'payment_method' => $payment['payment_method'],
+        'status' => $payment['status'],
+        'created_at' => $payment['created_at'],
+        'is_original' => false
+    ];
+    $totalPaidSum += $payment['amount'];
+}
+
+// Remove duplicates if needed (if both original and current are the same)
+$uniquePayments = [];
+foreach ($allPaymentsForDisplay as $payment) {
+    $key = $payment['amount'] . '_' . $payment['created_at'];
+    if (!isset($uniquePayments[$key])) {
+        $uniquePayments[$key] = $payment;
+    }
+}
+$allPaymentsForDisplay = array_values($uniquePayments);
+
+// Update total paid amount
+$b['total_paid_amount'] = $totalPaidSum;
 
 // Auto-end stuck meeting logs for this booking
 $autoEndStmt = $conn->prepare("
@@ -604,7 +657,6 @@ if ($is_minor_dispute && $activeDispute):
     $issue_labels = [
         'tutor_no_show' => 'Tutor Did Not Attend',
         'student_no_show' => 'Student Did Not Attend',
-        'technical_issues' => 'Technical Issues',
         'wrong_materials' => 'Wrong Materials Provided',
         'other' => 'Other Issue'
     ];
@@ -899,7 +951,7 @@ if ($is_minor_dispute && $activeDispute):
 </button>
     </div>
   <?php endif; ?>
-<?php elseif ($bookStatus === 'confirmed'): ?>
+ <?php elseif ($bookStatus === 'confirmed'): ?>
 
 <div class="pay-box paid">
     <div class="pay-row">
@@ -911,89 +963,85 @@ if ($is_minor_dispute && $activeDispute):
     </div>
 
     <div class="pay-row">
-    <span class="pl">Amount</span>
-    <span class="pv">
+        <span class="pl">Total Paid</span>
+        <span class="pv" style="font-size: 16px; color: #28a745; font-weight: 900;">
+            RM <?= number_format($b['total_paid_amount'] ?? 0, 2) ?>
+        </span>
+    </div>
+
+<!-- Payment Breakdown - Show ALL payments -->
+<div class="pay-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+    <span class="pl">Payment Breakdown</span>
+    <div style="width: 100%;">
         <?php 
-        $amount = $b['payment_amount'] ?? 0;
-        if ($amount > 0) {
-            echo 'RM ' . number_format($amount, 2);
-        } else {
-            echo '<span style="color: #999;">—</span>';
-        }
+        $displayTotal = 0;
+        foreach ($allPaymentsForDisplay as $index => $payment): 
+            $displayTotal += $payment['amount'];
+            $statusBadge = '';
+            if ($payment['status'] === 'verified') {
+                $statusBadge = '<span style="color: #28a745; font-size: 10px;">✓ Verified</span>';
+            } elseif ($payment['status'] === 'rejected' || ($payment['is_original'] ?? false)) {
+                $statusBadge = '<span style="color: #dc2626; font-size: 10px;">⚠️ Rejected</span>';
+            } elseif ($payment['status'] === 'pending') {
+                $statusBadge = '<span style="color: #f59e0b; font-size: 10px;">⏳ Pending</span>';
+            }
+            
+            // Determine method display
+            $methodDisplay = $payment['payment_method'];
+            if (($payment['is_original'] ?? false)) {
+                $methodDisplay = 'Online Banking';
+            }
         ?>
-    </span>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px dashed rgba(0,0,0,0.05);">
+            <span>
+                <i class="bi bi-credit-card"></i> 
+                Payment <?= $index + 1 ?> (<?= ucwords(str_replace('_', ' ', $methodDisplay)) ?>)
+                <?= $statusBadge ?>
+            </span>
+            <span style="font-weight: 700;">RM <?= number_format($payment['amount'], 2) ?></span>
+        </div>
+        <div style="font-size: 10px; color: #666; margin-bottom: 8px;">
+            <i class="bi bi-clock"></i> <?= date('d M Y, g:i A', strtotime($payment['created_at'])) ?>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <div style="margin-top: 8px; padding-top: 8px; border-top: 2px solid rgba(0,0,0,0.1); display: flex; justify-content: space-between; width: 100%;">
+        <span style="font-weight: 900;">Total Paid</span>
+        <span style="font-weight: 900; color: #28a745;">RM <?= number_format($displayTotal, 2) ?></span>
+    </div>
 </div>
 
-<div class="pay-row">
-    <span class="pl">Method</span>
-    <span class="pv">
-        <?php 
-        $method = $b['payment_method'] ?? '';
-        if (!empty($method)) {
-            echo ucwords(str_replace('_', ' ', $method));
-        } else {
-            echo '<span style="color: #999;">Not selected</span>';
-        }
-        ?>
-    </span>
-</div>
+    <div class="pay-row">
+        <span class="pl">Method (Last)</span>
+        <span class="pv">
+            <?php 
+            $method = $b['payment_method'] ?? '';
+            if (!empty($method)) {
+                echo ucwords(str_replace('_', ' ', $method));
+            } else {
+                echo '<span style="color: #999;">Not selected</span>';
+            }
+            ?>
+        </span>
+    </div>
 
     <?php if (!empty($b['paid_at'])): ?>
-      <div class="pay-row"><span class="pl">Submitted On</span><span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span></div>
-      <?php endif; ?>
+    <div class="pay-row">
+        <span class="pl">Last Paid On</span>
+        <span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span>
     </div>
+    <?php endif; ?>
     
     <!-- ADD CANCELLATION POLICY INFO BOX -->
-    <div style="background: rgba(255,241,200,.4); border-radius: 12px; padding: 12px 16px; margin-top: 12px; border-left: 3px solid #f59e0b;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <i class="bi bi-info-circle-fill" style="color: #f59e0b; font-size: 14px;"></i>
-            <strong style="font-size: 12px; color: #856404;">Cancellation & Refund Policy</strong>
-        </div>
-        <?php 
-        $session_datetime = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
-        $current_time = time();
-        $hoursUntilSession = ($session_datetime - $current_time) / 3600;
-        $is_future_session = $session_datetime > $current_time;
-        
-        if ($is_future_session):
-        ?>
-            <div style="font-size: 12px; color: #856404; line-height: 1.5;">
-                <?php if ($hoursUntilSession >= 24): ?>
-                    <i class="bi bi-cash-stack" style="color: #28a745;"></i> 
-                    <strong style="color: #28a745;">Full Refund Available</strong> if you cancel more than 24 hours before session
-                    <div style="margin-top: 4px;">You have <strong><?= floor($hoursUntilSession) ?></strong> hours left for full refund</div>
-                <?php elseif ($hoursUntilSession > 0 && $hoursUntilSession < 24): ?>
-                    <i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i> 
-                    <strong style="color: #f59e0b;">No Refund for Late Cancellation</strong> - Less than 24 hours notice
-                    <div style="margin-top: 4px;">Session starts in <strong><?= floor($hoursUntilSession) ?></strong> hours</div>
-                <?php endif; ?>
-                <div style="margin-top: 6px; font-size: 11px;">
-                    <i class="bi bi-calendar-x"></i> 
-                    <a href="#" onclick="showRefundPolicy()" style="color: #E75A9B; text-decoration: underline;">View full cancellation policy →</a>
-                </div>
-            </div>
-        <?php else: ?>
-            <div style="font-size: 12px; color: #856404;">
-                <i class="bi bi-clock-history"></i> Session has ended - Cannot cancel
-            </div>
-        <?php endif; ?>
     </div>
 </div>
+
 <!-- ACTION BAR FOR CONFIRMED SESSIONS -->
 <div class="action-bar" style="margin-top:16px;">
     <?php if ($is_future_session): ?>
         <a href="reschedule_booking.php?id=<?= $bookingID ?>" class="btn-primary">
             <i class="bi bi-calendar-plus"></i> Reschedule Session
         </a>
-        <?php if ($hoursUntilSession >= 24): ?>
-        <button onclick="openCancelModalWithRefund('full')" class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997);">
-            <i class="bi bi-cash-stack"></i> Cancel (Full Refund)
-        </button>
-        <?php elseif ($hoursUntilSession > 0 && $hoursUntilSession < 24): ?>
-        <button onclick="openCancelModalWithRefund('none')" class="btn-danger">
-            <i class="bi bi-exclamation-triangle"></i> Cancel (No Refund)
-        </button>
-        <?php endif; ?>
     <?php else: ?>
         <span class="btn-secondary" style="opacity:0.6; cursor:not-allowed;">
             <i class="bi bi-calendar-x"></i> Cannot Cancel (Session Ended)
@@ -1018,7 +1066,8 @@ if ($is_minor_dispute && $activeDispute):
         <?php endif; ?>
     <?php endif; ?>
 </div>
-    <?php elseif ($bookStatus === 'completed'): ?>
+
+<?php elseif ($bookStatus === 'completed'): ?>
 
 <?php if($paymentState === 'paid'): ?>
 <div class="pay-box paid">
@@ -1029,11 +1078,42 @@ if ($is_minor_dispute && $activeDispute):
         </span>
     </div>
     <div class="pay-row">
-        <span class="pl">Amount</span>
-        <span class="pv">RM <?= e(number_format($b['payment_amount'] ?? 0, 2)) ?></span>
+        <span class="pl">Total Paid</span>
+        <span class="pv" style="font-size: 16px; color: #28a745; font-weight: 900;">
+            RM <?= number_format($b['total_paid_amount'] ?? 0, 2) ?>
+        </span>
     </div>
+    
+    <!-- Payment Breakdown if multiple payments -->
+    <?php 
+    $breakdownStmt = $conn->prepare("SELECT amount, payment_method, created_at FROM payments WHERE booking_id = ? AND status = 'verified' ORDER BY created_at ASC");
+    $breakdownStmt->bind_param("i", $bookingID);
+    $breakdownStmt->execute();
+    $allPayments = $breakdownStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    
+    if (count($allPayments) > 1):
+    ?>
+    <div class="pay-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+        <span class="pl">Payment Breakdown</span>
+        <div style="width: 100%;">
+            <?php foreach ($allPayments as $index => $payment): ?>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px dashed rgba(0,0,0,0.05);">
+                <span>
+                    <i class="bi bi-credit-card"></i> 
+                    Payment <?= $index + 1 ?> (<?= ucwords(str_replace('_', ' ', $payment['payment_method'])) ?>)
+                </span>
+                <span style="font-weight: 700;">RM <?= number_format($payment['amount'], 2) ?></span>
+            </div>
+            <div style="font-size: 10px; color: #666; margin-bottom: 4px;">
+                <i class="bi bi-clock"></i> <?= date('d M Y, g:i A', strtotime($payment['created_at'])) ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+    
     <div class="pay-row">
-        <span class="pl">Method</span>
+        <span class="pl">Method (Last)</span>
         <span class="pv"><?= e(ucwords(str_replace('_', ' ', $b['payment_method'] ?? ''))) ?></span>
     </div>
     <?php if (!empty($b['receipt_number'])): ?>
@@ -1044,7 +1124,7 @@ if ($is_minor_dispute && $activeDispute):
     <?php endif; ?>
     <?php if (!empty($b['paid_at'])): ?>
     <div class="pay-row">
-        <span class="pl">Paid On</span>
+        <span class="pl">Last Paid On</span>
         <span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span>
     </div>
     <?php endif; ?>
@@ -1121,6 +1201,7 @@ Payment made directly during session.
   <?php endif; ?>
 </div>
 <?php endif; ?>
+
 <?php elseif ($bookStatus === 'disputed'): ?>
 
 <?php if ($is_serious_dispute): ?>
@@ -1229,11 +1310,10 @@ Payment made directly during session.
     $is_session_ended = ($current_time > $session_end);
     $is_session_ongoing = ($current_time >= $session_start && $current_time <= $session_end);
     $is_session_future = ($current_time < $session_start);
-?>
-<div class="card">
+?><div class="card">
     <div class="card-title"><i class="bi bi-camera-video-fill"></i> Online Session</div>
     
-    <?php if (empty($b['meeting_link'])): ?>
+    <?php if (empty($b['meeting_link']) && ($b['status'] == 'confirmed')): ?>
         <div class="info-note" style="text-align: center;">
             <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b;"></i>
             <strong>Meeting link not yet available</strong><br>
@@ -1247,7 +1327,7 @@ Payment made directly during session.
             <?php endif; ?>
         </div>
     <?php else: ?>
-        <!-- Join Meeting Button - ONLY SHOW IF SESSION IS ONGOING OR FUTURE (NOT ENDED) -->
+        <!-- Join Meeting Button -->
         <?php if (!$is_session_ended): ?>
         <div style="background: linear-gradient(135deg, rgba(231,90,155,0.1), rgba(242,138,178,0.05)); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
@@ -1270,18 +1350,12 @@ Payment made directly during session.
             </div>
         </div>
         <?php else: ?>
-        <!-- Session Ended - Show message instead of Join button -->
         <div style="background: rgba(200,200,200,0.1); border-radius: 16px; padding: 16px; margin-bottom: 16px; text-align: center; border: 1px dashed #ccc;">
             <i class="bi bi-clock-history" style="font-size: 28px; color: #999;"></i>
             <p style="font-size: 13px; color: #666; margin-top: 8px;">
                 <strong>Session has ended</strong><br>
                 This session was held on <?= date('d M Y, g:i A', $session_start) ?>
             </p>
-            <?php if ($bookStatus === 'confirmed' && !$is_completed): ?>
-            <p style="font-size: 12px; color: #f59e0b;">
-                <i class="bi bi-exclamation-triangle"></i> Please confirm your attendance above if you attended.
-            </p>
-            <?php endif; ?>
         </div>
         <?php endif; ?>
         
@@ -1315,7 +1389,7 @@ Payment made directly during session.
             </div>
         </div>
         
-        <!-- End Session Button - ONLY SHOW IF SESSION IS ONGOING OR HAS ACTIVE SESSION -->
+        <!-- End Session Button -->
         <?php if (!$is_session_ended || $is_session_ongoing): ?>
         <div>
             <strong style="font-size: 13px;"><i class="bi bi-door-closed"></i> End Session</strong>
@@ -1325,7 +1399,6 @@ Payment made directly during session.
                 </p>
                 
                 <?php
-                // Check if there's an active session to end
                 $hasActiveSession = false;
                 $activeCheck = $conn->prepare("SELECT id FROM meeting_logs WHERE booking_id = ? AND leave_time IS NULL LIMIT 1");
                 $activeCheck->bind_param("i", $bookingID);
@@ -1345,11 +1418,18 @@ Payment made directly during session.
             </div>
         </div>
         <?php endif; ?>
+        
+        <?php if ($bookStatus === 'confirmed' && !$is_completed): ?>
+        <p style="font-size: 12px; color: #f59e0b; margin-top: 10px;">
+            <i class="bi bi-exclamation-triangle"></i> Please confirm your attendance above if you attended.
+        </p>
+        <?php endif; ?>
+        
     <?php endif; ?>
 </div>
-<?php endif; ?>
+                
 <!-- Face-to-Face Session Section -->
-
+<?php endif; ?>
 <?php if ($b['learning_mode'] === 'face_to_face' && ($bookStatus === 'confirmed' || $bookStatus === 'completed')): ?>
 <div class="card">
     <div class="card-title">
@@ -1505,7 +1585,6 @@ Payment made directly during session.
 
 <?php endif; ?>
   </div>
-</div>
 </div>
 
 <!-- Cancel Reschedule Modal (for rescheduled status) -->
@@ -1701,19 +1780,11 @@ function openCancelModalWithRefund(refundType) {
         }
     }
     document.getElementById('cancelModal').classList.add('active');
-}
-
-function showRefundPolicy() {
-    const modal = document.createElement('div');
-    modal.id = 'policyModal';
-    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1001;display:flex;align-items:center;justify-content:center;';
-    modal.innerHTML = '<div style="background:white;border-radius:20px;padding:25px;max-width:500px;width:90%;position:relative;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;"><h3 style="margin:0;"><i class="bi bi-file-text-fill" style="color:#E75A9B;"></i> Cancellation & Refund Policy</h3><button onclick="closePolicyModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button></div><div style="margin-bottom:20px;"><div style="background:#f8f9fa;border-radius:12px;padding:15px;margin-bottom:15px;"><h4 style="margin:0 0 10px;color:#28a745;"><i class="bi bi-cash-stack"></i> Full Refund (≥24 hours notice)</h4><p style="margin:0;font-size:13px;">Cancel more than 24 hours before your session to receive a full refund.</p></div><div style="background:#fff3cd;border-radius:12px;padding:15px;margin-bottom:15px;"><h4 style="margin:0 0 10px;color:#f59e0b;"><i class="bi bi-exclamation-triangle"></i> No Refund (<24 hours notice)</h4><p style="margin:0;font-size:13px;">Cancellations within 24 hours of the session will NOT receive a refund as the tutor has already reserved this time.</p></div><div style="background:#e8f5e9;border-radius:12px;padding:15px;"><h4 style="margin:0 0 10px;color:#2e7d32;"><i class="bi bi-calendar-x"></i> Tutor Cancellation / No-Show</h4><p style="margin:0;font-size:13px;">If the tutor cancels or doesn\'t show up, you will receive a FULL refund automatically.</p></div></div><button onclick="closePolicyModal()" style="width:100%;padding:12px;background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;border:none;border-radius:30px;cursor:pointer;font-weight:bold;">Got it</button></div>';
-    document.body.appendChild(modal);
-}
-
-function closePolicyModal() { const modal = document.getElementById('policyModal'); if (modal) modal.remove(); }
-function showReportIssue(bookingId) {
-    // Create report modal
+}function showReportIssue(bookingId) {
+    // Check if session is online or face-to-face
+    const isOnline = document.querySelector('.detail-item .dval')?.innerText === 'Online' || 
+                     document.body.innerText.includes('Online');
+    
     const modal = document.createElement('div');
     modal.id = 'reportModal';
     modal.className = 'modal-overlay active';
@@ -1721,26 +1792,63 @@ function showReportIssue(bookingId) {
         <div class="modal-box">
             <h3><i class="bi bi-exclamation-triangle"></i> Report Issue</h3>
             <p>Please describe the issue you experienced:</p>
-            <form id="reportForm" method="POST" action="report_issue.php">
+            <form id="reportForm" method="POST" action="report_issue.php" enctype="multipart/form-data">
                 <input type="hidden" name="booking_id" value="${bookingId}">
-                <select name="issue_type" required style="width:100%; padding:10px; margin:10px 0; border-radius:8px;">
-                    <option value="">Select issue type</option>
-                    <option value="tutor_no_show">Tutor didn't show up</option>
-                    <option value="technical_issues">Technical issues</option>
-                    <option value="wrong_materials">Wrong materials provided</option>
-                    <option value="other">Other issue</option>
-                </select>
-                <textarea name="message" placeholder="Please describe in detail..." required style="width:100%; padding:10px; margin:10px 0; border-radius:8px; min-height:100px;"></textarea>
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="display:block; font-weight:700; margin-bottom:8px;">Issue Type <span style="color:red;">*</span></label>
+                    <select name="issue_type" id="reportIssueType" required style="width:100%; padding:10px; border-radius:8px; border:1px solid #ddd;">
+                        <option value="">Select issue type</option>
+                        <option value="tutor_no_show">Tutor didn't show up</option>
+                        <option value="wrong_materials">Wrong materials provided</option>
+                        <option value="other">Other issue</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="display:block; font-weight:700; margin-bottom:8px;">Description <span style="color:red;">*</span></label>
+                    <textarea name="message" placeholder="Please describe in detail what happened..." required style="width:100%; padding:10px; border-radius:8px; border:1px solid #ddd; min-height:100px;"></textarea>
+                </div>
+                <div class="form-group" id="proofRequiredGroup" style="margin-bottom: 15px; display: none;">
+                    <label style="display:block; font-weight:700; margin-bottom:8px;">
+                        Upload Proof <span style="color:red;" id="proofRequiredStar">*</span>
+                    </label>
+                    <input type="file" name="proof" id="proofFile" accept="image/jpeg,image/png,application/pdf" style="width:100%; padding:8px;">
+                    <small style="color:#666; display:block; margin-top:5px;" id="proofHint">
+                        ${isOnline ? 
+                            '⚠️ <strong>REQUIRED:</strong> Upload screenshot showing you waited (e.g., waiting room, error message, chat history)' : 
+                            '⚠️ <strong>REQUIRED:</strong> Upload photo at the meeting location as proof you waited'}
+                    </small>
+                </div>
                 <div class="modal-actions">
-                    <button type="button" onclick="closeReportModal()" class="btn-secondary">Cancel</button>
-                    <button type="submit" class="btn-primary">Submit Report</button>
+                    <button type="button" onclick="closeReportModal()" class="btn-secondary" style="padding:10px 20px; border-radius:30px; background:#64748b; color:white; border:none; cursor:pointer;">Cancel</button>
+                    <button type="submit" class="btn-primary" style="padding:10px 20px; border-radius:30px; background:#dc2626; color:white; border:none; cursor:pointer;">Submit Report</button>
                 </div>
             </form>
         </div>
     `;
     document.body.appendChild(modal);
+    
+    // Add change listener to show/hide proof requirement
+    const issueTypeSelect = document.getElementById('reportIssueType');
+    const proofGroup = document.getElementById('proofRequiredGroup');
+    const proofFile = document.getElementById('proofFile');
+    const proofRequiredStar = document.getElementById('proofRequiredStar');
+    
+    if (issueTypeSelect) {
+        issueTypeSelect.addEventListener('change', function() {
+            if (this.value === 'tutor_no_show') {
+                proofGroup.style.display = 'block';
+                proofFile.setAttribute('required', 'required');
+                proofRequiredStar.style.display = 'inline';
+            } else {
+                proofGroup.style.display = 'none';
+                proofFile.removeAttribute('required');
+                proofRequiredStar.style.display = 'none';
+            }
+        });
+    }
 }
 
+// Helper function to check if element contains text (used for learning mode detection)
 function closeReportModal() {
     const modal = document.getElementById('reportModal');
     if (modal) modal.remove();
@@ -1757,9 +1865,37 @@ function checkAndJoinMeeting(bookingId, meetingLink) {
 }
 
 function contactTutor(tutorId, tutorName, tutorPhone, studentName, bookingId, language, issueType) {
-    const message = `Hello ${tutorName},\n\nI'm ${studentName} regarding our ${language} session (Booking #${bookingId}).\n\nIssue: ${issueType}\n\nPlease help resolve this. Thank you!`;
+    console.log("Contact Tutor called with:", {tutorId, tutorName, tutorPhone, studentName, bookingId, language, issueType});
+    
+    // Check if phone number exists
+    if (!tutorPhone || tutorPhone === '') {
+        showToast('Tutor phone number not available. Please contact support.');
+        return;
+    }
+    
+    // Clean the phone number (remove spaces, dashes, etc.)
+    let cleanPhone = tutorPhone.toString().replace(/[^0-9+]/g, '');
+    
+    // Ensure it starts with country code (add 60 for Malaysia if no +)
+    if (!cleanPhone.startsWith('+') && !cleanPhone.startsWith('60') && cleanPhone.startsWith('0')) {
+        cleanPhone = '60' + cleanPhone.substring(1);
+    }
+    
+    // Build message
+    let message = `Hello ${tutorName},\n\n`;
+    message += `I'm ${studentName} regarding our ${language} session (Booking #${bookingId}).\n\n`;
+    
+    if (issueType === 'meeting_link') {
+        message += `Could you please provide the meeting link for our session? Thank you!`;
+    } else {
+        message += `Issue: ${issueType}\n\nPlease help resolve this. Thank you!`;
+    }
+    
     const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/${tutorPhone}?text=${encodedMessage}`, '_blank');
+    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+    
+    console.log("Opening WhatsApp URL:", whatsappUrl);
+    window.open(whatsappUrl, '_blank');
 }
 
 const cancelModal = document.getElementById('cancelModal');

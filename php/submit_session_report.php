@@ -18,14 +18,36 @@ $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param("i", $userID);
 $stmt->execute();
 $tutor = $stmt->get_result()->fetch_assoc();
+// Check if resubmitting a rejected report
+$resubmit = isset($_GET['resubmit']) && $_GET['resubmit'] == 1;
+$existing_report_id = isset($_GET['report_id']) ? intval($_GET['report_id']) : 0;
 
+// Load existing report data if resubmitting
+$resubmitData = null;
+if ($resubmit && $existing_report_id > 0) {
+    $stmt = $conn->prepare("
+        SELECT sr.*, b.language, b.booking_date, b.booking_time, u.fullname as student_name
+        FROM session_reports sr
+        JOIN bookings b ON sr.booking_id = b.id
+        JOIN users u ON sr.student_id = u.id
+        WHERE sr.id = ? AND sr.tutor_id = ? AND sr.report_status = 'rejected'
+    ");
+    $stmt->bind_param("ii", $existing_report_id, $userID);
+    $stmt->execute();
+    $resubmitData = $stmt->get_result()->fetch_assoc();
+    
+    if ($resubmitData) {
+        // Override the booking_id with the rejected report's booking_id
+        $booking_id = $resubmitData['booking_id'];
+        // Set a flag to show this is a resubmission
+        $isResubmit = true;
+    }
+}
 $displayName = $tutor['fullname'];
 $profilePic = !empty($tutor['profile_pic']) ? '../uploads/profiles/' . $tutor['profile_pic'] : $assetBase . '/profile-tutor.png';
 
 if (!$booking_id) {
-    // Query to get ALL completed sessions with report status
-    // Update the query to exclude sessions where student said they didn't attend
-$completedBookings = $conn->query("
+   $completedBookings = $conn->query("
     SELECT 
         b.id, 
         b.language, 
@@ -43,6 +65,7 @@ $completedBookings = $conn->query("
     AND b.status = 'completed'
     AND (sc.student_confirmed IS NULL OR sc.student_confirmed = 1)
     AND (sc.no_show_type IS NULL OR sc.no_show_type != 'student_no_show')
+    AND (sr.report_status IS NULL OR sr.report_status != 'approved')  -- Add this line to exclude approved reports
     ORDER BY b.booking_date DESC
 ");
     ?>
@@ -164,7 +187,7 @@ $completedBookings = $conn->query("
                         <i class="bi bi-chevron-down"></i>
                     </button>
                     <div class="dropdown" id="profileDropdown">
-                        <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                        <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                         <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                         <hr>
                         <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
@@ -195,12 +218,15 @@ $completedBookings = $conn->query("
                         $statusText = [
                             'not_started' => 'Not Started',
                             'draft' => 'Draft',
-                            'submitted' => 'Submitted'
+                            'submitted' => 'Submitted',
+                            'approved' => 'Approved'  // Add this
                         ][$status];
+
                         $statusClass = [
                             'not_started' => 'status-not-started',
                             'draft' => 'status-draft',
-                            'submitted' => 'status-submitted'
+                            'submitted' => 'status-submitted',
+                            'approved' => 'status-approved'  // Add this
                         ][$status];
                     ?>
                         <div class="session-item">
@@ -418,7 +444,7 @@ $stmt->bind_param("i", $booking_id);
 $stmt->execute();
 $existingReport = $stmt->get_result()->fetch_assoc();
 
-$isEdit = ($existingReport && $existingReport['report_status'] !== 'submitted');
+$isEdit = ($existingReport && ($existingReport['report_status'] !== 'submitted' || $existingReport['report_status'] === 'rejected'));
 
 // Handle form submission
 $message = '';
@@ -458,71 +484,136 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messageType = "error";
     } 
     // Only proceed if no errors
-    else {
-        if ($existingReport && $existingReport['report_status'] === 'submitted' && !$isEdit) {
-            $message = "A report has already been submitted for this session.";
-            $messageType = "error";
-        } else {
-            if ($existingReport && $isEdit) {
-                $stmt = $conn->prepare("
-                    UPDATE session_reports 
-                    SET lesson_summary = ?, student_progress = ?, topics_covered = ?, 
-                        homework_given = ?, tutor_notes = ?, materials_used = ?, 
-                        next_session_focus = ?, attendance_status = ?, 
-                        report_status = ?, updated_at = NOW()
-                    WHERE booking_id = ?
-                ");
-                $stmt->bind_param("sssssssssi", 
-                    $lesson_summary, $student_progress, $topics_covered,
-                    $homework_given, $tutor_notes, $materials_used,
-                    $next_session_focus, $attendance_status, $action, $booking_id
-                );
-                $stmt->execute();
-            } else {
-                $stmt = $conn->prepare("
-                    INSERT INTO session_reports 
-                    (booking_id, tutor_id, student_id, session_date, session_time, 
-                     lesson_summary, student_progress, topics_covered, homework_given, 
-                     tutor_notes, materials_used, next_session_focus, attendance_status, report_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmt->bind_param("iiisssssssssss", 
-                    $booking_id, $userID, $booking['student_id'],
-                    $booking['booking_date'], $booking['booking_time'],
-                    $lesson_summary, $student_progress, $topics_covered,
-                    $homework_given, $tutor_notes, $materials_used,
-                    $next_session_focus, $attendance_status, $action
-                );
-                $stmt->execute();
-            }
+else {
+    // Check if this is a resubmit (updating a rejected report by ID)
+    if ($resubmit && $existing_report_id > 0 && $resubmitData) {
+        $stmt = $conn->prepare("
+            UPDATE session_reports 
+            SET lesson_summary = ?, student_progress = ?, topics_covered = ?, 
+                homework_given = ?, tutor_notes = ?, materials_used = ?, 
+                next_session_focus = ?, attendance_status = ?, 
+                report_status = ?, updated_at = NOW()
+            WHERE id = ? AND tutor_id = ? AND report_status = 'rejected'
+        ");
+        $stmt->bind_param("sssssssssii", 
+            $lesson_summary, $student_progress, $topics_covered,
+            $homework_given, $tutor_notes, $materials_used,
+            $next_session_focus, $attendance_status, $action, 
+            $existing_report_id, $userID
+        );
+        $stmt->execute();
+        
+        if ($action === 'submitted') {
+            // Update submitted_at time
+            $updateStmt = $conn->prepare("
+                UPDATE session_reports 
+                SET submitted_at = NOW() 
+                WHERE id = ?
+            ");
+            $updateStmt->bind_param("i", $existing_report_id);
+            $updateStmt->execute();
             
-            if ($action === 'submitted') {
-                $updateStmt = $conn->prepare("
-                    UPDATE session_reports 
-                    SET submitted_at = NOW(), report_status = 'submitted' 
-                    WHERE booking_id = ?
-                ");
-                $updateStmt->bind_param("i", $booking_id);
-                $updateStmt->execute();
-                
-               $notifMessage = "Your tutor has updated your progress for your {$booking['language']} session on " . date('d M Y', strtotime($booking['booking_date']));
-insertNotification($conn, $booking['student_id'], "Progress updated", $notifMessage, "session_report", "my_progress.php", true);
-                
-                $message = "Session report submitted successfully! Student has been notified.";
-                $messageType = "success";
-                
-                // Set session variable for toast
-                $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
-                header("Location: view_session_reports.php");
-                exit();
-            } else {
-                $message = "Session report saved as draft.";
-                $messageType = "success";
-                $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
-            }
+            // Send notification to student
+            $notifMessage = "Your tutor has resubmitted the session report for your {$booking['language']} session on " . date('d M Y', strtotime($booking['booking_date']));
+            insertNotification($conn, $booking['student_id'], "Report Resubmitted", $notifMessage, "session_report", "my_progress.php", true);
+            
+            $message = "Session report resubmitted successfully! Admin will review again.";
+            $messageType = "success";
+            $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
+            header("Location: view_session_reports.php");
+            exit();
+        } else {
+            $message = "Draft saved for rejected report.";
+            $messageType = "success";
+            $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
+            header("Location: view_session_reports.php");
+            exit();
+        }
+    }
+    // Normal update for existing draft reports
+    elseif ($existingReport && $isEdit && !$resubmit) {
+        $stmt = $conn->prepare("
+            UPDATE session_reports 
+            SET lesson_summary = ?, student_progress = ?, topics_covered = ?, 
+                homework_given = ?, tutor_notes = ?, materials_used = ?, 
+                next_session_focus = ?, attendance_status = ?, 
+                report_status = ?, updated_at = NOW()
+            WHERE booking_id = ?
+        ");
+        $stmt->bind_param("sssssssssi", 
+            $lesson_summary, $student_progress, $topics_covered,
+            $homework_given, $tutor_notes, $materials_used,
+            $next_session_focus, $attendance_status, $action, $booking_id
+        );
+        $stmt->execute();
+        
+        if ($action === 'submitted') {
+            $updateStmt = $conn->prepare("
+                UPDATE session_reports 
+                SET submitted_at = NOW(), report_status = 'submitted' 
+                WHERE booking_id = ?
+            ");
+            $updateStmt->bind_param("i", $booking_id);
+            $updateStmt->execute();
+            
+            $notifMessage = "Your tutor has updated your progress for your {$booking['language']} session on " . date('d M Y', strtotime($booking['booking_date']));
+            insertNotification($conn, $booking['student_id'], "Progress updated", $notifMessage, "session_report", "my_progress.php", true);
+            
+            $message = "Session report submitted successfully! Student has been notified.";
+            $messageType = "success";
+            $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
+            header("Location: view_session_reports.php");
+            exit();
+        } else {
+            $message = "Session report saved as draft.";
+            $messageType = "success";
+            $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
+        }
+    } 
+    // New report (insert)
+    else {
+        $stmt = $conn->prepare("
+            INSERT INTO session_reports 
+            (booking_id, tutor_id, student_id, session_date, session_time, 
+             lesson_summary, student_progress, topics_covered, homework_given, 
+             tutor_notes, materials_used, next_session_focus, attendance_status, report_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->bind_param("iiisssssssssss", 
+            $booking_id, $userID, $booking['student_id'],
+            $booking['booking_date'], $booking['booking_time'],
+            $lesson_summary, $student_progress, $topics_covered,
+            $homework_given, $tutor_notes, $materials_used,
+            $next_session_focus, $attendance_status, $action
+        );
+        $stmt->execute();
+        
+        if ($action === 'submitted') {
+            $updateStmt = $conn->prepare("
+                UPDATE session_reports 
+                SET submitted_at = NOW(), report_status = 'submitted' 
+                WHERE booking_id = ?
+            ");
+            $updateStmt->bind_param("i", $booking_id);
+            $updateStmt->execute();
+            
+            $notifMessage = "Your tutor has submitted a session report for your {$booking['language']} session on " . date('d M Y', strtotime($booking['booking_date']));
+            insertNotification($conn, $booking['student_id'], "Session Report", $notifMessage, "session_report", "my_progress.php", true);
+            
+            $message = "Session report submitted successfully! Student has been notified.";
+            $messageType = "success";
+            $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
+            header("Location: view_session_reports.php");
+            exit();
+        } else {
+            $message = "Session report saved as draft.";
+            $messageType = "success";
+            $_SESSION['toast'] = ['message' => $message, 'type' => 'success'];
         }
     }
 }
+}
+
 
 function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 ?>
@@ -690,6 +781,17 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         </div>
     <?php endif; ?>
 </div>
+<?php if ($resubmit && $resubmitData && !empty($resubmitData['admin_notes'])): ?>
+    <div class="alert" style="background: #fef3c7; border-left: 4px solid #f59e0b; margin-bottom: 20px;">
+        <i class="bi bi-arrow-repeat"></i>
+        <strong>Resubmitting Rejected Report</strong>
+        <div style="margin-top: 10px; padding: 10px; background: #fee2e2; border-radius: 8px;">
+            <i class="bi bi-chat"></i> <strong>Admin's Feedback:</strong><br>
+            <?= nl2br(e($resubmitData['admin_notes'])) ?>
+        </div>
+        <p style="margin-top: 10px; font-size: 13px;">Please review the feedback above and make necessary changes before resubmitting.</p>
+    </div>
+<?php endif; ?>
 
         <?php if ($message): ?>
             <div class="alert alert-<?= $messageType ?>">
@@ -715,31 +817,35 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
                 <p><strong>Submitted on:</strong> <?= date('d M Y, g:i A', strtotime($existingReport['submitted_at'])) ?></p>
             </div>
         <?php else: ?>
+            <?php 
+            // Determine which data to use for pre-filling
+            $prefillData = ($resubmit && $resubmitData) ? $resubmitData : $existingReport;
+            ?>
             <form method="POST" action="" id="reportForm">
                 <input type="hidden" name="action" id="formAction" value="draft">
                 
                 <div class="form-group">
                     <label><i class="bi bi-chat-text"></i> Lesson Summary <span class="required">*</span></label>
                     <textarea name="lesson_summary" class="form-control" rows="4" 
-                        placeholder="What was covered in this session? What were the key learning points?"><?= e($existingReport['lesson_summary'] ?? '') ?></textarea>
+                        placeholder="What was covered in this session? What were the key learning points?"><?= e($prefillData['lesson_summary'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group">
                     <label><i class="bi bi-graph-up"></i> Student Progress <span class="required">*</span></label>
                     <textarea name="student_progress" class="form-control" rows="3" 
-                        placeholder="How is the student progressing? What improvements have you noticed?"><?= e($existingReport['student_progress'] ?? '') ?></textarea>
+                        placeholder="How is the student progressing? What improvements have you noticed?"><?= e($prefillData['student_progress'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group">
                     <label><i class="bi bi-book"></i> Topics Covered <span class="required">*</span></label>
                     <textarea name="topics_covered" class="form-control" rows="3" 
-                        placeholder="List the specific topics or skills covered in this session"><?= e($existingReport['topics_covered'] ?? '') ?></textarea>
+                        placeholder="List the specific topics or skills covered in this session"><?= e($prefillData['topics_covered'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group">
                     <label><i class="bi bi-file-earmark-text"></i> Tutor's Notes (Private)</label>
                     <textarea name="tutor_notes" class="form-control" rows="3" 
-                        placeholder="Private notes for your reference (student cannot see this)"><?= e($existingReport['tutor_notes'] ?? '') ?></textarea>
+                        placeholder="Private notes for your reference (student cannot see this)"><?= e($prefillData['tutor_notes'] ?? '') ?></textarea>
                     <small style="font-size: 11px; color: #64748b;">These notes are only visible to you.</small>
                 </div>
 
@@ -813,15 +919,15 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
                 <div class="form-group">
                     <label><i class="bi bi-calendar-check"></i> Next Session Focus</label>
                     <textarea name="next_session_focus" class="form-control" rows="2" 
-                        placeholder="What should be covered in the next session?"><?= e($existingReport['next_session_focus'] ?? '') ?></textarea>
+                        placeholder="What should be covered in the next session?"><?= e($prefillData['next_session_focus'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group">
                     <label><i class="bi bi-person-check"></i> Attendance</label>
                     <select name="attendance_status" class="form-control">
-                        <option value="attended" <?= (isset($existingReport) && $existingReport['attendance_status'] === 'attended') ? 'selected' : '' ?>>Attended</option>
-                        <option value="late" <?= (isset($existingReport) && $existingReport['attendance_status'] === 'late') ? 'selected' : '' ?>>Late</option>
-                        <option value="absent" <?= (isset($existingReport) && $existingReport['attendance_status'] === 'absent') ? 'selected' : '' ?>>Absent</option>
+                        <option value="attended" <?= (isset($prefillData) && $prefillData['attendance_status'] === 'attended') ? 'selected' : '' ?>>Attended</option>
+                        <option value="late" <?= (isset($prefillData) && $prefillData['attendance_status'] === 'late') ? 'selected' : '' ?>>Late</option>
+                        <option value="absent" <?= (isset($prefillData) && $prefillData['attendance_status'] === 'absent') ? 'selected' : '' ?>>Absent</option>
                     </select>
                 </div>
 

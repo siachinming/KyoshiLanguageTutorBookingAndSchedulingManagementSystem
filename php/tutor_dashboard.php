@@ -697,40 +697,9 @@ body::before{
         <p>Manage sessions, bookings, materials, and student interactions — all in one place.</p>
     </div>
 
-    <div class="hero-stats">
-        <div class="hero-card">
-            <div class="hero-icon"><i class="bi bi-calendar-check"></i></div>
-            <div>
-                <span>Total Bookings</span>
-                <h3><?= e($totalBookings) ?></h3>
-            </div>
-        </div>
 
-        <div class="hero-card">
-            <div class="hero-icon"><i class="bi bi-hourglass-split"></i></div>
-            <div>
-                <span>Pending Requests</span>
-                <h3><?= e($pendingBookings) ?></h3>
-            </div>
-        </div>
 
-        <div class="hero-card">
-            <div class="hero-icon"><i class="bi bi-book"></i></div>
-            <div>
-                <span>Materials Uploaded</span>
-                <h3><?= e($totalMaterials) ?></h3>
-            </div>
-        </div>
 
-        <div class="hero-card">
-            <div class="hero-icon"><i class="bi bi-wallet2"></i></div>
-            <div>
-                <span>Net Earnings</span>
-                <h3>RM <?= number_format($netEarnings, 2) ?></h3>
-                <span style="font-size: 10px; margin-top: 2px;">Gross: RM <?= number_format($totalEarnings, 2) ?></span>
-            </div>
-        </div>
-    </div>
 </div>
 
 <?php if ($showDisputeAlert): ?>
@@ -762,7 +731,7 @@ body::before{
             <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b; font-size: 24px;"></i>
             <div>
                 <strong style="color: #92400e;">Action Required: <?= $pendingReportCount ?> Session Report<?= $pendingReportCount != 1 ? 's' : '' ?> Pending</strong>
-                <p style="margin: 4px 0 0; font-size: 13px; color: #b45309;">Payment will only be released after you submit session reports.</p>
+                <p style="margin: 4px 0 0; font-size: 13px; color: #b45309;">Payment will only be released after you submit AND admin verifies session reports.</p>
             </div>
         </div>
         <a href="submit_session_report.php" style="background: #f59e0b; color: white; padding: 10px 24px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 13px;">
