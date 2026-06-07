@@ -73,15 +73,22 @@
     .btn-main:hover { background: #0ea5e9; }
 
     .btn-back {
-      background: transparent;
-      border: 1px solid #000000;
-      border-radius: 8px;
-      padding: 5px 12px;
-      font-size: 13px;
-      cursor: pointer;
-      color: #64748b;
-      margin-bottom: 16px;
-    }
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 40px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #64748b;
+  margin-bottom: 20px;
+  transition: all 0.25s ease;
+}
+
+.btn-back:hover {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  transform: translateX(-3px);
+}
 
     .role-box {
       border: 2px solid #e5e7eb;
@@ -277,6 +284,10 @@
         min-height: 100vh;
     }
 
+      .mobile-welcome {
+    display: block !important;
+  }
+
     .signup-left {
         display: none;
     }
@@ -356,6 +367,10 @@
         padding: 16px;
     }
 
+      .mobile-welcome {
+    display: block !important;
+  }
+
     .role-box {
         padding: 16px !important;
     }
@@ -407,11 +422,19 @@
 
   <div class="signup-right">
     <div class="signup-box">
-
+      <button type="button" class="btn-back" onclick="window.location.href='../index.html'">← Back</button>
+      
+      <div class="mobile-welcome" style="display: none; text-align: center;">
+        <img src="../assets/img/logo.png" style="width: 70px;">
+      </div>
+                <div class="page-welcome" style="text-align: center; margin-bottom: 20px; width: 100%;">
+    <h2 style="font-size: 28px; font-weight: 800; color: #1d3156; margin: 0;">Welcome to Kyoshi</h2>
+    <p style="color: #7B6E8F; font-size: 14px; margin-top: 5px;">Your Language Learning Platform</p>
+    <hr></div>
       <!-- STEP 1: Role selection -->
       <div id="roleStep">
-        <h3 class="fw-bold mb-1">Create Account</h3>
-        <p class="text-muted mb-3" style="font-size:14px;">Select your role to continue</p>
+        <h3 class="fw-bold mb-1" style="text-align: center; display: block; width: 100%;">Create Account</h3>
+        <p class="text-muted mb-3" style="text-align:center; font-size:14px;">Select your role to continue</p>
 
         <div class="role-box" style="padding:30px;" onclick="selectRole(this, 'student')">
           <div style="font-size:48px; margin-bottom:10px;">👨‍🎓</div>
@@ -426,14 +449,14 @@
         </div>
 
         <button type="button" class="btn-main mt-3" onclick="goNext()">Continue</button>
-        <button type="button" class="btn btn-secondary w-100 mt-2" onclick="goHome()">Back to Home Page</button>
       </div>
 
       <!-- STEP 2: Form -->
       <div id="formStep" style="display:none;">
 
-        <button type="button" class="btn-back" onclick="goBack()">← Back</button>
-        <h4 class="fw-bold mb-3" id="formTitle"></h4>
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <h4 class="fw-bold mb-0" style="text-align: center; display: block; width: 100%;" id="formTitle"></h4>
+      </div>
 
         <div id="errBox"></div>
 

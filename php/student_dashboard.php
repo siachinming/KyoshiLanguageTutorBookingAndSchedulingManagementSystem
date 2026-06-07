@@ -422,7 +422,6 @@ input, textarea, [contenteditable="true"] {
     .btn-primary{background:linear-gradient(135deg, var(--hot-pink), var(--pink)); color:#fff; box-shadow:0 12px 24px rgba(231,90,155,.28)}
     .btn-soft{background:rgba(255,255,255,.78); color:#7A3D65; border:1px solid rgba(46,42,59,.08)}
     .btn-link{background:transparent; color:var(--pink-dark); padding-left:0}
-    .btn-primary:hover,.btn-soft:hover,.btn-link:hover,.mini-btn:hover,.icon-btn:hover,.profile:hover,.pref-chip:hover{transform:translateY(-1px)}
 
     .hero-side{min-height:240px; padding:24px; display:flex; flex-direction:column; justify-content:space-between}
     .clock{font-size:42px; line-height:1; font-weight:900; letter-spacing:-1.4px}
@@ -695,33 +694,20 @@ input, textarea, [contenteditable="true"] {
   flex: 1;
 }
 
-.stat-label {
-  display: block;
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-.stat-number {
-  display: block;
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--ink);
-  line-height: 1.2;
-  margin: 4px 0 2px;
-}
-
 .stat-period {
   display: block;
   font-size: 10px;
   color: var(--muted);
 }
 
-/* Responsive */
 @media (max-width: 900px) {
   .hero-grid-new {
     grid-template-columns: 1fr;
+  }
+
+    .profile {
+    background: transparent !important;
+    border:none;
   }
   
   .stats-row {
@@ -744,15 +730,29 @@ input, textarea, [contenteditable="true"] {
       .overview-grid,.language-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
     }
     @media (max-width:980px){
+        .profile {
+    -webkit-tap-highlight-color: transparent !important;
+    background: transparent !important;
+    border: none !important;
+  }
+  
+  .profile:active {
+    background: transparent !important;
+    transform: none !important;
+  }
+
       .nav{grid-template-columns:1fr auto; min-height:auto; padding:10px 0}
       .nav-links{grid-column:1 / -1; grid-row:2; width:100%; justify-content:flex-start}
       .search{display:none}
       .booking-item{grid-template-columns:1fr}
       .booking-actions{justify-content:flex-start}
+        .profile i.bi-chevron-down {
+    display: none !important;
+  }
     }
     @media (max-width:760px){
       .container{width:min(100% - 22px, 100%)}
-      .profile span,.brand span{display:none}
+      .profile span{display:none}
       .overview-grid,.language-grid{grid-template-columns:1fr}
       .hero-copy h1{font-size:35px}
       .material-item,.favourite-item,.tutor-card{grid-template-columns:1fr; display:block}
@@ -1583,13 +1583,11 @@ input, textarea, [contenteditable="true"] {
   <header class="topbar">
     <div class="container">
       <nav class="nav">
-        <a href="student_dashboard.php" class="brand">
-          <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
-          <div>
-            <strong>Kyoshi</strong>
-            <span>Student Learning Space</span>
-          </div>
-        </a>
+      <a href="student_dashboard.php" class="brand">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
+        <div><strong>Kyoshi</strong>
+        <span>Student Learning Space</span></div>
+      </a>
 
          <div class="nav-links">
                 <a href="student_dashboard.php" class="active">Home</a>

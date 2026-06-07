@@ -245,6 +245,10 @@ input[type="checkbox"] {
     gap: 5px !important;
   }
 
+    .mobile-welcome {
+    display: block !important;
+  }
+
   .login-container {
     flex-direction: column !important;
   }
@@ -306,9 +310,17 @@ input[type="checkbox"] {
   <div class="login-right">
 
     <div class="login-box">
-      <button type="button" class="btn-back" onclick="window.location.href='../index.html'">← Back</button>
 
-      <h3 class="fw-bold mb-4">Member Log In</h3>
+    <button type="button" class="btn-back" onclick="window.location.href='../index.html'">← Back</button>
+      <div class="mobile-welcome" style="display: none; text-align: center;">
+        <img src="../assets/img/logo.png" style="width: 70px;">
+      </div>
+                <div class="page-welcome" style="text-align: center; margin-bottom: 20px; width: 100%;">
+    <h2 style="font-size: 28px; font-weight: 800; color: #1d3156; margin: 0;">Welcome to Kyoshi</h2>
+    <p style="color: #7B6E8F; font-size: 14px; margin-top: 5px;">Your Language Learning Platform</p>
+    <hr></div>
+  
+      <h3 class="fw-bold mb-4" style="text-align: center;">Sign In</h3>
 
       <form action="login_process.php" method="POST">
 

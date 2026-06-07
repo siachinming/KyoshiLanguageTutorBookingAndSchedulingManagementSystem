@@ -8645,3 +8645,87 @@ t: 0
 [2026-06-07 07:15:02] Meeting link reminders sent: 0
 [2026-06-07 07:15:02] Session reminders sent: 0
 [2026-06-07 07:15:02] Reminder script completed
+[2026-06-07 09:36:51] Reminder script started
+[2026-06-07 15:36:52] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 15:36:56] === Running reminder checks ===
+[2026-06-07 15:36:56] Meeting link reminders sent: 0
+[2026-06-07 15:36:56] Session reminders sent: 0
+[2026-06-07 15:36:56] Reminder script completed
+[2026-06-07 09:45:01] Reminder script started
+[2026-06-07 15:45:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 15:45:01] === Running reminder checks ===
+[2026-06-07 15:45:01] Meeting link reminders sent: 0
+[2026-06-07 15:45:01] Session reminders sent: 0
+[2026-06-07 15:45:01] Reminder script completed
+[2026-06-07 10:00:01] Reminder script started
+[2026-06-07 16:00:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 16:00:02] === Running reminder checks ===
+[2026-06-07 16:00:02] Meeting link reminders sent: 0
+[2026-06-07 16:00:02] Session reminders sent: 0
+[2026-06-07 16:00:02] Reminder script completed
+[2026-06-07 10:15:01] Reminder script started
+[2026-06-07 16:15:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 16:15:01] === Running reminder checks ===
+[2026-06-07 16:15:01] Meeting link reminders sent: 0
+[2026-06-07 16:15:01] Session reminders sent: 0
+[2026-06-07 16:15:01] Reminder script completed
+[2026-06-07 10:38:24] Reminder script started
+[2026-06-07 16:38:24] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 16:38:24] === Running reminder checks ===
+[2026-06-07 16:38:24] Meeting link reminders sent: 0
+[2026-06-07 16:38:24] Session reminders sent: 0
+[2026-06-07 16:38:24] Reminder script completed
+[2026-06-07 11:47:58] Reminder script started
+[2026-06-07 17:47:59] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 17:47:59] === Running reminder checks ===
+[2026-06-07 17:47:59] Meeting link reminders sent: 0
+[2026-06-07 17:47:59] Session reminders sent: 0
+[2026-06-07 17:47:59] Reminder script completed
+[2026-06-07 12:00:01] Reminder script started
+[2026-06-07 18:00:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 18:00:02] === Running reminder checks ===
+[2026-06-07 18:00:02] Meeting link reminders sent: 0
+[2026-06-07 18:00:02] Session reminders sent: 0
+[2026-06-07 18:00:02] Reminder script completed
+[2026-06-07 12:15:01] Reminder script started
+[2026-06-07 18:15:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 18:15:01] === Running reminder checks ===
+[2026-06-07 18:15:01] Meeting link reminders sent: 0
+[2026-06-07 18:15:01] Session reminders sent: 0
+[2026-06-07 18:15:01] Reminder script completed
+[2026-06-07 12:30:31] Reminder script started
+[2026-06-07 18:30:31] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 18:30:32] === Running reminder checks ===
+[2026-06-07 18:30:32] Meeting link reminders sent: 0
+[2026-06-07 18:30:32] Session reminders sent: 0
+[2026-06-07 18:30:32] Reminder script completed
+[2026-06-07 12:45:01] Reminder script started
+[2026-06-07 18:45:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 18:45:01] === Running reminder checks ===
+[2026-06-07 18:45:01] Meeting link reminders sent: 0
+[2026-06-07 18:45:01] Session reminders sent: 0
+[2026-06-07 18:45:01] Reminder script completed
+[2026-06-07 13:00:01] Reminder script started
+[2026-06-07 19:00:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 19:00:01] === Running reminder checks ===
+[2026-06-07 19:00:01] Meeting link reminders sent: 0
+[2026-06-07 19:00:01] Session reminders sent: 0
+[2026-06-07 19:00:01] Reminder script completed
+[2026-06-07 13:15:01] Reminder script started
+[2026-06-07 19:15:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 19:15:01] === Running reminder checks ===
+[2026-06-07 19:15:01] Meeting link reminders sent: 0
+[2026-06-07 19:15:01] Session reminders sent: 0
+[2026-06-07 19:15:01] Reminder script completed
+[2026-06-07 13:30:01] Reminder script started
+[2026-06-07 19:30:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 19:30:01] === Running reminder checks ===
+[2026-06-07 19:30:01] Meeting link reminders sent: 0
+[2026-06-07 19:30:01] Session reminders sent: 0
+[2026-06-07 19:30:01] Reminder script completed
+[2026-06-07 13:45:01] Reminder script started
+[2026-06-07 19:45:01] WARNING: insert_notification.php not found. Creating fallback function.
+[2026-06-07 19:45:01] === Running reminder checks ===
+[2026-06-07 19:45:01] Meeting link reminders sent: 0
+[2026-06-07 19:45:01] Session reminders sent: 0
+[2026-06-07 19:45:01] Reminder script completed
