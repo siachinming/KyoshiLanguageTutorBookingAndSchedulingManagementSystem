@@ -2,12 +2,102 @@
 session_start();
 include 'config.php';
 include 'insert_notification.php';
+include 'check_login.php';
 require_once '../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+// Auto-escalate wrong_materials disputes after 2 days if tutor hasn't responded
+$autoEscalateWrongMaterials = $conn->prepare("
+    UPDATE disputes d
+    SET d.status = 'escalated',
+        d.escalated_at = NOW(),
+        d.escalation_reason = 'Tutor did not respond within 2 days'
+    WHERE d.issue_type = 'wrong_materials'
+      AND d.status = 'pending'
+      AND d.created_at < DATE_SUB(NOW(), INTERVAL 2 DAY)
+");
+$autoEscalateWrongMaterials->execute();
 
+// Also send email notification to admin when escalated
+$getEscalatedWrongMaterials = $conn->prepare("
+    SELECT d.*, 
+           s.fullname as student_name, s.email as student_email,
+           t.fullname as tutor_name, t.email as tutor_email,
+           b.language, b.booking_date
+    FROM disputes d
+    JOIN users s ON d.student_id = s.id
+    JOIN users t ON d.tutor_id = t.id
+    JOIN bookings b ON d.booking_id = b.id
+    WHERE d.issue_type = 'wrong_materials'
+      AND d.status = 'escalated'
+      AND d.escalated_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+      AND d.notification_sent IS NULL
+");
+$getEscalatedWrongMaterials->execute();
+$escalatedDisputes = $getEscalatedWrongMaterials->get_result();
 
+while ($escalated = $escalatedDisputes->fetch_assoc()) {
+    // Send email to admin
+    $admin_email = "admin@kyoshi.com";
+    $subject = "URGENT: Wrong Materials Dispute Escalated - No Tutor Response";
+    $body = "A 'Wrong Materials' dispute has been automatically escalated because the tutor did not respond within 2 days.\n\n";
+    $body .= "Student: " . $escalated['student_name'] . "\n";
+    $body .= "Tutor: " . $escalated['tutor_name'] . "\n";
+    $body .= "Booking ID: #" . $escalated['booking_id'] . "\n";
+    $body .= "Language: " . $escalated['language'] . "\n";
+    $body .= "Session Date: " . date('d M Y', strtotime($escalated['booking_date'])) . "\n\n";
+    $body .= "Please review and take action immediately.\n";
+    mail($admin_email, $subject, $body);
+    
+    // Mark notification as sent
+    $updateNotif = $conn->prepare("UPDATE disputes SET notification_sent = NOW() WHERE id = ?");
+    $updateNotif->bind_param("i", $escalated['id']);
+    $updateNotif->execute();
+}
+
+// Add this function after checkTutorAvailability function
+function checkTutorScheduleAvailability($conn, $tutor_id, $new_date, $new_time) {
+    $day_of_week = date('l', strtotime($new_date));
+    
+    $scheduleCheck = $conn->prepare("
+        SELECT COUNT(*) as count 
+        FROM tutor_availability 
+        WHERE tutor_id = ? 
+        AND day_of_week = ?
+        AND start_time <= ? 
+        AND end_time >= ?
+    ");
+    $scheduleCheck->bind_param("isss", $tutor_id, $day_of_week, $new_time, $new_time);
+    $scheduleCheck->execute();
+    $result = $scheduleCheck->get_result()->fetch_assoc();
+    
+    return $result['count'] > 0;
+}
+// Function to check tutor availability for reschedule
+function checkTutorAvailability($conn, $tutor_id, $new_date, $new_time, $exclude_booking_id = null) {
+    $sql = "SELECT COUNT(*) as count FROM bookings 
+            WHERE tutor_id = ? 
+            AND booking_date = ? 
+            AND booking_time = ?
+            AND status NOT IN ('cancelled', 'rejected')";
+    
+    $params = [$tutor_id, $new_date, $new_time];
+    $types = "iss";
+    
+    if ($exclude_booking_id) {
+        $sql .= " AND id != ?";
+        $params[] = $exclude_booking_id;
+        $types .= "i";
+    }
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result()->fetch_assoc();
+    
+    return $result['count'] == 0;
+}
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
@@ -33,7 +123,6 @@ $totalBookings = $conn->query("SELECT COUNT(*) as count FROM bookings")->fetch_a
 $pendingPayments = $conn->query("SELECT COUNT(*) as count FROM payments WHERE status = 'pending'")->fetch_assoc()['count'];
 $pendingDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'pending'")->fetch_assoc()['count'];
 $pendingPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests WHERE status = 'pending'")->fetch_assoc()['count'] ?? 0;
-
 // ============================================
 // HANDLE DISPUTE RESOLUTION
 // ============================================
@@ -51,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_dispute'])) {
                b.student_id, b.tutor_id, b.total_amount, b.language, b.booking_date, b.booking_time, b.learning_mode,
                s.email as student_email, s.fullname as student_name, s.phone as student_phone,
                t.email as tutor_email, t.fullname as tutor_name,
-               p.id as payment_id, p.amount as payment_amount, p.payment_method, p.receipt_number
+               p.id as payment_id, p.amount as payment_amount, p.payment_method, p.receipt_number, p.refund_receipt_number
         FROM disputes d 
         JOIN bookings b ON d.booking_id = b.id 
         JOIN users s ON b.student_id = s.id
@@ -71,6 +160,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_dispute'])) {
         $booking_id = $dispute['booking_id'];
         $issue_type = $dispute['issue_type'];
         
+        // ✅ IMPORTANT: For payment disputes, use resolution_requested from database
+        // This handles when student/tutor resolved it themselves
+        if ($dispute['issue_type'] === 'money_deducted' && !empty($dispute['resolution_requested']) && $action === 'resolve') {
+            $action = $dispute['resolution_requested'];
+            error_log("Payment dispute - using resolution_requested as action: " . $action);
+        }
+        
         // Generate refund receipt number if refund
         $refund_receipt_no = null;
         $resolution_detail = '';
@@ -80,109 +176,151 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_dispute'])) {
         // ============================================
         
         if ($action === 'refund') {
-    // Generate refund receipt number
-    $refund_receipt_no = 'RFD-' . date('Ymd') . '-' . str_pad($dispute_id, 6, '0', STR_PAD_LEFT);
-    
-    // Update payment with refund status
-    $updatePayment = $conn->prepare("UPDATE payments SET refund_status = 'completed', refund_receipt_number = ?, refund_processed_at = NOW() WHERE booking_id = ? OR id = ?");
-    $updatePayment->bind_param("sii", $refund_receipt_no, $booking_id, $dispute['payment_id']);
-    $updatePayment->execute();
-    
-    // Update booking status
-    $updateBooking = $conn->prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = 'Refunded due to dispute resolution', cancelled_by = 'admin' WHERE id = ?");
-    $updateBooking->bind_param("i", $booking_id);
-    $updateBooking->execute();
-    
-    // Generate PDF Refund Receipt (this creates the PDF file)
-    $pdf_path = generateRefundReceiptPDF($dispute, $refund_amount, $refund_receipt_no);
-    
-    // Send refund email with PDF attachment (like payout does)
-    sendRefundEmailWithPDF($student_email, $student_name, $refund_amount, $dispute, $refund_receipt_no, $pdf_path);
-    sendTutorRefundNotificationEmail($tutor_email, $tutor_name, $dispute, $refund_amount);
-    
-    $resolution_detail = "Refund of RM " . number_format($refund_amount, 2) . " processed. Receipt: $refund_receipt_no";
-} elseif ($action === 'reschedule' && $new_booking_date && $new_booking_time) {
-    // Check if tutor is available at the new time
-    $checkAvailability = $conn->prepare("
-        SELECT COUNT(*) as count 
-        FROM bookings 
-        WHERE tutor_id = ? 
-        AND booking_date = ? 
-        AND booking_time = ?
-        AND status NOT IN ('cancelled', 'rejected')
-        AND id != ?
-    ");
-    $checkAvailability->bind_param("issi", $dispute['tutor_id'], $new_booking_date, $new_booking_time, $booking_id);
-    $checkAvailability->execute();
-    $availability = $checkAvailability->get_result()->fetch_assoc();
-    
-    if ($availability['count'] > 0) {
-        $_SESSION['error_message'] = "Cannot reschedule: Tutor already has a booking at the selected time. Please choose a different time.";
-        header("Location: admin_disputes.php");
-        exit();
-    }
-    
-    // Reschedule booking
-    $updateBooking = $conn->prepare("UPDATE bookings SET booking_date = ?, booking_time = ?, status = 'confirmed' WHERE id = ?");
-    $updateBooking->bind_param("ssi", $new_booking_date, $new_booking_time, $booking_id);
-    $updateBooking->execute();
-
+            // Generate refund receipt number
+            $refund_receipt_no = 'RFD-' . date('Ymd') . '-' . str_pad($dispute_id, 6, '0', STR_PAD_LEFT);
             
-            // Send reschedule confirmation emails
-            sendRescheduleEmail($student_email, $student_name, $tutor_name, $new_booking_date, $new_booking_time, $dispute);
-            sendTutorRescheduleEmail($tutor_email, $tutor_name, $student_name, $new_booking_date, $new_booking_time, $dispute);
+            // Update payment with refund status
+            $updatePayment = $conn->prepare("UPDATE payments SET refund_status = 'completed', refund_receipt_number = ?, refund_processed_at = NOW() WHERE booking_id = ? OR id = ?");
+            $updatePayment->bind_param("sii", $refund_receipt_no, $booking_id, $dispute['payment_id']);
+            $updatePayment->execute();
             
-            $resolution_detail = "Session rescheduled to " . date('d M Y', strtotime($new_booking_date)) . " at " . date('g:i A', strtotime($new_booking_time));
+            // Update booking status
+            $updateBooking = $conn->prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = 'Refunded due to dispute resolution', cancelled_by = 'admin' WHERE id = ?");
+            $updateBooking->bind_param("i", $booking_id);
+            $updateBooking->execute();
+            
+            // Generate PDF Refund Receipt (this creates the PDF file)
+            $pdf_path = generateRefundReceiptPDF($dispute, $refund_amount, $refund_receipt_no);
+            
+            // Send refund email with PDF attachment (like payout does)
+            sendRefundEmailWithPDF($student_email, $student_name, $refund_amount, $dispute, $refund_receipt_no, $pdf_path);
+            sendTutorRefundNotificationEmail($tutor_email, $tutor_name, $dispute, $refund_amount);
+            
+            $resolution_detail = "Refund of RM " . number_format($refund_amount, 2) . " processed. Receipt: $refund_receipt_no";
+            
+        } elseif ($action === 'reschedule' && $new_booking_date && $new_booking_time) {
+            // FIRST: Check if tutor has this time in their availability schedule
+            $day_of_week = date('l', strtotime($new_booking_date));
+            $scheduleCheck = $conn->prepare("
+                SELECT COUNT(*) as count 
+                FROM tutor_availability 
+                WHERE tutor_id = ? 
+                AND day_of_week = ?
+                AND start_time <= ? 
+                AND end_time >= ?
+            ");
+            $scheduleCheck->bind_param("isss", $dispute['tutor_id'], $day_of_week, $new_booking_time, $new_booking_time);
+            $scheduleCheck->execute();
+            $hasSchedule = $scheduleCheck->get_result()->fetch_assoc();
+            
+            if ($hasSchedule['count'] == 0) {
+                $_SESSION['error_message'] = "❌ Cannot reschedule: Tutor is not available on " . date('l', strtotime($new_booking_date)) . " at " . date('g:i A', strtotime($new_booking_time)) . ". Please check tutor's availability schedule.";
+                header("Location: admin_disputes.php");
+                exit();
+            }
+            
+            // SECOND: Check if tutor has any conflicting booking at this time
+            $conflictCheck = $conn->prepare("
+                SELECT COUNT(*) as count 
+                FROM bookings 
+                WHERE tutor_id = ? 
+                AND booking_date = ? 
+                AND booking_time = ?
+                AND status NOT IN ('cancelled', 'rejected')
+                AND id != ?
+            ");
+            $conflictCheck->bind_param("issi", $dispute['tutor_id'], $new_booking_date, $new_booking_time, $booking_id);
+            $conflictCheck->execute();
+            $hasConflict = $conflictCheck->get_result()->fetch_assoc();
+            
+            if ($hasConflict['count'] > 0) {
+                $_SESSION['error_message'] = "❌ Cannot reschedule: Tutor already has a booking at " . date('g:i A', strtotime($new_booking_time)) . " on " . date('d M Y', strtotime($new_booking_date)) . ". Please choose a different time.";
+                header("Location: admin_disputes.php");
+                exit();
+            }
+            
+            // Reschedule booking
+            $updateBooking = $conn->prepare("UPDATE bookings SET booking_date = ?, booking_time = ?, status = 'confirmed' WHERE id = ?");
+            $updateBooking->bind_param("ssi", $new_booking_date, $new_booking_time, $booking_id);
+            
+            if ($updateBooking->execute()) {
+                // Send reschedule confirmation emails with old and new times
+                $studentEmailSent = sendRescheduleEmail($student_email, $student_name, $tutor_name, $new_booking_date, $new_booking_time, $dispute);
+                $tutorEmailSent = sendTutorRescheduleEmail($tutor_email, $tutor_name, $student_name, $new_booking_date, $new_booking_time, $dispute);
+                
+                $resolution_detail = "Session rescheduled from " . date('d M Y', strtotime($dispute['booking_date'])) . " at " . date('g:i A', strtotime($dispute['booking_time'])) . " to " . date('d M Y', strtotime($new_booking_date)) . " at " . date('g:i A', strtotime($new_booking_time));
+                
+                if ($studentEmailSent && $tutorEmailSent) {
+                    $_SESSION['success_message'] = "✓ Dispute resolved: Session rescheduled. Email notifications sent to both parties.";
+                } else {
+                    $_SESSION['warning_message'] = "⚠️ Session rescheduled but some emails could not be sent. Please check SMTP settings.";
+                }
+            } else {
+                $_SESSION['error_message'] = "❌ Failed to reschedule session. Please try again.";
+                header("Location: admin_disputes.php");
+                exit();
+            }
             
         } elseif ($action === 'complete') {
             // Confirm existing booking
             $updateBooking = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?");
             $updateBooking->bind_param("i", $booking_id);
-            $updateBooking->execute();
             
-            // Send confirmation emails
-            sendBookingConfirmedEmail($student_email, $student_name, $tutor_name, $dispute['booking_date'], $dispute['booking_time'], $dispute['language']);
-            sendTutorBookingConfirmedEmail($tutor_email, $tutor_name, $student_name, $dispute['booking_date'], $dispute['booking_time'], $dispute['language']);
-            
-            $resolution_detail = "Booking confirmed as originally scheduled.";
+            if ($updateBooking->execute()) {
+                // Send confirmation emails
+                $studentEmailSent = sendBookingConfirmedEmail($student_email, $student_name, $tutor_name, $dispute['booking_date'], $dispute['booking_time'], $dispute['language']);
+                $tutorEmailSent = sendTutorBookingConfirmedEmail($tutor_email, $tutor_name, $student_name, $dispute['booking_date'], $dispute['booking_time'], $dispute['language']);
+                
+                $resolution_detail = "Booking confirmed as originally scheduled.";
+                
+                if ($studentEmailSent && $tutorEmailSent) {
+                    $_SESSION['success_message'] = "✓ Booking confirmed. Email notifications sent to both parties.";
+                } else {
+                    $_SESSION['warning_message'] = "⚠️ Booking confirmed but some emails could not be sent.";
+                }
+            } else {
+                $_SESSION['error_message'] = "❌ Failed to confirm booking.";
+            }
             
         } elseif ($action === 'resolve') {
             // Just mark dispute as resolved (for minor issues like wrong_materials)
             $resolution_detail = "Issue resolved between student and tutor.";
             
-            // Send resolution notification emails
-            sendIssueResolvedEmail($student_email, $student_name, $tutor_name, $dispute);
-            sendTutorIssueResolvedEmail($tutor_email, $tutor_name, $student_name, $dispute);
+            if ($dispute['issue_type'] === 'wrong_materials') {
+                sendIssueResolvedEmail($student_email, $student_name, $tutor_name, $dispute);
+                sendTutorIssueResolvedEmail($tutor_email, $tutor_name, $student_name, $dispute);
+            }
+            
         } elseif ($action === 'reject') {
-    // Reject the dispute based on type
-    $resolution_detail = "Dispute rejected by admin. Reason: " . $resolution_note;
-    
-    if ($dispute['dispute_type'] === 'payment') {
-        // For payment disputes: Cancel booking and mark payment as rejected
-        $updateBooking = $conn->prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = 'Payment dispute rejected - student must pay correct amount', cancelled_by = 'admin' WHERE id = ?");
-        $updateBooking->bind_param("i", $booking_id);
-        $updateBooking->execute();
-        
-        // Update payment status to rejected
-        $updatePayment = $conn->prepare("UPDATE payments SET status = 'rejected', admin_notes = CONCAT(IFNULL(admin_notes, ''), ' Dispute rejected: ', ?) WHERE id = ?");
-        $updatePayment->bind_param("si", $resolution_note, $dispute['payment_id']);
-        $updatePayment->execute();
-        
-        $resolution_detail = "Payment dispute rejected. Booking cancelled. Student must make correct payment.";
-        
-    } else {
-        // For booking disputes: Keep booking as confirmed
-        $updateBooking = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?");
-        $updateBooking->bind_param("i", $booking_id);
-        $updateBooking->execute();
-        
-        $resolution_detail = "Booking dispute rejected. Session will proceed as scheduled.";
-    }
-    
-    // Send rejection notification emails
-    sendDisputeRejectedEmail($student_email, $student_name, $tutor_name, $dispute, $resolution_note, $dispute['dispute_type']);
-    sendTutorDisputeRejectedEmail($tutor_email, $tutor_name, $student_name, $dispute, $resolution_note, $dispute['dispute_type']);
-}
+            // Reject the dispute based on type
+            $resolution_detail = "Dispute rejected by admin. Reason: " . $resolution_note;
+            
+            if ($dispute['dispute_type'] === 'payment') {
+                // For payment disputes: Cancel booking and mark payment as rejected
+                $updateBooking = $conn->prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = 'Payment dispute rejected - student must pay correct amount', cancelled_by = 'admin' WHERE id = ?");
+                $updateBooking->bind_param("i", $booking_id);
+                $updateBooking->execute();
+                
+                // Update payment status to rejected
+                $updatePayment = $conn->prepare("UPDATE payments SET status = 'rejected', admin_notes = CONCAT(IFNULL(admin_notes, ''), ' Dispute rejected: ', ?) WHERE id = ?");
+                $updatePayment->bind_param("si", $resolution_note, $dispute['payment_id']);
+                $updatePayment->execute();
+                
+                $resolution_detail = "Payment dispute rejected. Booking cancelled. Student must make correct payment.";
+                
+            } else {
+                // For booking disputes: Keep booking as confirmed
+                $updateBooking = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?");
+                $updateBooking->bind_param("i", $booking_id);
+                $updateBooking->execute();
+                
+                $resolution_detail = "Booking dispute rejected. Session will proceed as scheduled.";
+            }
+            
+            // Send rejection notification emails
+            sendDisputeRejectedEmail($student_email, $student_name, $tutor_name, $dispute, $resolution_note, $dispute['dispute_type']);
+            sendTutorDisputeRejectedEmail($tutor_email, $tutor_name, $student_name, $dispute, $resolution_note, $dispute['dispute_type']);
+        }
         
         // Update dispute status
         $updateStmt = $conn->prepare("UPDATE disputes SET status = 'resolved', resolution_note = CONCAT(?, ' ', ?), resolved_by = ?, resolved_at = NOW() WHERE id = ?");
@@ -560,10 +698,15 @@ function sendTutorRefundNotificationEmail($to, $name, $dispute, $amount) {
         error_log("Tutor refund email failed: " . $e->getMessage());
     }
 }
-
 function sendRescheduleEmail($to, $name, $tutor_name, $new_date, $new_time, $dispute) {
     $mail = new PHPMailer(true);
     $subject = "Session Rescheduled - Kyoshi";
+    
+    // Format dates and times
+    $oldDate = date('d F Y', strtotime($dispute['booking_date']));
+    $oldTime = date('g:i A', strtotime($dispute['booking_time']));
+    $newDateFormatted = date('d F Y', strtotime($new_date));
+    $newTimeFormatted = date('g:i A', strtotime($new_time));
     
     $body = "
     <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
@@ -574,10 +717,19 @@ function sendRescheduleEmail($to, $name, $tutor_name, $new_date, $new_time, $dis
         
         <p>Dear <strong>" . htmlspecialchars($name) . "</strong>,</p>
         
-        <p>Your session has been rescheduled to:</p>
+        <p>Your session has been rescheduled due to a dispute resolution.</p>
         
-        <div style='background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: center;'>
-            <p style='font-size: 18px; font-weight: bold;'>" . date('d F Y', strtotime($new_date)) . " at " . date('g:i A', strtotime($new_time)) . "</p>
+        <div style='background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;'>
+            <p><strong>❌ Original Session:</strong></p>
+            <p style='font-size: 16px; font-weight: bold; color: #dc2626;'>$oldDate at $oldTime</p>
+            
+            <hr style='margin: 10px 0; border-color: #ddd;'>
+            
+            <p><strong>✅ New Session Time:</strong></p>
+            <p style='font-size: 18px; font-weight: bold; color: #059669;'>$newDateFormatted at $newTimeFormatted</p>
+        </div>
+        
+        <div style='background: #e8f0fe; padding: 15px; border-radius: 8px; margin: 15px 0;'>
             <p><strong>Tutor:</strong> " . htmlspecialchars($tutor_name) . "</p>
             <p><strong>Language:</strong> " . htmlspecialchars($dispute['language']) . "</p>
             <p><strong>Learning Mode:</strong> " . ($dispute['learning_mode'] === 'online' ? 'Online' : 'Face to Face') . "</p>
@@ -602,11 +754,16 @@ function sendRescheduleEmail($to, $name, $tutor_name, $new_date, $new_time, $dis
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body = $body;
+        
         $mail->send();
+        error_log("Reschedule email sent successfully to: $to");
+        return true;
     } catch (Exception $e) {
-        error_log("Reschedule email failed: " . $e->getMessage());
+        error_log("Reschedule email FAILED to: $to - Error: " . $mail->ErrorInfo);
+        return false;
     }
-}function sendDisputeRejectedEmail($to, $name, $tutor_name, $dispute, $reason, $dispute_type) {
+}
+    function sendDisputeRejectedEmail($to, $name, $tutor_name, $dispute, $reason, $dispute_type) {
     $mail = new PHPMailer(true);
     $subject = "Dispute Review Complete - Kyoshi";
     
@@ -735,9 +892,16 @@ function sendTutorDisputeRejectedEmail($to, $name, $student_name, $dispute, $rea
         error_log("Tutor dispute rejected email failed: " . $e->getMessage());
     }
 }
+
 function sendTutorRescheduleEmail($to, $name, $student_name, $new_date, $new_time, $dispute) {
     $mail = new PHPMailer(true);
     $subject = "Session Rescheduled - Student Notified - Kyoshi";
+    
+    // Format dates and times
+    $oldDate = date('d F Y', strtotime($dispute['booking_date']));
+    $oldTime = date('g:i A', strtotime($dispute['booking_time']));
+    $newDateFormatted = date('d F Y', strtotime($new_date));
+    $newTimeFormatted = date('g:i A', strtotime($new_time));
     
     $body = "
     <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
@@ -748,11 +912,21 @@ function sendTutorRescheduleEmail($to, $name, $student_name, $new_date, $new_tim
         
         <p>Dear <strong>" . htmlspecialchars($name) . "</strong>,</p>
         
-        <p>The session with <strong>" . htmlspecialchars($student_name) . "</strong> has been rescheduled to:</p>
+        <p>The session with <strong>" . htmlspecialchars($student_name) . "</strong> has been rescheduled due to a dispute resolution.</p>
         
-        <div style='background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: center;'>
-            <p style='font-size: 18px; font-weight: bold;'>" . date('d F Y', strtotime($new_date)) . " at " . date('g:i A', strtotime($new_time)) . "</p>
+        <div style='background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;'>
+            <p><strong>Original Session:</strong></p>
+            <p style='font-size: 16px; font-weight: bold; color: #dc2626;'>$oldDate at $oldTime</p>
+            
+            <hr style='margin: 10px 0; border-color: #ddd;'>
+            
+            <p><strong>New Session Time:</strong></p>
+            <p style='font-size: 18px; font-weight: bold; color: #059669;'>$newDateFormatted at $newTimeFormatted</p>
+        </div>
+        
+        <div style='background: #e8f0fe; padding: 15px; border-radius: 8px; margin: 15px 0;'>
             <p><strong>Language:</strong> " . htmlspecialchars($dispute['language']) . "</p>
+            <p><strong>Mode:</strong> " . ($dispute['learning_mode'] === 'online' ? 'Online' : 'Face to Face') . "</p>
         </div>
         
         <p>Please prepare for the session accordingly. The student has been notified.</p>
@@ -774,15 +948,21 @@ function sendTutorRescheduleEmail($to, $name, $student_name, $new_date, $new_tim
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body = $body;
+        
         $mail->send();
+        error_log("Tutor reschedule email sent successfully to: $to");
+        return true;
     } catch (Exception $e) {
-        error_log("Tutor reschedule email failed: " . $e->getMessage());
+        error_log("Tutor reschedule email FAILED to: $to - Error: " . $mail->ErrorInfo);
+        return false;
     }
 }
-
 function sendBookingConfirmedEmail($to, $name, $tutor_name, $date, $time, $language) {
     $mail = new PHPMailer(true);
     $subject = "Booking Confirmed - Kyoshi";
+    
+    $formattedDate = date('d F Y', strtotime($date));
+    $formattedTime = date('g:i A', strtotime($time));
     
     $body = "
     <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
@@ -796,7 +976,7 @@ function sendBookingConfirmedEmail($to, $name, $tutor_name, $date, $time, $langu
         <p>Your session has been confirmed for:</p>
         
         <div style='background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: center;'>
-            <p style='font-size: 18px; font-weight: bold;'>" . date('d F Y', strtotime($date)) . " at " . date('g:i A', strtotime($time)) . "</p>
+            <p style='font-size: 18px; font-weight: bold;'>$formattedDate at $formattedTime</p>
             <p><strong>Tutor:</strong> " . htmlspecialchars($tutor_name) . "</p>
             <p><strong>Language:</strong> " . htmlspecialchars($language) . "</p>
         </div>
@@ -820,15 +1000,21 @@ function sendBookingConfirmedEmail($to, $name, $tutor_name, $date, $time, $langu
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body = $body;
+        
         $mail->send();
+        error_log("Booking confirmed email sent to student: $to");
+        return true;
     } catch (Exception $e) {
-        error_log("Booking confirmed email failed: " . $e->getMessage());
+        error_log("Booking confirmed email FAILED to: $to - Error: " . $mail->ErrorInfo);
+        return false;
     }
 }
-
 function sendTutorBookingConfirmedEmail($to, $name, $student_name, $date, $time, $language) {
     $mail = new PHPMailer(true);
     $subject = "Booking Confirmed - Student Notified - Kyoshi";
+    
+    $formattedDate = date('d F Y', strtotime($date));
+    $formattedTime = date('g:i A', strtotime($time));
     
     $body = "
     <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
@@ -842,7 +1028,7 @@ function sendTutorBookingConfirmedEmail($to, $name, $student_name, $date, $time,
         <p>The session with <strong>" . htmlspecialchars($student_name) . "</strong> has been confirmed for:</p>
         
         <div style='background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: center;'>
-            <p style='font-size: 18px; font-weight: bold;'>" . date('d F Y', strtotime($date)) . " at " . date('g:i A', strtotime($time)) . "</p>
+            <p style='font-size: 18px; font-weight: bold;'>$formattedDate at $formattedTime</p>
             <p><strong>Language:</strong> " . htmlspecialchars($language) . "</p>
         </div>
         
@@ -865,9 +1051,13 @@ function sendTutorBookingConfirmedEmail($to, $name, $student_name, $date, $time,
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body = $body;
+        
         $mail->send();
+        error_log("Booking confirmed email sent to tutor: $to");
+        return true;
     } catch (Exception $e) {
-        error_log("Tutor booking confirmed email failed: " . $e->getMessage());
+        error_log("Tutor booking confirmed email FAILED to: $to - Error: " . $mail->ErrorInfo);
+        return false;
     }
 }
 
@@ -976,12 +1166,15 @@ function sendDisputeResolvedNotification($conn, $dispute, $resolution_detail) {
 $filter_status = $_GET['status'] ?? 'pending';
 $filter_type = $_GET['type'] ?? 'all';
 $search = $_GET['search'] ?? '';
+
 $sql = "SELECT d.*, 
         s.fullname as student_name, s.email as student_email, s.phone as student_phone,
         t.fullname as tutor_name, t.email as tutor_email,
         b.language, b.booking_date, b.booking_time, b.total_amount, b.learning_mode,
         p.amount as payment_amount, p.payment_method, p.receipt_number,
+        p.refund_receipt_number,
         d.resolution_type,
+        d.resolution_requested,
         d.preferred_date,
         d.preferred_time,
         d.bank_name,
@@ -996,8 +1189,14 @@ $sql = "SELECT d.*,
         JOIN users t ON d.tutor_id = t.id
         JOIN bookings b ON d.booking_id = b.id
         LEFT JOIN payments p ON d.payment_id = p.id
-        WHERE 1=1";
-
+        WHERE 1=1
+        AND (
+            -- For wrong_materials, only show if older than 2 days OR escalated OR resolved
+            (d.issue_type = 'wrong_materials' AND (d.created_at < DATE_SUB(NOW(), INTERVAL 2 DAY) OR d.status IN ('escalated', 'resolved')))
+            OR
+            -- For all other issues, show normally
+            d.issue_type != 'wrong_materials'
+        )";
 if ($filter_status !== 'all') {
     $sql .= " AND d.status = '$filter_status'";
 }
@@ -1013,7 +1212,17 @@ $sql .= " ORDER BY d.created_at DESC";
 $disputes = $conn->query($sql);
 
 // Count statistics
-$pending_count = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'pending'")->fetch_assoc()['count'];
+// Count pending disputes (excluding wrong_materials that are less than 2 days old)
+$pending_count_query = $conn->query("
+    SELECT COUNT(*) as count 
+    FROM disputes 
+    WHERE status = 'pending'
+    AND NOT (
+        issue_type = 'wrong_materials' 
+        AND created_at >= DATE_SUB(NOW(), INTERVAL 2 DAY)
+    )
+");
+$pending_count = $pending_count_query->fetch_assoc()['count'];
 $resolved_count = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'resolved'")->fetch_assoc()['count'];
 $escalated_count = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'escalated'")->fetch_assoc()['count'];
 
@@ -1023,32 +1232,32 @@ function e($value) {
 
 function getSeverityBadge($severity) {
     if ($severity === 'serious') {
-        return '<span class="badge-critical">⚠️ CRITICAL</span>';
+        return '<span class="badge-critical">CRITICAL</span>';
     }
-    return '<span class="badge-minor">📝 MINOR</span>';
+    return '<span class="badge-minor">MINOR</span>';
 }
 
 function getStatusBadge($status) {
     switch($status) {
         case 'pending': return '<span class="badge-pending">PENDING</span>';
         case 'resolved': return '<span class="badge-resolved">RESOLVED</span>';
-        case 'escalated': return '<span class="badge-escalated">🔴 ESCALATED</span>';
-        case 'rejected': return '<span class="badge-rejected">❌ REJECTED</span>';
+        case 'escalated': return '<span class="badge-escalated">ESCALATED</span>';
+        case 'rejected': return '<span class="badge-rejected">REJECTED</span>';
         default: return '<span class="badge-pending">PENDING</span>';
     }
 }
 
 function getDisputeTypeLabel($type, $issue_type) {
     if ($type === 'payment') {
-        return '<span class="badge-payment">💰 Payment Dispute</span>';
+        return '<span class="badge-payment">💰Payment Dispute</span>';
     }
     if ($issue_type === 'tutor_no_show') {
-        return '<span class="badge-no-show">🚫 Tutor No-Show</span>';
+        return '<span class="badge-no-show">🚫Tutor No-Show</span>';
     }
     if ($issue_type === 'wrong_materials') {
-        return '<span class="badge-materials">📚 Wrong Materials</span>';
+        return '<span class="badge-materials">📚Wrong Materials</span>';
     }
-    return '<span class="badge-booking">📅 Booking Dispute</span>';
+    return '<span class="badge-booking">📅Booking Dispute</span>';
 }
 ?>
 
@@ -1056,13 +1265,155 @@ function getDisputeTypeLabel($type, $issue_type) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Disputes Management · Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/astyle.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+        /* Refund Receipt Modal Styles */
+        /* Fix notification to appear above modal */
+.toast, 
+#toast,
+.swal2-container,
+.alert-success {
+    z-index: 10000 !important;
+    position: fixed !important;
+}
+
+/* Make sure modal doesn't block notifications */
+.modal-overlay {
+    z-index: 9999 !important;
+}
+
+/* Ensure notifications are above everything */
+.toast.show {
+    z-index: 10001 !important;
+}
+
+/* For SweetAlert2 */
+.swal2-popup {
+    z-index: 10002 !important;
+}
+#refundReceiptModal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    visibility: hidden;
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+#refundReceiptModal.active {
+    visibility: visible;
+    opacity: 1;
+}
+
+#refundReceiptModal .modal-container {
+    background: white;
+    border-radius: 24px;
+    width: 90%;
+    max-width: 560px;
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+
+#refundReceiptModal .modal-body {
+    flex: 1;
+    overflow-y: auto;
+}
+
+#refundReceiptModal .modal-buttons {
+    padding: 16px 24px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+#refundReceiptModal .btn-cancel {
+    background: #e2e8f0;
+    color: #475569;
+    padding: 10px 20px;
+    border-radius: 40px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#refundReceiptModal .btn-save {
+    background: #E75A9B;
+    color: white;
+    padding: 10px 24px;
+    border-radius: 40px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#refundReceiptModal .btn-cancel:hover,
+#refundReceiptModal .btn-save:hover {
+    transform: translateY(-2px);
+    transition: all 0.2s;
+}
+
+#refundReceiptModal .modal-close {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: rgba(255,255,255,0.7);
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+#refundReceiptModal .modal-close:hover {
+    background: rgba(255,255,255,0.3);
+    color: white;
+}
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* Availability check styling */
+.availability-status {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.availability-status.available {
+    background: #d1fae5;
+    border: 1px solid #059669;
+    color: #065f46;
+}
+.availability-status.unavailable {
+    background: #fee2e2;
+    border: 1px solid #dc2626;
+    color: #991b1b;
+}
+.availability-status i {
+    font-size: 14px;
+}
         body {
             font-family: "Montserrat", "Open Sans", sans-serif;
             background: url('../assets/img/background3.jpg') no-repeat center top;
@@ -1532,7 +1883,7 @@ function getDisputeTypeLabel($type, $issue_type) {
         <div class="brand-wrapper">
             <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="brand-icon">
             <div class="brand-title">
-                <h1>Kyoshi</h1>
+                <h1>KYOSHI</h1>
                 <span class="admin-space-text">Admin Space</span>
             </div>
         </div>
@@ -1573,24 +1924,55 @@ function getDisputeTypeLabel($type, $issue_type) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
-        <div class="page-title">
-            <h1>Disputes Management</h1>
-        </div>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
+            <div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
+    </div>
+    
+    <!-- Desktop Title with Back Button Beside It -->
+    <div class="page-title">
+        <div class="title-with-back">
+            <a href="admin_student_actions.php" class="back-btn-desktop">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back</span>
+            </a>
+            <h1>Manage Dispute</h1>
         </div>
     </div>
+    
+    <div class="relative">
+        <div class="admin-profile" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin">
+            <span><?= e($displayName) ?></span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        
+        <!-- Mobile Profile Button -->
+        <div class="mobile-profile-btn" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+        </div>
+        
+        <div class="dropdown" id="profileDropdown">
+            <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+            <hr>
+            <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+        </div>
+    </div>
+</div>
+
+<!-- Mobile Page Header with Arrow Only (no text) -->
+<div class="mobile-page-header" style="margin-top: 20px;">
+    <div class="mobile-title-with-back">
+        <a href="admin_student_actions.php" class="mobile-back-arrow">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="mobile-page-title">Manage Dispute</h1>
+    </div>
+</div>
 
     <?php if (isset($_SESSION['success_message'])): ?>
         <div class="alert-success" id="successAlert">
@@ -1649,7 +2031,7 @@ function getDisputeTypeLabel($type, $issue_type) {
             <option value="payment" <?= $filter_type == 'payment' ? 'selected' : '' ?>>Payment Disputes</option>
         </select>
         <button class="btn-filter" onclick="applyFilters()"><i class="bi bi-search"></i> Apply</button>
-        <a href="admin_disputes.php" class="btn-reset"><i class="bi bi-x-circle"></i> Reset</a>
+        <a href="admin_disputes.php" class="btn-reset" style="text-align:center;"><i class="bi bi-x-circle"></i> Reset</a>
     </div>
 
     <!-- Disputes Table -->
@@ -1669,7 +2051,7 @@ function getDisputeTypeLabel($type, $issue_type) {
                         <th>Issue</th>
                         <th>Severity</th>
                         <th>Status</th>
-                        <th>Reported</th>
+                        <th>Reported on</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -1701,24 +2083,28 @@ function getDisputeTypeLabel($type, $issue_type) {
                                     <i class="bi bi-check-lg"></i> Resolve
                                 </button>
                             <?php endif; ?>
-                            <?php if ($dispute['status'] === 'resolved' && $dispute['resolution_type'] === 'refund'): ?>
-                            <button class="btn-view" onclick='viewRefundReceipt(
-                                <?= $dispute['id'] ?>,
-                                "RFD-<?= date('Ymd') ?>-<?= str_pad($dispute['id'], 6, '0', STR_PAD_LEFT) ?>",
-                                <?= $dispute['total_amount'] ?>,
-                                "<?= e(addslashes($dispute['student_name'])) ?>",
-                                "<?= e(addslashes($dispute['student_email'])) ?>",
-                                "<?= e(addslashes($dispute['tutor_name'])) ?>",
-                                "<?= e(addslashes($dispute['tutor_email'])) ?>",
-                                "<?= e(addslashes($dispute['language'])) ?>",
-                                "<?= $dispute['booking_date'] ?>",
-                                "<?= $dispute['booking_time'] ?>",
-                                "<?= e(addslashes($dispute['issue_type'])) ?>",
-                                "<?= date('d M Y, g:i A', strtotime($dispute['resolved_at'])) ?>"
-                            )'>
-                                <i class="bi bi-receipt"></i> View Receipt
-                            </button>
-                        <?php endif; ?>
+                            <?php 
+$isRefundResolved = ($dispute['status'] === 'resolved') && 
+                    (($dispute['resolution_type'] === 'refund') || 
+                     ($dispute['resolution_type'] === 'admin' && strpos($dispute['resolution_note'] ?? '', 'Refund') !== false));
+if ($isRefundResolved): 
+?>
+<button class="btn-view view-receipt-btn" 
+    data-dispute-id="<?= $dispute['id'] ?>"
+    data-receipt-no="RFD-<?= date('Ymd') ?>-<?= str_pad($dispute['id'], 6, '0', STR_PAD_LEFT) ?>"
+    data-amount="<?= (float)($dispute['total_amount'] ?? 0) ?>"
+    data-student-name="<?= htmlspecialchars($dispute['student_name'] ?? '', ENT_QUOTES) ?>"
+    data-student-email="<?= htmlspecialchars($dispute['student_email'] ?? '', ENT_QUOTES) ?>"
+    data-tutor-name="<?= htmlspecialchars($dispute['tutor_name'] ?? '', ENT_QUOTES) ?>"
+    data-tutor-email="<?= htmlspecialchars($dispute['tutor_email'] ?? '', ENT_QUOTES) ?>"
+    data-language="<?= htmlspecialchars($dispute['language'] ?? '', ENT_QUOTES) ?>"
+    data-booking-date="<?= $dispute['booking_date'] ?? '' ?>"
+    data-booking-time="<?= $dispute['booking_time'] ?? '' ?>"
+    data-issue-type="<?= htmlspecialchars($dispute['issue_type'] ?? '', ENT_QUOTES) ?>"
+    data-processed-at="<?= date('d M Y, g:i A', strtotime($dispute['resolved_at'] ?? 'now')) ?>">
+    <i class="bi bi-receipt"></i> View Receipt
+</button>
+<?php endif; ?>
                         </td>
                     </tr>
                     <?php endwhile; ?>
@@ -1797,18 +2183,52 @@ function getDisputeTypeLabel($type, $issue_type) {
 let currentDispute = null;
 
 function toggleDropdown() {
-    const dd = document.getElementById('profileDropdown');
-    if (dd) {
-        dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+    const dropdown = document.getElementById('profileDropdown');
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
     }
 }
 
 // Close dropdown when clicking outside
 document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
-    const profileBtn = document.querySelector('.admin-profile');
-    if (dropdown && profileBtn && !profileBtn.contains(e.target) && !dropdown.contains(e.target)) {
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
         dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
+});
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
     }
 });
 
@@ -1881,11 +2301,11 @@ function applyFilters() {
     // Determine resolution type text
     let resolutionTypeText = '';
     if (dispute.dispute_type === 'payment') {
-        resolutionTypeText = '👑 Admin Review Required (Payment Dispute)';
+        resolutionTypeText = 'Admin Review Required (Payment Dispute)';
     } else if (dispute.resolution_type === 'admin' || dispute.severity === 'serious') {
-        resolutionTypeText = '👑 Admin Review Required';
+        resolutionTypeText = 'Admin Review Required';
     } else {
-        resolutionTypeText = '🤝 Student/Tutor Resolution';
+        resolutionTypeText = 'Student/Tutor Resolution';
     }
     
     // Student's proof
@@ -1963,7 +2383,7 @@ function applyFilters() {
         <div id="tutorProofContainer"></div>
         
         ${dispute.resolution_note ? `
-        <div style="background: #d4edda; padding: 15px; border-radius: 12px;">
+        <div style="background: #e8f0fe; padding: 15px; border-radius: 12px;">
             <p><strong>Resolution Notes:</strong></p>
             <p>${dispute.resolution_note}</p>
         </div>
@@ -1973,65 +2393,88 @@ function applyFilters() {
     document.getElementById('viewModalBody').innerHTML = html;
     document.getElementById('viewModal').classList.add('active');
     
-    // Fetch meeting logs for online sessions
-    if (dispute.learning_mode === 'online' && dispute.issue_type === 'tutor_no_show') {
-        fetch(`get_meeting_logs.php?booking_id=${dispute.booking_id}`)
-            .then(response => response.json())
-            .then(data => {
-                let logsHtml = '<div class="form-group"><label><i class="bi bi-camera-video"></i> Meeting Attendance Logs:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;">';
-                if (data.logs && data.logs.length > 0) {
-                    data.logs.forEach(log => {
-                        logsHtml += `
-                            <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
-                                <strong>${log.participant_role === 'tutor' ? '🎓 Tutor' : '👤 Student'}</strong><br>
-                                Joined: ${log.join_time}<br>
-                                ${log.leave_time ? `Left: ${log.leave_time} (${log.duration_minutes} min)` : '<span style="color: #f59e0b;">Still in meeting</span>'}
-                            </div>
-                        `;
-                    });
-                } else {
-                    logsHtml += '<p>No meeting activity recorded.</p>';
-                }
-                logsHtml += '</div></div>';
-                document.getElementById('meetingLogsContainer').innerHTML = logsHtml;
-            });
-    }
+// Show meeting logs based on issue type and learning mode
+if (dispute.issue_type === 'wrong_materials') {
+    // Wrong materials - no logs needed
+    document.getElementById('meetingLogsContainer').innerHTML = `
+        <div class="form-group">
+            <label><i class="bi bi-file-text"></i> Wrong Materials Issue:</label>
+            <div style="background: #fef3c7; padding: 12px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                <i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i>
+                This dispute is about <strong>wrong materials provided</strong>. 
+                No attendance logs are required for this type of issue.
+                <br><small>The tutor must respond within 2 days or this will be automatically escalated.</small>
+            </div>
+        </div>
+    `;
+    document.getElementById('tutorProofContainer').innerHTML = '';
     
-    // Fetch tutor's attendance proof for face-to-face sessions
-    if (dispute.learning_mode === 'face_to_face') {
-        fetch(`get_tutor_proof.php?booking_id=${dispute.booking_id}`)
-            .then(response => response.json())
-            .then(data => {
-                let tutorProofHtml = '';
-                if (data.has_proof) {
-                    tutorProofHtml = `
-                        <div class="form-group" style="margin-top: 15px;">
-                            <label><i class="bi bi-camera-fill"></i> Tutor's Attendance Proof:</label>
-                            <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; border-left: 4px solid #059669;">
-                                <a href="${data.proof_path}" target="_blank">
-                                    <img src="${data.proof_path}" style="max-width: 100%; max-height: 150px; border-radius: 8px; border: 1px solid #ddd;">
-                                </a>
-                                <p style="color: #059669; margin-top: 5px;">
-                                    <i class="bi bi-check-circle"></i> Tutor uploaded proof at ${data.uploaded_at}
-                                </p>
-                            </div>
+} else if (dispute.learning_mode === 'online' && dispute.issue_type === 'tutor_no_show') {
+    // Online sessions - show meeting logs
+    fetch(`get_meeting_logs.php?booking_id=${dispute.booking_id}`)
+        .then(response => response.json())
+        .then(data => {
+            let logsHtml = '<div class="form-group"><label><i class="bi bi-camera-video"></i> Meeting Attendance Logs:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;">';
+            if (data.logs && data.logs.length > 0) {
+                logsHtml += '<div style="margin-bottom: 10px;"><strong>Session Attendance Record:</strong></div>';
+                data.logs.forEach(log => {
+                    logsHtml += `
+                        <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
+                            <strong>${log.participant_role === 'tutor' ? '🎓 Tutor' : '👤 Student'}</strong><br>
+                            Joined: ${log.join_time}<br>
+                            ${log.leave_time ? `Left: ${log.leave_time} (${log.duration_minutes} min)` : '<span style="color: #f59e0b;">Still in meeting</span>'}
                         </div>
                     `;
-                } else {
-                    tutorProofHtml = `
-                        <div class="form-group" style="margin-top: 15px;">
-                            <label><i class="bi bi-camera-off"></i> Tutor's Attendance Proof:</label>
-                            <div style="background: #fee2e2; padding: 12px; border-radius: 8px; border-left: 4px solid #dc2626;">
-                                <i class="bi bi-x-circle" style="color: #dc2626;"></i>
-                                <strong>No attendance proof uploaded by tutor</strong>
-                                <p style="margin-top: 5px; color: #dc2626;">Tutor did not upload proof of attendance.</p>
-                            </div>
-                        </div>
-                    `;
-                }
-                document.getElementById('tutorProofContainer').innerHTML = tutorProofHtml;
-            });
-    }
+                });
+            } else {
+                logsHtml += '<div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-clock-history"></i> No meeting logs available for this session.</div>';
+            }
+            logsHtml += '</div></div>';
+            document.getElementById('meetingLogsContainer').innerHTML = logsHtml;
+        })
+        .catch(error => {
+            document.getElementById('meetingLogsContainer').innerHTML = '<div class="form-group"><label><i class="bi bi-camera-video"></i> Meeting Attendance Logs:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;"><div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-exclamation-triangle"></i> Could not load meeting logs.</div></div></div>';
+        });
+    
+    // For online sessions, tutor proof is not needed
+    document.getElementById('tutorProofContainer').innerHTML = '';
+    
+} else if (dispute.learning_mode === 'face_to_face' && dispute.issue_type !== 'wrong_materials') {
+    // Face-to-face sessions - show tutor proof
+    fetch(`get_tutor_proof.php?booking_id=${dispute.booking_id}`)
+        .then(response => response.json())
+        .then(data => {
+            let tutorProofHtml = '<div class="form-group"><label><i class="bi bi-camera-fill"></i> Tutor\'s Attendance Proof:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;">';
+            if (data.has_proof) {
+                tutorProofHtml += `
+                    <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; border-left: 4px solid #059669;">
+                        <a href="${data.proof_path}" target="_blank">
+                            <img src="${data.proof_path}" style="max-width: 100%; max-height: 150px; border-radius: 8px; border: 1px solid #ddd;">
+                        </a>
+                        <p style="color: #059669; margin-top: 5px;">
+                            <i class="bi bi-check-circle"></i> Tutor uploaded proof at ${data.uploaded_at}
+                        </p>
+                    </div>
+                `;
+            } else {
+                tutorProofHtml += '<div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-camera-off"></i> No attendance proof uploaded by tutor for this session.</div>';
+            }
+            tutorProofHtml += '</div></div>';
+            document.getElementById('tutorProofContainer').innerHTML = tutorProofHtml;
+        })
+        .catch(error => {
+            document.getElementById('tutorProofContainer').innerHTML = '<div class="form-group"><label><i class="bi bi-camera-fill"></i> Tutor\'s Attendance Proof:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;"><div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-exclamation-triangle"></i> Could not load attendance proof.</div></div></div>';
+        });
+    
+    document.getElementById('meetingLogsContainer').innerHTML = '';
+    
+} else {
+    // Default empty state for both containers
+    document.getElementById('meetingLogsContainer').innerHTML = '';
+    document.getElementById('tutorProofContainer').innerHTML = '';
+}
+    
+    
 }
 // Helper function
 function ucfirst(str) {
@@ -2043,44 +2486,50 @@ function closeViewModal() {
     document.getElementById('viewModal').classList.remove('active');
 }
 function openResolveModal(dispute) {
-    // Add reject button functionality
+        // Add reject button functionality - BUT NOT FOR WRONG MATERIALS
     const rejectBtn = document.getElementById('rejectBtn');
     if (rejectBtn) {
-        rejectBtn.style.display = 'flex';
-        rejectBtn.style.alignItems = 'center';
-        rejectBtn.style.gap = '8px';
-        
-        const newRejectBtn = rejectBtn.cloneNode(true);
-        rejectBtn.parentNode.replaceChild(newRejectBtn, rejectBtn);
-        
-        newRejectBtn.onclick = function() {
-            Swal.fire({
-                title: 'Reject Dispute?',
-                text: dispute.dispute_type === 'payment' ? 'Are you sure you want to reject this payment dispute? The booking will be cancelled.' : 'Are you sure you want to reject this dispute? The session will proceed as scheduled.',
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#dc2626',
-                cancelButtonColor: '#64748b',
-                confirmButtonText: 'Yes, Reject',
-                cancelButtonText: 'Cancel',
-                input: 'textarea',
-                inputPlaceholder: 'Please provide a reason for rejection (optional)...',
-                inputAttributes: {
-                    'aria-label': 'Rejection reason'
-                }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    document.getElementById('resolve_action').value = 'reject';
-                    const reasonTextarea = document.getElementById('resolution_note');
-                    if (result.value) {
-                        reasonTextarea.value = 'REJECTION REASON: ' + result.value;
-                    } else {
-                        reasonTextarea.value = 'REJECTION: No reason provided.';
+        // Only show reject button for payment disputes and tutor_no_show, NOT for wrong_materials
+        if (dispute.dispute_type === 'payment' || dispute.issue_type === 'tutor_no_show') {
+            rejectBtn.style.display = 'flex';
+            rejectBtn.style.alignItems = 'center';
+            rejectBtn.style.gap = '8px';
+            
+            const newRejectBtn = rejectBtn.cloneNode(true);
+            rejectBtn.parentNode.replaceChild(newRejectBtn, rejectBtn);
+            
+            newRejectBtn.onclick = function() {
+                Swal.fire({
+                    title: 'Reject Dispute?',
+                    text: dispute.dispute_type === 'payment' ? 'Are you sure you want to reject this payment dispute? The booking will be cancelled.' : 'Are you sure you want to reject this dispute? The session will proceed as scheduled.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc2626',
+                    cancelButtonColor: '#64748b',
+                    confirmButtonText: 'Yes, Reject',
+                    cancelButtonText: 'Cancel',
+                    input: 'textarea',
+                    inputPlaceholder: 'Please provide a reason for rejection (optional)...',
+                    inputAttributes: {
+                        'aria-label': 'Rejection reason'
                     }
-                    document.getElementById('resolveForm').submit();
-                }
-            });
-        };
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        document.getElementById('resolve_action').value = 'reject';
+                        const reasonTextarea = document.getElementById('resolution_note');
+                        if (result.value) {
+                            reasonTextarea.value = 'REJECTION REASON: ' + result.value;
+                        } else {
+                            reasonTextarea.value = 'REJECTION: No reason provided.';
+                        }
+                        document.getElementById('resolveForm').submit();
+                    }
+                });
+            };
+        } else {
+            // Hide reject button for wrong_materials and other non-refundable disputes
+            rejectBtn.style.display = 'none';
+        }
     }
     
     currentDispute = dispute;
@@ -2172,9 +2621,9 @@ function openResolveModal(dispute) {
     // Show student's requested resolution if found
     if (studentRequest) {
         const resolutionLabels = {
-            'refund': '💰 Full Refund (Student wants money back)',
-            'reschedule': '📅 Reschedule Booking (Student wants different time)',
-            'complete': '✅ Complete Current Booking (Student wants to keep booking)'
+            'refund': 'Full Refund (Student wants money back)',
+            'reschedule': 'Reschedule Booking (Student wants different time)',
+            'complete': 'Complete Current Booking (Student wants to keep booking)'
         };
         summaryHtml += `
             <div style="margin-top: 10px; padding: 10px; background: #e0f2fe; border-radius: 8px; border-left: 4px solid #075985;">
@@ -2424,11 +2873,38 @@ setTimeout(() => {
 }, 5000);
 
 function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEmail, tutorName, tutorEmail, language, bookingDate, bookingTime, issueType, processedAt) {
-    const amountFmt = 'RM ' + parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    const bookingDateFmt = new Date(bookingDate).toLocaleDateString('en-MY', {day:'2-digit', month:'long', year:'numeric'});
-    const bookingTimeFmt = bookingTime;
+    // Parse the amount safely
+    const parsedAmount = parseFloat(amount) || 0;
+    const amountFmt = 'RM ' + parsedAmount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     
-    document.getElementById('refundReceiptContent').innerHTML = `
+    // Parse the booking date safely
+    let bookingDateFmt = '';
+    try {
+        const dateObj = new Date(bookingDate);
+        if (!isNaN(dateObj.getTime())) {
+            bookingDateFmt = dateObj.toLocaleDateString('en-MY', {day:'2-digit', month:'long', year:'numeric'});
+        } else {
+            bookingDateFmt = bookingDate || 'Date not available';
+        }
+    } catch(e) {
+        bookingDateFmt = bookingDate || 'Date not available';
+    }
+    
+    const bookingTimeFmt = bookingTime || 'Time not available';
+    
+    // Format issue type
+    const formattedIssueType = (issueType || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    
+    // Get the modal element
+    const modal = document.getElementById('refundReceiptModal');
+    const contentDiv = document.getElementById('refundReceiptContent');
+    
+    if (!modal || !contentDiv) {
+        console.error('Modal or content div not found');
+        return;
+    }
+    
+    contentDiv.innerHTML = `
         <!-- Success Banner -->
         <div style="background:#d4edda;border:1px solid #28a745;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
             <i class="bi bi-check-circle-fill" style="color:#28a745;font-size:20px;flex-shrink:0;"></i>
@@ -2441,8 +2917,8 @@ function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEma
         <!-- Title + IDs -->
         <div style="text-align:center;margin-bottom:14px;">
             <div style="font-size:1rem;font-weight:800;color:#1d3156;letter-spacing:1px;">REFUND CONFIRMATION</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Refund ID: ${receiptNo}</div>
-            <div style="font-size:11px;color:#94a3b8;">Processed on: ${processedAt}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Refund ID: ${receiptNo || 'N/A'}</div>
+            <div style="font-size:11px;color:#94a3b8;">Processed on: ${processedAt || new Date().toLocaleString()}</div>
         </div>
 
         <hr style="border-color:#E75A9B;margin-bottom:14px;">
@@ -2452,16 +2928,16 @@ function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEma
             <!-- Student Info -->
             <div style="background:#f5f5fa;border-radius:10px;padding:14px;">
                 <div style="font-size:11px;font-weight:700;color:#E75A9B;letter-spacing:1px;margin-bottom:10px;">STUDENT INFORMATION</div>
-                <div style="font-size:11px;margin-bottom:6px;"><span style="color:#94a3b8;font-weight:600;">Name: </span><span style="color:#3c5078;">${studentName}</span></div>
-                <div style="font-size:11px;margin-bottom:6px;word-break:break-all;"><span style="color:#94a3b8;font-weight:600;">Email: </span><span style="color:#3c5078;">${studentEmail}</span></div>
+                <div style="font-size:11px;margin-bottom:6px;"><span style="color:#94a3b8;font-weight:600;">Name: </span><span style="color:#3c5078;">${escapeHtml(studentName) || 'N/A'}</span></div>
+                <div style="font-size:11px;margin-bottom:6px;word-break:break-all;"><span style="color:#94a3b8;font-weight:600;">Email: </span><span style="color:#3c5078;">${escapeHtml(studentEmail) || 'N/A'}</span></div>
                 <div style="font-size:11px;"><span style="color:#94a3b8;font-weight:600;">Status: </span><span style="color:#28a745;font-weight:700;">VERIFIED</span></div>
             </div>
             <!-- Tutor Info -->
             <div style="background:#f5f5fa;border-radius:10px;padding:14px;">
                 <div style="font-size:11px;font-weight:700;color:#E75A9B;letter-spacing:1px;margin-bottom:10px;">TUTOR INFORMATION</div>
-                <div style="font-size:11px;margin-bottom:6px;"><span style="color:#94a3b8;font-weight:600;">Name: </span><span style="color:#3c5078;">${tutorName}</span></div>
-                <div style="font-size:11px;margin-bottom:6px;word-break:break-all;"><span style="color:#94a3b8;font-weight:600;">Email: </span><span style="color:#3c5078;">${tutorEmail}</span></div>
-                <div style="font-size:11px;"><span style="color:#94a3b8;font-weight:600;">Session: </span><span style="color:#3c5078;">${language}</span></div>
+                <div style="font-size:11px;margin-bottom:6px;"><span style="color:#94a3b8;font-weight:600;">Name: </span><span style="color:#3c5078;">${escapeHtml(tutorName) || 'N/A'}</span></div>
+                <div style="font-size:11px;margin-bottom:6px;word-break:break-all;"><span style="color:#94a3b8;font-weight:600;">Email: </span><span style="color:#3c5078;">${escapeHtml(tutorEmail) || 'N/A'}</span></div>
+                <div style="font-size:11px;"><span style="color:#94a3b8;font-weight:600;">Session: </span><span style="color:#3c5078;">${escapeHtml(language) || 'N/A'}</span></div>
             </div>
         </div>
 
@@ -2480,16 +2956,16 @@ function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEma
                 <tr style="background:#f5f5fa;">
                     <th style="padding:8px 10px;text-align:left;color:#3c5078;font-weight:700;">Description</th>
                     <th style="padding:8px 10px;text-align:left;color:#3c5078;font-weight:700;">Details</th>
-                </tr>
+                 </tr>
             </thead>
             <tbody>
                 <tr style="border-bottom:1px solid #eef2f7;">
                     <td style="padding:8px 10px;color:#64748b;">Original Payment</td>
-                    <td style="padding:8px 10px;color:#64748b;">${language} session with ${tutorName}</td>
+                    <td style="padding:8px 10px;color:#64748b;">${escapeHtml(language) || 'N/A'} session with ${escapeHtml(tutorName) || 'N/A'}</td>
                 </tr>
                 <tr style="border-bottom:1px solid #eef2f7;">
                     <td style="padding:8px 10px;color:#64748b;">Issue Type</td>
-                    <td style="padding:8px 10px;color:#64748b;">${issueType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+                    <td style="padding:8px 10px;color:#64748b;">${formattedIssueType}</td>
                 </tr>
                 <tr style="border-bottom:1px solid #eef2f7;">
                     <td style="padding:8px 10px;color:#64748b;">Session Date</td>
@@ -2513,8 +2989,16 @@ function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEma
         </div>
     `;
 
-    document.getElementById('refundReceiptModal').classList.add('active');
+    modal.classList.add('active');
     document.body.style.overflow = 'hidden';
+}
+
+// Add escapeHtml helper function if not exists
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function closeRefundReceiptModal() {
@@ -2709,11 +3193,37 @@ window.onclick = function(event) {
     if (event.target === resolveModal) closeResolveModal();
     if (event.target === proofPreview) closeProofPreview();
 }
+
+// Handle view receipt buttons
+document.querySelectorAll('.view-receipt-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const disputeId = this.dataset.disputeId;
+        const receiptNo = this.dataset.receiptNo;
+        const amount = this.dataset.amount;
+        const studentName = this.dataset.studentName;
+        const studentEmail = this.dataset.studentEmail;
+        const tutorName = this.dataset.tutorName;
+        const tutorEmail = this.dataset.tutorEmail;
+        const language = this.dataset.language;
+        const bookingDate = this.dataset.bookingDate;
+        const bookingTime = this.dataset.bookingTime;
+        const issueType = this.dataset.issueType;
+        const processedAt = this.dataset.processedAt;
+        
+        viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEmail, tutorName, tutorEmail, language, bookingDate, bookingTime, issueType, processedAt);
+    });
+});
+</script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 <!-- Refund Receipt Modal -->
 <div id="refundReceiptModal" class="modal-overlay">
     <div class="modal-container" style="max-width: 560px;">
-        <div class="receipt-modal-header" style="border-radius: 24px 24px 0 0; overflow: hidden;">
+        <div class="receipt-modal-header" style="border-radius: 24px 24px 0 0; overflow: hidden;height:200px;">
             <div class="receipt-header-top" style="background: #1d3156; padding: 20px 25px; display: flex; align-items: center; justify-content: space-between;">
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <img src="../assets/img/logo.png" alt="Kyoshi" style="width: 36px; height: 36px; object-fit: contain;">
@@ -2737,7 +3247,7 @@ window.onclick = function(event) {
             <!-- filled by JS -->
         </div>
 
-        <div class="modal-buttons">
+        <div class="modal-buttons" style="margin-bottom:20px;">
             <button class="btn-cancel" onclick="closeRefundReceiptModal()">Close</button>
             <button class="btn-save" onclick="downloadRefundReceiptPDF()" style="background: #E75A9B;">
                 <i class="bi bi-download"></i> Download PDF

@@ -1,7 +1,7 @@
 <?php
 session_start();
 include 'config.php';
-
+include 'check_login.php';
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'tutor') {
     header("Location: login.php");
     exit();
@@ -181,11 +181,17 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Meeting Links - Kyoshi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+<link rel="stylesheet" href="../css/style.css">
     <style>
+        
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Poppins', sans-serif;
@@ -477,13 +483,186 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
             100% { transform: rotate(360deg); }
         }
         
-        @media (max-width: 768px) {
-            .main-container { padding: 0 16px; }
-            .content-card { padding: 20px; overflow-x: auto; }
-            table { min-width: 600px; }
-            .nav { flex-wrap: wrap; }
-            .nav-links { order: 3; width: 100%; justify-content: center; padding-bottom: 10px; }
-        }
+
+@media (max-width: 768px) {
+    .main-container { 
+        padding: 0 16px; 
+    }
+    .content-card { 
+        padding: 20px; 
+        overflow-x: visible;
+    }
+    
+    /* Remove min-width from table - this was causing the issue */
+    table {
+        min-width: auto !important;
+        width: 100%;
+    }
+    
+    /* Hide table headers on mobile */
+    table thead {
+        display: none;
+    }
+    
+    /* Make each row a card */
+    table tbody tr {
+        display: block;
+        margin-bottom: 20px;
+        border: 1px solid #eef2f7;
+        border-radius: 16px;
+        padding: 16px;
+        background: white;
+        width: 100%;
+    }
+    
+    /* Make each cell a block element */
+    table tbody td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid #eef2f7;
+        font-size: 13px;
+        width: 100%;
+    }
+    
+    /* Remove border from last cell */
+    table tbody td:last-child {
+        border-bottom: none;
+    }
+    
+    /* Add label before each cell value */
+    table tbody td:before {
+        content: attr(data-label);
+        font-weight: 700;
+        color: #1d3156;
+        margin-right: 16px;
+        min-width: 100px;
+        flex-shrink: 0;
+    }
+    
+    /* Special styling for action buttons */
+    table tbody td[data-label="Action"]:before {
+        display: none;
+    }
+    
+    table tbody td[data-label="Action"] {
+        justify-content: flex-end;
+        padding-top: 12px;
+    }
+    
+    /* Meeting link column - allow wrapping */
+    .meeting-link-display {
+        flex: 1;
+        justify-content: flex-end;
+    }
+    
+    .link-text {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        word-break: normal;
+    }
+    
+    /* Navigation */
+    .nav {
+        flex-wrap: wrap;
+    }
+    
+    .nav-links {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+        padding-bottom: 10px;
+    }
+    
+    /* Bulk card buttons stack vertically */
+    .bulk-card form div {
+        flex-direction: column;
+        align-items: stretch !important;
+    }
+    
+    .bulk-card form div input,
+    .bulk-card form div button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    /* Make table rows smaller and more compact */
+    table tbody tr {
+        display: block;
+        margin-bottom: 12px;  /* Reduced from 20px */
+        border: 1px solid #eef2f7;
+        border-radius: 12px;  /* Reduced from 16px */
+        padding: 12px;  /* Reduced from 16px */
+        background: white;
+        width: 100%;
+    }
+    
+    /* Make cells more compact */
+    table tbody td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;  /* Reduced from 10px */
+        border-bottom: 1px solid #eef2f7;
+        font-size: 12px;  /* Reduced from 13px */
+        width: 100%;
+    }
+    
+    /* Labels smaller */
+    table tbody td:before {
+        content: attr(data-label);
+        font-weight: 700;
+        color: #1d3156;
+        margin-right: 12px;  /* Reduced from 16px */
+        min-width: 85px;  /* Reduced from 100px */
+        flex-shrink: 0;
+        font-size: 11px;  /* Smaller label */
+    }
+    
+    /* Student name size */
+    table tbody td strong {
+        font-size: 13px;
+    }
+    
+    /* Date & time column - keep inline */
+table tbody td[data-label="Date & Time"] {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+table tbody td[data-label="Date & Time"]:before {
+    margin-bottom: 0;
+}
+    
+    /* Meeting link text smaller */
+    .link-text {
+        font-size: 10px;
+        padding: 4px 8px;
+        max-width: 160px;
+    }
+    
+    .no-link {
+        font-size: 10px;
+    }
+    
+    /* Edit button smaller */
+    .btn-edit {
+        padding: 4px 12px;
+        font-size: 11px;
+    }
+    
+    /* Action cell padding */
+    table tbody td[data-label="Action"] {
+        padding-top: 8px;
+    }
+}
     </style>
 </head>
 <body>
@@ -492,6 +671,9 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 <div class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div>
@@ -506,6 +688,7 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class ="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>" alt="Profile">
@@ -518,6 +701,7 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
+</div>
             </div>
         </nav>
     </div>
@@ -580,35 +764,35 @@ function e($value) { return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($bookings as $booking): ?>
-                    <tr id="row-<?= $booking['id'] ?>">
-                        <td>
-                            <strong><?= e($booking['student_name']) ?></strong>
-                        </td>
-                        <td><?= e($booking['language']) ?></td>
-                        <td>
-                            <?= date('d M Y', strtotime($booking['booking_date'])) ?><br>
-                            <small><?= date('g:i A', strtotime($booking['booking_time'])) ?></small>
-                        </td>
-                        <td id="display-<?= $booking['id'] ?>">
-                            <div class="meeting-link-display">
-                                <?php if (!empty($booking['meeting_link'])): ?>
-                                    <span class="link-text">
-                                        <i class="bi bi-link-45deg"></i> <?= e(trim($booking['meeting_link'])) ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span class="no-link">No meeting link set</span>
-                                <?php endif; ?>
-                            </div>
-                        </td>
-                        <td>
-                            <button type="button" class="btn-edit" onclick="openEditModal(<?= $booking['id'] ?>, '<?= e(addslashes($booking['student_name'])) ?>', '<?= e(addslashes($booking['meeting_link'])) ?>')">
-                                <i class="bi bi-pencil"></i> Edit
-                            </button>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
+    <?php foreach ($bookings as $booking): ?>
+        <tr id="row-<?= $booking['id'] ?>">
+            <td data-label="Student">
+                <strong><?= e($booking['student_name']) ?></strong>
+            </td>
+            <td data-label="Language"><?= e($booking['language']) ?></td>
+            <td data-label="Date & Time">
+                <?= date('d M Y', strtotime($booking['booking_date'])) ?> 
+                <small>(<?= date('g:i A', strtotime($booking['booking_time'])) ?>)</small>
+            </td>
+            <td data-label="Meeting Link" id="display-<?= $booking['id'] ?>">
+                <div class="meeting-link-display">
+                    <?php if (!empty($booking['meeting_link'])): ?>
+                        <span class="link-text">
+                            <i class="bi bi-link-45deg"></i> <?= e(trim($booking['meeting_link'])) ?>
+                        </span>
+                    <?php else: ?>
+                        <span class="no-link">No meeting link set</span>
+                    <?php endif; ?>
+                </div>
+            </td>
+            <td data-label="Action">
+                <button type="button" class="btn-edit" onclick="openEditModal(<?= $booking['id'] ?>, '<?= e(addslashes($booking['student_name'])) ?>', '<?= e(addslashes($booking['meeting_link'])) ?>')">
+                    <i class="bi bi-pencil"></i> Edit
+                </button>
+            </td>
+        </tr>
+    <?php endforeach; ?>
+</tbody>
         </table>
         <?php endif; ?>
     </div>
@@ -703,7 +887,6 @@ async function saveModalLink() {
     saveBtn.disabled = true;
     
     try {
-        // Post to the same file (meeting_links.php) which handles JSON requests
         const response = await fetch(window.location.href, {
             method: 'POST',
             headers: {
@@ -766,5 +949,14 @@ window.onclick = function(event) {
     }
 }
 </script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

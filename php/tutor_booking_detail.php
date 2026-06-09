@@ -1,7 +1,7 @@
 <?php
 session_start();
 include 'config.php';
-
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -122,12 +122,15 @@ function e($value) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Booking Details - Kyoshi Tutor</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="../css/style.css">
 <style>
 * {
     margin: 0;
@@ -323,6 +326,19 @@ body::before {
     font-weight: 700;
 }
 
+/* Payment Proof Modal Image */
+#paymentProofImage {
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+    border-radius: 12px;
+}
+
+/* Better modal close button */
+.modal-content button:hover {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 50%;
+}
 .back-link {
     display: flex;
     align-items: center;
@@ -696,6 +712,9 @@ body::before {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div>
@@ -710,6 +729,7 @@ body::before {
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -722,15 +742,47 @@ body::before {
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
+                </div>
             </div>
         </nav>
     </div>
 </header>
+ <div class="nav-overlay" id="navOverlay"></div>
 
 <div class="main">
+        <!-- ADD THIS ERROR/SUCCESS MESSAGE SECTION HERE -->
+    <?php
+    // Display error/success messages from session
+    $error_message = $_SESSION['error_message'] ?? '';
+    $success_message = $_SESSION['success_message'] ?? '';
+    unset($_SESSION['error_message']);
+    unset($_SESSION['success_message']);
+    ?>
+
+    <?php if ($error_message): ?>
+        <div class="error-alert" style="background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px 20px; border-radius: 12px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px;">
+            <i class="bi bi-exclamation-triangle-fill" style="color: #dc2626; font-size: 20px;"></i>
+            <div>
+                <strong style="color: #991b1b;">Cannot Join Meeting</strong>
+                <p style="color: #7f1d1d; margin: 4px 0 0; font-size: 13px;"><?= htmlspecialchars($error_message) ?></p>
+            </div>
+            <button onclick="this.parentElement.style.display='none'" style="margin-left: auto; background: none; border: none; font-size: 18px; cursor: pointer; color: #991b1b;">&times;</button>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($success_message): ?>
+        <div class="success-alert" style="background: #d1fae5; border-left: 4px solid #10b981; padding: 15px 20px; border-radius: 12px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px;">
+            <i class="bi bi-check-circle-fill" style="color: #10b981; font-size: 20px;"></i>
+            <div>
+                <strong style="color: #065f46;">Success</strong>
+                <p style="color: #065f46; margin: 4px 0 0; font-size: 13px;"><?= htmlspecialchars($success_message) ?></p>
+            </div>
+            <button onclick="this.parentElement.style.display='none'" style="margin-left: auto; background: none; border: none; font-size: 18px; cursor: pointer; color: #065f46;">&times;</button>
+        </div>
+    <?php endif; ?>
     <div class="page-top">
         <a href="booking_requests.php" class="back-link">
-            <i class="bi bi-arrow-left"></i> Back
+            <i class="bi bi-arrow-left"></i><span>Back</span>
         </a>
         <h1>Booking Details</h1>
         <div></div>
@@ -779,9 +831,11 @@ body::before {
                     </div>
                     <div class="student-info">
                         <?php 
-                        $studentPic = !empty($booking['student_pic']) 
-                            ? '../uploads/profiles/' . $booking['student_pic']
-                            : $assetBase . '/profile-student.png';
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $studentPic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $studentPic = $assetBase . '/profile.png';
+}
                         ?>
                         <img src="<?= e($studentPic) ?>" alt="Student" class="student-avatar">
                         <div class="student-details">
@@ -878,13 +932,13 @@ body::before {
                             <?php endif; ?>
                         </span>
                     </div>
-                    <?php if ($payment && $payment['proof_image']): ?>
+                   <?php if ($payment && $payment['proof_image']): ?>
                         <div class="info-row">
                             <span class="info-label">Payment Proof</span>
                             <span class="info-value">
-                                <a href="../uploads/payment_proofs/<?= e($payment['proof_image']) ?>" target="_blank" style="color: #1d3156;">
+                                <button onclick="openPaymentProofModal('<?= e($payment['proof_image']) ?>')" style="background: none; border: none; color: #1d3156;text-decoration:underline;">
                                     <i class="bi bi-file-earmark-image"></i> View Proof
-                                </a>
+                                </button>
                             </span>
                         </div>
                     <?php endif; ?>
@@ -1132,23 +1186,28 @@ body::before {
                                     <p style="color: #f59e0b; margin: 0;">No location provided. Please contact the student.</p>
                                 <?php endif; ?>
                             </div>
-                        </div>
-                        
-                        <!-- Attendance Proof Upload -->
-                        <div>
-                            <strong style="font-size: 13px;"><i class="bi bi-camera"></i> Attendance Proof</strong>
-                            <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+                    </div>
+                    
+                    <!-- Attendance Proof Section -->
+                    <div style="margin-top: 16px;">
+                        <strong style="font-size: 13px;"><i class="bi bi-camera"></i> Attendance Proof</strong>
+                        <div style="background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 8px;">
+                            
+                            <?php
+                            // Check if session has ended (allow upload only after session date)
+                            $session_start_time = strtotime($booking['booking_date'] . ' ' . $booking['booking_time']);
+                            $session_end_time = $session_start_time + (1 * 3600); // Add 1 hour
+                            $current_time = time();
+                            $can_upload_proof = ($current_time > $session_end_time); // Use end time, not start time
+                            $formatted_start_date = date('d M Y', $session_start_time);
+                            $formatted_start_time = date('g:i A', $session_start_time);
+                            $formatted_end_time = date('g:i A', $session_end_time);
+                            ?>
+                            
+                            <?php if ($can_upload_proof): ?>
                                 <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">
-                                    Take a photo at the meeting location as proof of attendance. This helps resolve any disputes.
+                                    <i class="bi bi-info-circle"></i> You can upload proof after the session has ended.
                                 </p>
-                                
-                                <?php
-                                // Check existing proofs
-                                $proofStmt = $conn->prepare("SELECT * FROM attendance_proofs WHERE booking_id = ? AND user_id = ? ORDER BY uploaded_at DESC");
-                                $proofStmt->bind_param("ii", $booking_id, $userID);
-                                $proofStmt->execute();
-                                $proofs = $proofStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-                                ?>
                                 
                                 <form id="proofUploadForm" enctype="multipart/form-data" style="margin-bottom: 12px;">
                                     <input type="hidden" name="booking_id" value="<?= $booking_id ?>">
@@ -1159,25 +1218,51 @@ body::before {
                                         <i class="bi bi-upload"></i> Upload Proof Photo
                                     </button>
                                 </form>
-                                
-                                <?php if (!empty($proofs)): ?>
-                                    <div style="margin-top: 12px;">
-                                        <strong style="font-size: 12px;">Uploaded Proofs:</strong>
-                                        <?php foreach ($proofs as $proof): ?>
-                                        <div style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 8px;">
-                                            <a href="../uploads/proofs/<?= e($proof['file_path']) ?>" target="_blank" style="color: #E75A9B; font-size: 12px;">
-                                                <i class="bi bi-image"></i> View Proof (<?= date('d M Y, g:i A', strtotime($proof['uploaded_at'])) ?>)
-                                            </a>
-                                        </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
+                            <?php else: ?>
+                            <div style="display: flex; align-items: center; gap: 8px; padding: 8px; background: #fef3c7; border-radius: 8px;">
+                                <i class="bi bi-clock-history" style="color: #f59e0b;"></i>
+                                <div>
+                                    <span style="font-size: 12px; color: #856404;">
+                                        Session: <?= $formatted_start_date ?> from <?= $formatted_start_time ?> to <?= $formatted_end_time ?>
+                                    </span>
+                                    <span style="font-size: 11px; color: #856404; display: block;">
+                                        Attendance proof can be uploaded after the session ends
+                                    </span>
+                                </div>
                             </div>
+                        <?php endif; ?>
+                            
+                            <?php
+                            // Check existing proofs
+                            $proofStmt = $conn->prepare("SELECT * FROM attendance_proofs WHERE booking_id = ? AND user_id = ? ORDER BY uploaded_at DESC");
+                            $proofStmt->bind_param("ii", $booking_id, $userID);
+                            $proofStmt->execute();
+                            $proofs = $proofStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                            ?>
+                            
+                            <?php if (!empty($proofs)): ?>
+                                <div style="margin-top: 12px;">
+                                    <strong style="font-size: 12px;">Uploaded Proofs:</strong>
+                                    <?php foreach ($proofs as $proof): ?>
+                                    <div style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 8px;">
+                                        <button onclick="openAttendanceProofModal('<?= e($proof['file_path']) ?>')" 
+                                            style="background: none; border: none; color: #E75A9B; cursor: pointer; text-decoration: underline; font-size: 12px;">
+                                            <i class="bi bi-image"></i> View Proof (<?= date('d M Y, g:i A', strtotime($proof['uploaded_at'])) ?>)
+                                        </button>
+                                    </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                            
                         </div>
                     </div>
-                <?php endif; ?>
+                    
+                </div> <!-- Close info-box for face-to-face -->
+                
+                <?php endif; ?> <!-- Close face-to-face session if -->
                 
                 <?php elseif ($isCancelled): ?>
+
                 <div class="info-box">
                     <div class="section-subtitle">
                         <i class="bi bi-info-circle"></i> Note
@@ -1411,7 +1496,47 @@ $submissionCount = $checkSubmissions->get_result()->fetch_assoc()['count'];
         </div>
     </div>
 </div>
+<!-- Attendance Proof Modal -->
+<div id="attendanceProofModal" class="modal">
+    <div class="modal-content" style="max-width: 600px; text-align: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="bi bi-camera"></i> Attendance Proof</h3>
+            <button onclick="closeAttendanceProofModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #64748b;">&times;</button>
+        </div>
+        <div style="margin-bottom: 20px;">
+            <img id="attendanceProofImage" src="" alt="Attendance Proof" style="max-width: 100%; max-height: 60vh; border-radius: 12px; object-fit: contain;">
+        </div>
+        <div class="modal-buttons" style="justify-content: center;">
+            <button type="button" onclick="closeAttendanceProofModal()" class="btn-outline" style="width: auto; padding: 8px 30px;">
+                <i class="bi bi-x-lg"></i> Close
+            </button>
+            <button type="button" onclick="downloadAttendanceProof()" class="btn-pink" style="width: auto; padding: 8px 30px;">
+                <i class="bi bi-download"></i> Download
+            </button>
+        </div>
+    </div>
+</div>
 
+<!-- Payment Proof Modal -->
+<div id="paymentProofModal" class="modal">
+    <div class="modal-content" style="max-width: 600px; text-align: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="bi bi-receipt"></i> Payment Proof</h3>
+            <button onclick="closePaymentProofModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #64748b;">&times;</button>
+        </div>
+        <div id="paymentProofImageContainer" style="margin-bottom: 20px;">
+            <img id="paymentProofImage" src="" alt="Payment Proof" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        </div>
+        <div class="modal-buttons" style="justify-content: center;">
+            <button type="button" onclick="closePaymentProofModal()" class="btn-outline" style="width: auto; padding: 8px 30px;">
+                <i class="bi bi-x-lg"></i> Close
+            </button>
+            <button type="button" onclick="downloadPaymentProof()" class="btn-pink" style="width: auto; padding: 8px 30px;">
+                <i class="bi bi-download"></i> Download
+            </button>
+        </div>
+    </div>
+</div>
 <!-- Reject Modal -->
 <div id="rejectModal" class="modal">
     <div class="modal-content">
@@ -1448,6 +1573,137 @@ $submissionCount = $checkSubmissions->get_result()->fetch_assoc()['count'];
 </div>
 
 <script>
+// Attendance Proof Modal Functions
+let currentAttendanceProof = '';
+
+function openAttendanceProofModal(filePath) {
+    console.log("Opening proof with path:", filePath); // Debug log
+    
+    if (!filePath) {
+        showToast('No proof file found', 'error');
+        return;
+    }
+    
+    currentAttendanceProof = filePath;
+    
+    // Try multiple possible paths
+    let imagePath = '';
+    
+    // Check if the path already includes the full path
+    if (filePath.startsWith('uploads/') || filePath.startsWith('../uploads/')) {
+        imagePath = filePath;
+    } else if (filePath.includes('/')) {
+        imagePath = filePath;
+    } else {
+        // Just filename - try both possible directories
+        imagePath = '../uploads/proofs/' + filePath;
+    }
+    
+    console.log("Attempting to load image from:", imagePath);
+    
+    const imgElement = document.getElementById('attendanceProofImage');
+    if (imgElement) {
+        imgElement.src = imagePath;
+        imgElement.onload = function() {
+            console.log("Image loaded successfully");
+        };
+        imgElement.onerror = function() {
+            console.log("Failed to load from:", imagePath);
+            // Try alternative path
+            const altPath = '../uploads/attendance_proofs/' + currentAttendanceProof;
+            console.log("Trying alternative path:", altPath);
+            imgElement.src = altPath;
+            imgElement.onerror = function() {
+                console.log("Both paths failed");
+                this.src = '../assets/img/no-image.png';
+                showToast('Could not load image. The file may have been moved or deleted.', 'error');
+            };
+        };
+    }
+    
+    const modal = document.getElementById('attendanceProofModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function closeAttendanceProofModal() {
+    const modal = document.getElementById('attendanceProofModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    const imgElement = document.getElementById('attendanceProofImage');
+    if (imgElement) {
+        imgElement.src = '';
+    }
+    currentAttendanceProof = '';
+}
+
+function downloadAttendanceProof() {
+    if (currentAttendanceProof) {
+        // Try multiple paths for download
+        let downloadPath = '';
+        if (currentAttendanceProof.startsWith('uploads/') || currentAttendanceProof.startsWith('../uploads/')) {
+            downloadPath = currentAttendanceProof;
+        } else if (currentAttendanceProof.includes('/')) {
+            downloadPath = currentAttendanceProof;
+        } else {
+            downloadPath = '../uploads/proofs/' + currentAttendanceProof;
+        }
+        
+        const link = document.createElement('a');
+        link.href = downloadPath;
+        link.download = currentAttendanceProof.split('/').pop();
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Download started...', 'success');
+    } else {
+        showToast('No file to download', 'error');
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('attendanceProofModal');
+    if (modal && modal.style.display === 'flex' && event.target === modal) {
+        closeAttendanceProofModal();
+    }
+});
+// Payment Proof Modal Functions
+let currentProofImage = '';
+
+function openPaymentProofModal(imageName) {
+    currentProofImage = imageName;
+    const imagePath = '../uploads/payment_proofs/' + imageName;
+    document.getElementById('paymentProofImage').src = imagePath;
+    document.getElementById('paymentProofModal').classList.add('active');
+}
+
+function closePaymentProofModal() {
+    document.getElementById('paymentProofModal').classList.remove('active');
+    document.getElementById('paymentProofImage').src = '';
+}
+
+function downloadPaymentProof() {
+    if (currentProofImage) {
+        const link = document.createElement('a');
+        link.href = '../uploads/payment_proofs/' + currentProofImage;
+        link.download = currentProofImage;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
+
+// Also add click outside to close the modal
+window.addEventListener('click', function(event) {
+    const paymentModal = document.getElementById('paymentProofModal');
+    if (event.target === paymentModal) {
+        closePaymentProofModal();
+    }
+});
+
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
     dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
@@ -1807,6 +2063,13 @@ window.onclick = function(event) {
     const meetingModal = document.getElementById('meetingLinkModal');
     if (event.target === meetingModal) closeMeetingLinkModal();
 }
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 <div id="customToast" class="toast"></div>
 

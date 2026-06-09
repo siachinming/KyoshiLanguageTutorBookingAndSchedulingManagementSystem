@@ -370,7 +370,7 @@ function sendAdminReportEmail($booking, $issue_type, $message, $proof_path, $boo
         ];
         $issueLabel = $issueLabels[$issue_type] ?? ucfirst(str_replace('_', ' ', $issue_type));
         
-        $proofLink = $proof_path ? "<p><strong>Proof Attachment:</strong> <a href='http://localhost/kyoshi/{$proof_path}'>View Proof</a></p>" : "";
+        $proofLink = $proof_path ? "<p><strong>Proof Attachment:</strong> <a href='http://kyoshitutor.site/{$proof_path}'>View Proof</a></p>" : "";
         
         $mail->Body = "
         <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
@@ -387,7 +387,7 @@ function sendAdminReportEmail($booking, $issue_type, $message, $proof_path, $boo
             <p><strong>Description:</strong> " . nl2br(htmlspecialchars($message)) . "</p>
             {$proofLink}
             <div style='text-align:center;margin-top:20px;'>
-                <a href='http://localhost/kyoshi/admin/dispute_detail.php?id={$dispute_id}' 
+                <a href='http://kyoshitutor.site/admin/dispute_detail.php?id={$dispute_id}' 
                    style='display:inline-block;padding:10px 20px;background:#dc2626;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
                     Review Dispute →
                 </a>

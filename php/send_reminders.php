@@ -30,7 +30,7 @@ include 'config.php';
 // Check if connection exists
 if (!$conn || $conn->connect_error) {
     writeLog("ERROR: Database connection failed: " . ($conn->connect_error ?? "Unknown error"));
-    echo "❌ Database connection failed\n";
+    echo "Database connection failed\n";
     exit(1);
 }
 
@@ -60,18 +60,11 @@ use PHPMailer\PHPMailer\Exception;
 $autoloadPath = __DIR__ . '/../vendor/autoload.php';
 if (!file_exists($autoloadPath)) {
     writeLog("ERROR: PHPMailer autoload not found at: $autoloadPath");
-    echo "❌ PHPMailer not installed. Run: composer require phpmailer/phpmailer\n";
+    echo "PHPMailer not installed. Run: composer require phpmailer/phpmailer\n";
     exit(1);
 }
 require $autoloadPath;
 
-// Define SMTP constants if not defined in config.php
-if (!defined('SMTP_USER')) {
-    define('SMTP_USER', 'sohisabella87@gmail.com');
-}
-if (!defined('SMTP_PASS')) {
-    define('SMTP_PASS', ''); // YOU NEED TO SET YOUR PASSWORD HERE
-}
 
 function sendMeetingLinkReminder($conn, $booking_id) {
     // Get booking details
@@ -119,7 +112,7 @@ function sendMeetingLinkReminder($conn, $booking_id) {
             $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
             $mail->addAddress($booking['tutor_email'], $booking['tutor_name']);
             $mail->isHTML(true);
-            $mail->Subject = '⚠️ Action Required: Add Meeting Link for Your Session - Kyoshi';
+            $mail->Subject = 'Action Required: Add Meeting Link for Your Session - Kyoshi';
             $mail->Body = "
                 <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; background: #f9f9f9; border-radius: 20px; padding: 30px;'>
                     <div style='text-align: center;'>
@@ -136,7 +129,7 @@ function sendMeetingLinkReminder($conn, $booking_id) {
                         </div>
                         <p>Please add your meeting link immediately so the student can join.</p>
                         <div style='text-align: center; margin-top: 20px;'>
-                            <a href='http://localhost/kyoshi/php/tutor_booking_detail.php?id={$booking_id}' 
+                            <a href='http://kyoshitutor.site/php/tutor_booking_detail.php?id={$booking_id}' 
                                style='display: inline-block; padding: 12px 30px; background: linear-gradient(135deg, #E75A9B, #F28AB2); color: white; 
                                       text-decoration: none; border-radius: 30px;'>Add Meeting Link Now</a>
                         </div>
@@ -223,11 +216,11 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
         if ($booking['learning_mode'] === 'online') {
             $meetingInfo = !empty($booking['meeting_link']) 
                 ? "<p><strong>Meeting Link:</strong> <a href='{$booking['meeting_link']}' style='color:#E75A9B;'>{$booking['meeting_link']}</a></p>"
-                : "<p style='color: #dc2626;'><strong>⚠️ No meeting link added yet! Please add it now.</strong></p>";
+                : "<p style='color: #dc2626;'><strong>No meeting link added yet! Please add it now.</strong></p>";
         } else {
             $meetingInfo = !empty($booking['meeting_location'])
                 ? "<p><strong>Location:</strong> {$booking['meeting_location']}</p>"
-                : "<p style='color: #dc2626;'><strong>⚠️ No location provided! Please contact the student.</strong></p>";
+                : "<p style='color: #dc2626;'><strong>No location provided! Please contact the student.</strong></p>";
         }
         
         $mail->Subject = "Session Reminder: {$booking['language']} in {$minutes_before} minutes - Kyoshi";
@@ -248,7 +241,7 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
                         {$meetingInfo}
                     </div>
                     <div style='text-align: center; margin-top: 20px;'>
-                        <a href='http://localhost/kyoshi/php/tutor_booking_detail.php?id={$booking_id}' 
+                        <a href='http://kyoshitutor.site/php/tutor_booking_detail.php?id={$booking_id}' 
                            style='display: inline-block; padding: 12px 30px; background: linear-gradient(135deg, #E75A9B, #F28AB2); color: white; 
                                   text-decoration: none; border-radius: 30px;'>View Session Details</a>
                     </div>
@@ -311,7 +304,7 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
                     </div>
                     {$joinButton}
                     <div style='text-align: center; margin-top: 20px;'>
-                        <a href='http://localhost/kyoshi/php/booking_detail.php?id={$booking_id}' 
+                        <a href='http://kyoshitutor.site/php/booking_detail.php?id={$booking_id}' 
                            style='display: inline-block; padding: 12px 30px; background: #1d3156; color: white; 
                                   text-decoration: none; border-radius: 30px;'>View Session Details</a>
                     </div>

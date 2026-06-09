@@ -1,7 +1,7 @@
 <?php
 session_start();
 include 'config.php';
-
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
@@ -45,9 +45,13 @@ function e($value) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kyoshi | Student Actions</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../css/astyle.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&family=Open+Sans&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -581,7 +585,7 @@ function e($value) {
         <div class="brand-wrapper">
             <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="brand-icon">
             <div class="brand-title">
-                <h1>Kyoshi</h1>
+                <h1>KYOSHI</h1>
                 <span class="admin-space-text">Admin Space</span>
             </div>
         </div>
@@ -644,25 +648,44 @@ function e($value) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
-        <div class="page-title">
-            <h1>Student Actions</h1>
-        </div>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
-        </div>
+   <div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" href="admin_dashboard.php" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
     </div>
+    
+    <!-- Desktop Page Title (visible only on desktop) -->
+    <div class="page-title">
+        <h1>Student Actions</h1>
+    </div>
+    <div class="relative">
+    <!-- Desktop Admin Profile -->
+    <div class="admin-profile" onclick="toggleDropdown()">
+        <img src="<?= e($profilePic) ?>" alt="Admin">
+        <span><?= e($displayName) ?></span>
+        <i class="bi bi-chevron-down"></i>
+    </div>
+    
+    <!-- Mobile Profile Button -->
+    <div class="mobile-profile-btn" onclick="toggleDropdown()">
+        <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+    </div>
+    
+    <div class="dropdown" id="profileDropdown">
+        <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+        <hr>
+        <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+    </div>
+</div>
+</div>
 
+<!-- Mobile Page Header (visible only on mobile) -->
+<div class="mobile-page-header">
+    <h1 class="mobile-page-title">Student Actions</h1>
+</div>
     <div class="actions-wrapper">
         <div class="actions-grid">
             
@@ -724,14 +747,51 @@ function e($value) {
 <script>
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
 
-window.addEventListener('click', function(e) {
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
-    const button = document.querySelector('.admin-profile');
-    if (button && !button.contains(e.target) && dropdown && !dropdown.contains(e.target)) {
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
         dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
+});
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
     }
 });
 
@@ -755,6 +815,11 @@ if (overlay) {
     });
 }
 </script>
-
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

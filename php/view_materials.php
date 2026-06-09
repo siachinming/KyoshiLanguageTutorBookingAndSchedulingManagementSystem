@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 
 $assetBase = '../assets/img';
 
@@ -129,11 +130,15 @@ $fileUrl = 'download_material.php?id=' . $material_id . '&booking_id=' . $bookin
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Preview: <?= e($material['title']) ?> · Kyoshi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -468,6 +473,9 @@ audio::-webkit-media-controls-panel {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
             <a href="<?= $userRole === 'tutor' ? 'tutor_dashboard.php' : 'student_dashboard.php' ?>" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div>
@@ -488,6 +496,7 @@ audio::-webkit-media-controls-panel {
                     <a href="student_learning_materials.php?booking_id=<?= $booking_id ?>" class="active">Materials</a>
                 <?php endif; ?>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>" alt="">
@@ -496,17 +505,21 @@ audio::-webkit-media-controls-panel {
                 </button>
                 <div class="dropdown" id="profileDropdown">
                     <a href="<?= $userRole === 'tutor' ? 'teacher_profile.php' : 'student_profile.php' ?>"><i class="bi bi-person-circle"></i> My Profile</a>
+                     <a href="earnings.php">
+                <i class="bi bi-wallet2"></i> My Earnings
+            </a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+                </div>
         </nav>
     </div>
 </header>
-
+<div class="nav-overlay" id="navOverlay"></div>
 <div class="main-content">
     <div class="card">
-        <a href="<?= $userRole === 'tutor' ? 'learning_materials.php?booking_id=' . $booking_id : 'student_learning_materials.php?booking_id=' . $booking_id ?>" class="back-btn">
+        <a href="material_overview.php" class="back-btn">
             <i class="bi bi-arrow-left"></i> Back to Materials
         </a>
         
@@ -668,6 +681,13 @@ function toggleEditMode() {
         editMode.style.display = 'block';
     }
 }
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 
 </body>

@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 // Initialize session flags for no-show messages
 if (!isset($_SESSION['shown_tutor_no_show'])) {
     $_SESSION['shown_tutor_no_show'] = false;
@@ -468,10 +469,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Earnings - Kyoshi Tutor</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -921,7 +926,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
             .charts-grid { grid-template-columns: 1fr; }
             .earnings-table { display: block; overflow-x: auto; }
+            .back-btn span{ display:none;}
         }
+        /* Two column layout that stacks on mobile */
+.two-column-layout {
+    display: grid;
+    grid-template-columns: 0.4fr 1fr;
+    gap: 24px;
+}
+
+/* Fix for Monthly Breakdown to be in its own row on mobile */
+@media (max-width: 768px) {
+    .two-column-layout {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    /* Make sure Monthly Breakdown takes full width */
+    .two-column-layout .glass-card:last-child {
+        width: 100%;
+    }
+    
+    /* Adjust card headers for mobile */
+    .card-header {
+        padding: 16px !important;
+    }
+    
+    .card-header h2 {
+        font-size: 16px;
+    }
+}
     </style>
 </head>
 <body>
@@ -929,6 +963,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+                <i class="bi bi-list"></i>
+            </button>
+
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
@@ -940,6 +978,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -953,18 +992,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+            </div>
         </nav>
     </div>
 </header>
-
+<div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
-        <a href="tutor_dashboard.php" class="back-btn"><i class="bi bi-arrow-left"></i> Back</a>
+        <a href="tutor_dashboard.php" class="back-btn"><i class="bi bi-arrow-left"></i> <span>Back</span></a>
         <div style="text-align: center;">
             <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0;"><i class="bi bi-wallet2"></i> My Earnings</h1>
             <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px;">Track your earnings and request payouts</p>
         </div>
-        <div style="width: 100px;"></div>
+        <div style="width: 50px;"></div>
+
     </div>
 
     <?php if (isset($payoutMessage)): ?>
@@ -1158,11 +1199,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </div>
         </div>
     </div>
-    <!-- Two Column Layout -->
-    <div style="display: grid; grid-template-columns: 0.4fr 1fr; gap: 24px;">
-        <!-- Top Students -->
-        <div class="glass-card">
-            <div class="card-header" style="padding: 12px 16px;'>
+    <!-- Two Column Layout - Stack on mobile -->
+<div class="two-column-layout">
+    <!-- Top Students -->
+    <div class="glass-card top-students-card">
+            <div class="card-header" style="padding: 12px 16px;">
                 <h2><i class="bi bi-trophy"></i> Top Students</h2>
                 <p>Students who generated the most earnings</p>
             </div>
@@ -1689,6 +1730,13 @@ function dismissAlert(type, buttonElement) {
         })
         .catch(error => console.error('Error:', error));
 }
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

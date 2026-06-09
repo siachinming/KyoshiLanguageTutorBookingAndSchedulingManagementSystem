@@ -268,14 +268,14 @@ if ($action === 'pdf') {
     $pdf->SetFillColor(209, 250, 229);
     $pdf->SetTextColor(5, 150, 105);
     $pdf->SetFont('Arial', 'B', 11);
-    $pdf->Cell(0, 10, '✓ Refund Successfully Processed', 0, 1, 'C', true);
+    $pdf->Cell(0, 10, 'Refund Successfully Processed', 0, 1, 'C', true);
     $pdf->Ln(6);
     
     // ── NOTE BOX ───────────────────────────────────────────
     $pdf->SetFillColor(224, 242, 254); // #E0F2FE
     $pdf->SetTextColor(7, 89, 133); // #075985
     $pdf->SetFont('Arial', '', 9);
-    $pdf->MultiCell(0, 6, '📌 IMPORTANT: The refund amount has been credited back to your original payment method. Please allow 3-5 business days for the refund to appear in your account.', 0, 'L', true);
+    $pdf->MultiCell(0, 6, 'IMPORTANT: The refund amount has been credited back to your original payment method. Please allow 3-5 business days for the refund to appear in your account.', 0, 'L', true);
     $pdf->Ln(4);
     
     // ── FOOTER ───────────────────────────────────────────

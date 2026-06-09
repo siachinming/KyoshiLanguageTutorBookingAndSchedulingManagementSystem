@@ -12,7 +12,16 @@ if (!isset($_SESSION['user_id'])) {
 
 $userID = $_SESSION['user_id'];
 
-// Get form data
+// ✅ ADD THIS - Handle both JSON and FormData
+$input = file_get_contents('php://input');
+$json_data = json_decode($input, true);
+
+// If JSON data exists, use it; otherwise use $_POST
+if ($json_data && empty($_POST)) {
+    $_POST = $json_data;
+}
+
+// Now get form data (works for both JSON and FormData)
 $payment_id = isset($_POST['payment_id']) ? intval($_POST['payment_id']) : 0;
 $booking_id = isset($_POST['booking_id']) ? intval($_POST['booking_id']) : 0;
 $resolution_requested = isset($_POST['resolution_requested']) ? $_POST['resolution_requested'] : '';
@@ -21,6 +30,13 @@ $preferred_datetime = isset($_POST['preferred_datetime']) ? $_POST['preferred_da
 $bank_name = isset($_POST['bank_name']) ? trim($_POST['bank_name']) : null;
 $bank_account_number = isset($_POST['bank_account_number']) ? trim($_POST['bank_account_number']) : null;
 $bank_account_name = isset($_POST['bank_account_name']) ? trim($_POST['bank_account_name']) : null;
+
+// ✅ ADD VALIDATION HERE
+$allowed_resolutions = ['refund', 'reschedule', 'complete'];
+if (!in_array($resolution_requested, $allowed_resolutions)) {
+    echo json_encode(['success' => false, 'message' => 'Invalid resolution type selected']);
+    exit();
+}
 
 // Validate
 if ($payment_id <= 0 || $booking_id <= 0) {
@@ -216,9 +232,26 @@ $insert->bind_param("iiissssssssss",
 if ($insert->execute()) {
     $dispute_id = $conn->insert_id;
     
-    // Send notification to admin (optional - you can use email or database notification)
-    // You can uncomment this if you have mail configured
-    /*
+    $updatePayment = $conn->prepare("
+        UPDATE payments 
+        SET status = 'disputed', 
+            disputed_at = NOW(),
+            dispute_reason = ? 
+        WHERE id = ?
+    ");
+    $updatePayment->bind_param("si", $description, $payment_id);
+    $updatePayment->execute();
+    
+    // Also update booking status to 'disputed'
+    $updateBooking = $conn->prepare("
+        UPDATE bookings 
+        SET status = 'disputed' 
+        WHERE id = ?
+    ");
+    $updateBooking->bind_param("i", $booking_id);
+    $updateBooking->execute();
+    
+
     $admin_email = "admin@kyoshi.com";
     $subject = "New Payment Dispute #$dispute_id";
     $email_body = "A new payment dispute has been submitted.\n\n";
@@ -230,7 +263,6 @@ if ($insert->execute()) {
         $email_body .= "Preferred New Time: " . date('d M Y, h:i A', strtotime($preferred_datetime)) . "\n";
     }
     mail($admin_email, $subject, $email_body);
-    */
     
     echo json_encode([
         'success' => true,

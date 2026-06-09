@@ -1,7 +1,7 @@
 <?php
 session_start();
 include 'config.php';
-
+include 'check_login.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require '../vendor/autoload.php';
@@ -191,9 +191,13 @@ function sendDisputeResolutionEmail($conn, $dispute, $action, $message, $refund_
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <title>Resolve Dispute - Kyoshi Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../css/astyle.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         * {
@@ -613,6 +617,11 @@ function showFields() {
     rescheduleFields.classList.toggle('hidden', action !== 'approve_reschedule');
 }
 </script>
-
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

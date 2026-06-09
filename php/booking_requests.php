@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 
 // Include PHPMailer
 use PHPMailer\PHPMailer\PHPMailer;
@@ -115,7 +116,7 @@ $notif->bind_param("isss", $booking['student_id'], $notifTitle, $notifMessage, $
                             <p><strong>Next Steps:</strong><br><br> Please proceed to payment.</p>
                         </div>
                         <div style='text-align: center; margin-top: 20px;'>
-                            <a href='http://localhost/kyoshi/php/payment_form.php?id={$booking_id}' 
+                            <a href='http://kyoshitutor.site/php/payment_form.php?id={$booking_id}' 
                                style='display: inline-block; padding: 12px 30px; background: #1d3156; color: white; 
                                       text-decoration: none; border-radius: 30px;'>PAY NOW</a>
                         </div>
@@ -316,13 +317,16 @@ function e($value) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Booking Requests - Kyoshi Tutor</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="../css/style.css">
 <style>
 * {
     margin: 0;
@@ -823,6 +827,32 @@ body::before {
     border-color: #6b9cd7;
     transform: translateX(-3px);
 }
+
+/* Mobile Responsive for Tabs */
+@media (max-width: 768px) {
+    /* Make tabs stack vertically */
+    .section-tabs {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+    }
+    
+    .tab-btn {
+        width: 100%;
+        text-align: center;
+        padding: 12px 16px;
+        font-size: 14px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .tab-btn span {
+        margin-left: auto;
+    }
+}
 </style>
 </head>
 
@@ -831,6 +861,9 @@ body::before {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div>
@@ -845,6 +878,7 @@ body::before {
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -858,15 +892,17 @@ body::before {
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+            </div>
         </nav>
     </div>
 </header>
+  <div class="nav-overlay" id="navOverlay"></div>
 
 <div class="main">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; position: relative;">
         <!-- Back Button - Left -->
         <a href="tutor_dashboard.php" class="back-btn" style="display: inline-flex; align-items: center; gap: 8px; background: white; color: #1d3156; padding: 10px 20px; border-radius: 40px; text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid #e2e8f0; transition: 0.25s;">
-            <i class="bi bi-arrow-left"></i> Back
+            <i class="bi bi-arrow-left"></i> <span>Back</span>
         </a>
         
         <!-- Centered Title and Description -->
@@ -2387,5 +2423,68 @@ function closeRejectRescheduleModal() {
 setTimeout(checkExpiringRequests, 500);
 </script>
 
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+<style>
+/* Fix header title on mobile */
+@media (max-width: 768px) {
+    .main > div:first-child {
+        flex-direction: column;
+        gap: 15px;
+        margin-bottom: 30px !important;
+    }
+    
+    .main > div:first-child .back-btn {
+        order: 1;
+        align-self: flex-start;
+    }
+
+    .back-btn span{display:none;}
+    
+    .main > div:first-child > div[style*="position: absolute"] {
+        position: relative !important;
+        left: auto !important;
+        transform: none !important;
+        order: 2;
+        width: 100%;
+    }
+    
+    .main > div:first-child > div[style*="width: 200px"] {
+        display: none;
+    }
+    
+    .section-tabs {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .tab-btn {
+        padding: 8px 16px;
+        font-size: 13px;
+    }
+    
+    .filter-bar > div {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .filter-bar > div > div {
+        width: 100%;
+    }
+    
+    .filter-bar > div > div select,
+    .filter-bar > div > div input,
+    .filter-bar > div > div button {
+        width: 100%;
+    }
+}
+</style>
 </body>
 </html>

@@ -2,6 +2,7 @@
 session_start();
 include 'config.php';
 include 'insert_notification.php';
+include 'check_login.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -100,7 +101,7 @@ function sendMaterialEmail($booking, $title, $description, $material_type, $tuto
                 <p style='margin:0;font-size:13px;color:#0284c7;'>{$hint}</p>
             </div>
             <div style='text-align:center;'>
-                <a href='http://localhost/kyoshi/php/learning_materials.php?booking_id={$booking['id']}'
+                <a href='http://kyoshitutor.site/php/learning_materials.php?booking_id={$booking['id']}'
                    style='display:inline-block;padding:12px 30px;background:#1d3156;
                           color:white;border-radius:30px;text-decoration:none;'>View Material</a>
             </div>
@@ -229,10 +230,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upload Material · Kyoshi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body {
@@ -418,6 +424,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            
+<button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
+
                 <a href="tutor_dashboard.php" class="brand">
     <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" style="width: 42px; height: 42px; object-fit: contain;">
     <div>
@@ -433,6 +444,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>" alt="">
@@ -446,6 +458,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+</div>
         </nav>
     </div>
 </header>
@@ -671,5 +684,13 @@ function previewFile(input) {
         });
     }
 </script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

@@ -2,6 +2,7 @@
 session_start();
 include 'config.php';
 include 'send_session_report_email.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
@@ -164,9 +165,13 @@ function getStatusBadge($status) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kyoshi | Session Reports</title>
+    <link rel="stylesheet" href="../css/astyle.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -955,6 +960,136 @@ function getStatusBadge($status) {
                 grid-template-columns: 1fr;
             }
         }
+
+        /* ============================================
+   MOBILE RESPONSIVE (max-width: 900px)
+   ============================================ */
+@media (max-width: 900px) {
+    
+    /* Make table scrollable horizontally */
+    .reports-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -16px;
+        width: calc(100% + 32px);
+        padding: 0 16px;
+    }
+    
+    .reports-table {
+        min-width: 700px;
+        width: max-content;
+    }
+    
+    /* Smaller padding for table cells */
+    .reports-table th,
+    .reports-table td {
+        padding: 10px 12px;
+        font-size: 0.75rem;
+    }
+    
+    /* Make action buttons smaller */
+    .btn-view, .btn-approve, .btn-reject {
+        padding: 4px 8px;
+        font-size: 0.65rem;
+        margin: 2px;
+        white-space: nowrap;
+    }
+    
+    /* Badge size adjustment */
+    .badge-approved, .badge-pending, .badge-rejected, .badge-submitted {
+        padding: 3px 8px;
+        font-size: 0.6rem;
+        white-space: nowrap;
+    }
+    
+    /* Filter bar - stack vertically */
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .search-box {
+        width: 100%;
+    }
+    
+    .btn-filter, .btn-reset {
+        text-align: center;
+        width: 100%;
+    }
+    
+    /* Stats cards - 2 columns */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .stat-card {
+        padding: 12px;
+    }
+    
+    .stat-value {
+        font-size: 20px;
+    }
+    
+    .stat-icon {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .stat-icon i {
+        font-size: 18px;
+    }
+    
+    .stat-label {
+        font-size: 0.65rem;
+    }
+    
+    /* Empty state */
+    .empty-state {
+        padding: 30px;
+    }
+    
+    .empty-state i {
+        font-size: 36px;
+    }
+    
+    /* Modal responsive */
+    .modal-container {
+        width: 95%;
+        max-width: 95%;
+    }
+    
+    .report-details p strong {
+        min-width: 100px;
+        display: inline-block;
+    }
+    
+    .section-title {
+        font-size: 13px;
+    }
+}
+
+/* Very small phones */
+@media (max-width: 480px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    
+    .stat-value {
+        font-size: 18px;
+    }
+    
+    .stat-icon {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .stat-icon i {
+        font-size: 16px;
+    }
+}
     </style>
 </head>
 <body>
@@ -1028,22 +1163,38 @@ function getStatusBadge($status) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-    <div style="display: flex; align-items: center; gap: 16px;">
-        <a href="admin_tutor_actions.php" class="btn-back" style="display: inline-flex; align-items: center; gap: 8px; background: #e2e8f0; color: #1d3156; padding: 8px 16px; border-radius: 40px; text-decoration: none; font-size: 13px; font-weight: 600; transition: 0.2s;">
-            <i class="bi bi-arrow-left"></i> Back
-        </a>
-        <div class="page-title">
-            <h1>Session Reports</h1>
+  <div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
+    </div>
+    
+    <!-- Desktop Title with Back Button Beside It -->
+    <div class="page-title">
+        <div class="title-with-back">
+            <a href="admin_tutor_actions.php" class="back-btn-desktop">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back</span>
+            </a>
+            <h1>Manage Reports</h1>
         </div>
     </div>
-    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
+    
     <div class="relative">
-        <button class="admin-profile" onclick="toggleDropdown()">
+        <div class="admin-profile" onclick="toggleDropdown()">
             <img src="<?= e($profilePic) ?>" alt="Admin">
             <span><?= e($displayName) ?></span>
             <i class="bi bi-chevron-down"></i>
-        </button>
+        </div>
+        
+        <!-- Mobile Profile Button -->
+        <div class="mobile-profile-btn" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+        </div>
+        
         <div class="dropdown" id="profileDropdown">
             <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
             <hr>
@@ -1052,6 +1203,15 @@ function getStatusBadge($status) {
     </div>
 </div>
 
+<!-- Mobile Page Header with Arrow Only (no text) -->
+<div class="mobile-page-header" style="margin-top: 20px;">
+    <div class="mobile-title-with-back">
+        <a href="admin_tutor_actions.php" class="mobile-back-arrow">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="mobile-page-title">Manage Reports</h1>
+    </div>
+</div>
     <?php if (isset($_SESSION['success_message'])): ?>
         <div class="alert-success" id="successAlert">
             <i class="bi bi-check-circle"></i> <?= $_SESSION['success_message'] ?>
@@ -1221,16 +1381,54 @@ while ($report = $reports->fetch_assoc()) {
 
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
 
-window.addEventListener('click', function(e) {
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
-    const button = document.querySelector('.admin-profile');
-    if (button && !button.contains(e.target) && dropdown && !dropdown.contains(e.target)) {
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
         dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
     }
 });
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
+    }
+});
+
 
 const menuToggle = document.getElementById('menuToggle');
 const sidebar = document.getElementById('sidebar');
@@ -1392,6 +1590,11 @@ setTimeout(() => {
     }
 }, 3000);
 </script>
-
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

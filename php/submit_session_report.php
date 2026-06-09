@@ -2,6 +2,7 @@
 session_start();
 include 'config.php';
 include 'insert_notification.php';
+include 'check_login.php';
 
 $assetBase = '../assets/img';
 
@@ -72,12 +73,73 @@ if (!$booking_id) {
     <!DOCTYPE html>
     <html lang="en">
     <head>
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Select Session - Session Report</title>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="../css/style.css">
         <style>
+            .session-actions {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.btn-select, .btn-view, .btn-edit {
+    padding: 8px 18px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-select {
+    background: linear-gradient(135deg, #E75A9B, #F28AB2);
+    color: white;
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+    .session-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+    
+    .session-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    .btn-select, .btn-view, .btn-edit {
+        padding: 8px 16px;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+    
+    /* Make buttons full width on very small screens */
+    @media (max-width: 480px) {
+        .session-actions {
+            flex-direction: column;
+            width: 100%;
+        }
+        
+        .btn-select, .btn-view, .btn-edit {
+            width: 100%;
+            justify-content: center;
+            padding: 10px 16px;
+        }
+    }
+}
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: 'Poppins', sans-serif; background: url('../assets/img/background2.png') no-repeat center top; background-size: cover; min-height: 100vh; }
             body::before { content: ''; position: fixed; inset: 0; background: rgba(255,255,255,0.25); z-index: -1; }
@@ -169,6 +231,9 @@ if (!$booking_id) {
     <header class="topbar">
         <div class="container">
             <nav class="nav">
+                <button class="hamburger-menu" id="hamburgerBtn">
+                    <i class="bi bi-list"></i>
+                </button>
                 <a href="tutor_dashboard.php" class="brand">
                     <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                     <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
@@ -180,6 +245,7 @@ if (!$booking_id) {
                     <a href="assignment_overview.php">My Assignments</a>
                     <a href="view_session_reports.php" class="active">My Reports</a>
                 </div>
+                <div class="nav-actions">
                 <div style="position:relative;">
                     <button class="profile" onclick="toggleDropdown()">
                         <img src="<?= e($profilePic) ?>">
@@ -193,10 +259,11 @@ if (!$booking_id) {
                         <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                     </div>
                 </div>
+                </div>
             </nav>
         </div>
     </header>
-
+      <div class="nav-overlay" id="navOverlay"></div>
     <div class="main">
         <div class="card">
             <a href="tutor_dashboard.php" class="back-link">
@@ -272,6 +339,13 @@ if (!$booking_id) {
         function toggleDropdown() { const d = document.getElementById('profileDropdown'); d.style.display = d.style.display === 'block' ? 'none' : 'block'; }
         window.addEventListener('click', function(e) { const btn = document.querySelector('.profile'); const dd = document.getElementById('profileDropdown'); if (btn && dd && !btn.contains(e.target) && !dd.contains(e.target)) { dd.style.display = 'none'; } });
     </script>
+    <script src="../js/nav.js"></script>
+    <script>
+    history.pushState(null, null, location.href);
+    window.addEventListener('popstate', function() {
+        window.location.href = 'login.php';
+    });
+    </script>
     </body>
     </html>
     <?php
@@ -310,10 +384,14 @@ if ($completion && $completion['student_confirmed'] == 0 && $completion['no_show
     <html lang="en">
     <head>
         <meta charset="UTF-8">
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Cannot Submit Report - Kyoshi Tutor</title>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="../css/style.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: 'Poppins', sans-serif; background: url('../assets/img/background2.png') no-repeat center top; background-size: cover; min-height: 100vh; }
@@ -353,10 +431,14 @@ if ($completion && $completion['student_confirmed'] == 0 && $completion['no_show
     <html lang="en">
     <head>
         <meta charset="UTF-8">
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Refund Processing - Kyoshi Tutor</title>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="../css/style.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: 'Poppins', sans-serif; background: url('../assets/img/background2.png') no-repeat center top; background-size: cover; min-height: 100vh; }
@@ -621,11 +703,15 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Session Report - Kyoshi Tutor</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Poppins', sans-serif; background: url('../assets/img/background2.png') no-repeat center top; background-size: cover; min-height: 100vh; }
@@ -706,6 +792,9 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+                <i class="bi bi-list"></i>
+            </button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
@@ -717,6 +806,7 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php" class="active">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -730,10 +820,11 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+            </div>
         </nav>
     </div>
 </header>
-
+<div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
     <div class="card">
         <a href="tutor_booking_detail.php?id=<?= $booking_id ?>" class="btn-back">
@@ -945,7 +1036,80 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 </div>
 
 <div id="customToast" class="toast"></div>
-
+<script>
+// Mobile hamburger menu functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const hamburgerBtn = document.getElementById('hamburgerBtn');
+    const navLinks = document.querySelector('.nav-links');
+    const navOverlay = document.getElementById('navOverlay');
+    
+    if (hamburgerBtn && navLinks) {
+        hamburgerBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            navLinks.classList.toggle('active');
+            if (navOverlay) navOverlay.classList.toggle('active');
+            document.body.style.overflow = navLinks.classList.contains('active') ? 'hidden' : '';
+        });
+    }
+    
+    if (navOverlay) {
+        navOverlay.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    }
+    
+    // Close menu when clicking a nav link
+    document.querySelectorAll('.nav-links a').forEach(link => {
+        link.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            if (navOverlay) navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    });
+});
+</script>
+<script>
+// Mobile hamburger menu functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const hamburgerBtn = document.getElementById('hamburgerBtn');
+    const navLinks = document.querySelector('.nav-links');
+    const navOverlay = document.getElementById('navOverlay');
+    
+    if (hamburgerBtn && navLinks) {
+        hamburgerBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            navLinks.classList.toggle('active');
+            if (navOverlay) navOverlay.classList.toggle('active');
+            document.body.style.overflow = navLinks.classList.contains('active') ? 'hidden' : '';
+        });
+    }
+    
+    if (navOverlay) {
+        navOverlay.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    }
+    
+    // Close menu when clicking a nav link
+    document.querySelectorAll('.nav-links a').forEach(link => {
+        link.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            if (navOverlay) navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    });
+});
+</script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 <script>
 function toggleDropdown() {
     const d = document.getElementById('profileDropdown');
@@ -1000,6 +1164,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return false;
         }
     });
+});
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
 });
 </script>
 

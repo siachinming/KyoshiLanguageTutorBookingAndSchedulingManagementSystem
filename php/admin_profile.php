@@ -70,33 +70,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
         $_SESSION['error_message'] = "All password fields are required";
     } elseif ($new_password !== $confirm_password) {
         $_SESSION['error_message'] = "New passwords do not match";
-    } elseif (strlen($new_password) < 6) {
-        $_SESSION['error_message'] = "Password must be at least 6 characters";
     } else {
-        // Verify current password
-        $passStmt = $conn->prepare("SELECT password FROM users WHERE id = ? AND role = 'admin'");
-        $passStmt->bind_param("i", $adminID);
-        $passStmt->execute();
-        $userData = $passStmt->get_result()->fetch_assoc();
+        // Validate password strength
+        $password_errors = [];
         
-        if (password_verify($current_password, $userData['password'])) {
-            $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-            $updatePass = $conn->prepare("UPDATE users SET password = ? WHERE id = ? AND role = 'admin'");
-            $updatePass->bind_param("si", $hashed_password, $adminID);
-            
-            if ($updatePass->execute()) {
-                $_SESSION['success_message'] = "Password changed successfully!";
-            } else {
-                $_SESSION['error_message'] = "Failed to change password";
-            }
+        if (strlen($new_password) < 8) {
+            $password_errors[] = "Password must be at least 8 characters long";
+        }
+        if (!preg_match('/[A-Z]/', $new_password)) {
+            $password_errors[] = "Password must contain at least 1 uppercase letter";
+        }
+        if (!preg_match('/[!@#$%^&*(),.?":{}|<>]/', $new_password)) {
+            $password_errors[] = "Password must contain at least 1 special character";
+        }
+        
+        if (!empty($password_errors)) {
+            $_SESSION['error_message'] = implode(" | ", $password_errors);
         } else {
-            $_SESSION['error_message'] = "Current password is incorrect";
+            // Verify current password
+            $passStmt = $conn->prepare("SELECT password FROM users WHERE id = ? AND role = 'admin'");
+            $passStmt->bind_param("i", $adminID);
+            $passStmt->execute();
+            $userData = $passStmt->get_result()->fetch_assoc();
+            
+            if (password_verify($current_password, $userData['password'])) {
+                $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+                $updatePass = $conn->prepare("UPDATE users SET password = ? WHERE id = ? AND role = 'admin'");
+                $updatePass->bind_param("si", $hashed_password, $adminID);
+                
+                if ($updatePass->execute()) {
+                    $_SESSION['success_message'] = "Password changed successfully!";
+                } else {
+                    $_SESSION['error_message'] = "Failed to change password";
+                }
+            } else {
+                $_SESSION['error_message'] = "Current password is incorrect";
+            }
         }
     }
     header("Location: admin_profile.php");
     exit();
 }
-
 // Get counts for sidebar
 $totalTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor'")->fetch_assoc()['count'];
 $totalStudents = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'student'")->fetch_assoc()['count'];
@@ -822,21 +836,27 @@ function e($value) {
                     <input type="password" name="current_password" required>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label><i class="bi bi-key"></i> New Password</label>
-                        <input type="password" name="new_password" required minlength="6">
-                        <small style="font-size: 11px; color: #666;">Minimum 6 characters</small>
-                    </div>
-                    <div class="form-group">
-                        <label><i class="bi bi-check-circle"></i> Confirm New Password</label>
-                        <input type="password" name="confirm_password" required>
-                    </div>
-                </div>
-                
-                <div style="display: flex; gap: 12px; margin-top: 24px;">
-                    <button type="submit" class="btn-save"><i class="bi bi-key"></i> Change Password</button>
-                </div>
+              <div class="form-row">
+    <div class="form-group">
+        <label><i class="bi bi-key"></i> New Password</label>
+        <input type="password" name="new_password" 
+               id="new_password"
+               required 
+               pattern="(?=.*[A-Z])(?=.*[!@#$%^&*]).{8,}"
+               title="Password must be at least 8 characters with 1 uppercase letter and 1 special character">
+        <small style="font-size: 11px; color: #666; display: block; margin-top: 5px;">
+            <i class="bi bi-info-circle"></i> Requirements:<br>
+            <span id="lengthReq">✗ 8+ characters</span> <br> 
+            <span id="upperReq">✗ 1 uppercase letter</span> <br>
+            <span id="specialReq">✗ 1 special character</span>
+        </small>
+    </div>
+    <div class="form-group">
+        <label><i class="bi bi-check-circle"></i> Confirm New Password</label>
+        <input type="password" name="confirm_password" id="confirm_password" required>
+        <small style="font-size: 11px; color: #666;" id="matchMsg"></small>
+    </div>
+</div>
             </form>
         </div>
     </div>
@@ -946,6 +966,108 @@ if (overlay) {
         document.body.style.overflow = '';
     });
 }
+
+// Real-time password validation
+const newPassword = document.getElementById('new_password');
+const confirmPassword = document.getElementById('confirm_password');
+const lengthReq = document.getElementById('lengthReq');
+const upperReq = document.getElementById('upperReq');
+const specialReq = document.getElementById('specialReq');
+const matchMsg = document.getElementById('matchMsg');
+
+function validatePassword() {
+    const password = newPassword.value;
+    let isValid = true;
+    
+    // Check length (8+ characters)
+    if (password.length >= 8) {
+        lengthReq.innerHTML = '✓ At least 8 characters';
+        lengthReq.style.color = '#28a745';
+    } else {
+        lengthReq.innerHTML = '✗ At least 8 characters';
+        lengthReq.style.color = '#dc2626';
+        isValid = false;
+    }
+    
+    // Check uppercase letter
+    if (/[A-Z]/.test(password)) {
+        upperReq.innerHTML = '✓ 1 uppercase letter';
+        upperReq.style.color = '#28a745';
+    } else {
+        upperReq.innerHTML = '✗ 1 uppercase letter';
+        upperReq.style.color = '#dc2626';
+        isValid = false;
+    }
+    
+    // Check special character (simplified set)
+    if (/[!@#$%^&*]/.test(password)) {
+        specialReq.innerHTML = '✓ 1 special character (!@#$%^&*)';
+        specialReq.style.color = '#28a745';
+    } else {
+        specialReq.innerHTML = '✗ 1 special character (!@#$%^&*)';
+        specialReq.style.color = '#dc2626';
+        isValid = false;
+    }
+    
+    return isValid;
+}
+
+function checkPasswordMatch() {
+    if (confirmPassword.value.length > 0) {
+        if (newPassword.value === confirmPassword.value) {
+            matchMsg.innerHTML = '✓ Passwords match';
+            matchMsg.style.color = '#28a745';
+            return true;
+        } else {
+            matchMsg.innerHTML = '✗ Passwords do not match';
+            matchMsg.style.color = '#dc2626';
+            return false;
+        }
+    } else {
+        matchMsg.innerHTML = '';
+        return false;
+    }
+}
+
+// Add event listeners
+if (newPassword) {
+    newPassword.addEventListener('input', function() {
+        validatePassword();
+        checkPasswordMatch();
+    });
+}
+
+if (confirmPassword) {
+    confirmPassword.addEventListener('input', checkPasswordMatch);
+}
+
+// Validate form before submission
+document.getElementById('passwordForm')?.addEventListener('submit', function(e) {
+    const isPasswordValid = validatePassword();
+    const isMatch = checkPasswordMatch();
+    
+    if (!isPasswordValid) {
+        e.preventDefault();
+        Swal.fire({
+            icon: 'error',
+            title: 'Password Requirements',
+            html: 'Please meet all password requirements:<br>• At least 8 characters<br>• 1 uppercase letter<br>• 1 special character (!@#$%^&*)',
+            confirmButtonColor: '#dc2626'
+        });
+        return false;
+    }
+    
+    if (!isMatch) {
+        e.preventDefault();
+        Swal.fire({
+            icon: 'error',
+            title: 'Password Mismatch',
+            text: 'New password and confirm password do not match',
+            confirmButtonColor: '#dc2626'
+        });
+        return false;
+    }
+});
 
 // Auto-dismiss alerts
 setTimeout(() => {

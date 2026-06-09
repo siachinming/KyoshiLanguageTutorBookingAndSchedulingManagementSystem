@@ -1,10 +1,12 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 $userID = $_SESSION['user_id'];
+
 
 $bookingID = intval($_GET['id'] ?? 0);
 if (!$bookingID) { header("Location: booking_status.php"); exit(); }
@@ -34,7 +36,11 @@ if (!$b) { header("Location: booking_status.php"); exit(); }
 
 $user = $conn->query("SELECT * FROM users WHERE id = $userID")->fetch_assoc();
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 $tutorPic    = !empty($b['tutor_pic']) ? '../uploads/profiles/' . $b['tutor_pic'] : $assetBase . '/profile-tutor.png';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($b['rated'])) {
@@ -71,9 +77,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($b['rated'])) {
 
         $stmt->close();
 
-        $next = intval($_GET['next'] ?? 0);
-if ($next) {
-    header("Location: rate_session.php?id=$next&from_chain=1");
+$nextIds = $_GET['next'] ?? '';
+if (!empty($nextIds)) {
+    $nextIdArray = explode(',', $nextIds);
+    if (!empty($nextIdArray)) {
+        $firstNextId = intval($nextIdArray[0]);
+        $remainingNextIds = array_slice($nextIdArray, 1);
+        $nextParam = !empty($remainingNextIds) ? '&next=' . implode(',', $remainingNextIds) : '';
+        header("Location: rate_session.php?id=" . $firstNextId . "&from_chain=1" . $nextParam);
+        exit();
+    }
 } else {
     header("Location: booking_status.php?rated=1");
 }
@@ -88,9 +101,13 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rate Session · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6;--paper:rgba(255,255,255,.88);--ink:#342635;--muted:#7B6178;
@@ -224,6 +241,9 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <header class="topbar">
   <div class="container" style="width:min(1440px,calc(100% - 40px));margin:0 auto;padding:0">
     <nav class="nav">
+      <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
@@ -254,9 +274,10 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     </nav>
   </div>
 </header>
+  <div class="nav-overlay" id="navOverlay"></div>
 
 <div class="container">
-  <a href="booking_status.php" class="back-link"><i class="bi bi-arrow-left"></i> Back to My Bookings</a>
+  <a href="booking_status.php" class="back-link"><i class="bi bi-arrow-left"></i><span>Back to My Bookings</span></a>
 
   <!-- PAGE HEADING -->
   <div style="text-align:center;margin-bottom:28px;">
@@ -444,5 +465,14 @@ document.getElementById('ratingForm')?.addEventListener('submit', function(e) {
     btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Submitting...';
 });
 </script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

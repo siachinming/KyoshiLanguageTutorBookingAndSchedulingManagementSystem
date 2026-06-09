@@ -25,7 +25,7 @@ function sendSessionReportNotification($tutorEmail, $tutorName, $studentName, $s
         
         $formattedDate = date('d M Y', strtotime($sessionDate));
         $formattedTime = date('h:i A', strtotime($sessionTime));
-        $resubmitLink = "http://localhost/kyoshi/php/submit_session_report.php?resubmit=1&report_id=" . $reportId;
+        $resubmitLink = "http://kyoshitutor.site/kyoshi/php/submit_session_report.php?resubmit=1&report_id=" . $reportId;
         
         if ($status === 'approve') {
             $mail->Subject = '✅ Session Report Approved - Kyoshi';

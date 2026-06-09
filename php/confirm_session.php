@@ -373,9 +373,6 @@ function sendCompletionEmails($booking) {
             <div style='background:#d4edda;padding:16px;border-radius:12px;margin:20px 0;border-left:4px solid #28a745;'>
                 <p style='margin:0;'>Thank you for learning with us!</p>
             </div>
-            <div style='text-align:center;margin-top:20px;'>
-                <a href='http://localhost/kyoshi/php/rate_tutor.php?booking_id={$booking['id']}' style='display:inline-block;padding:10px 20px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;'>Rate Your Tutor</a>
-            </div>
             <p style='font-size:12px;color:#999;text-align:center;margin-top:20px;'>Keep learning!</p>
         </div>
         ";
@@ -398,7 +395,7 @@ function sendCompletionEmails($booking) {
                 </p>
             </div>
             <div style='text-align:center;margin-top:20px;'>
-                <a href='http://localhost/kyoshi/php/submit_session_report.php?booking_id={$booking['id']}' 
+                <a href='http://kyoshitutor.site/php/submit_session_report.php?booking_id={$booking['id']}' 
                    style='display:inline-block;padding:10px 20px;background:#f59e0b;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
                     Submit Session Report
                 </a>
@@ -516,7 +513,7 @@ function sendReportReminderEmail($booking) {
                 <li>Homework assigned</li>
             </ul>
             <div style='text-align:center;margin:30px 0;'>
-                <a href='http://localhost/kyoshi/php/submit_session_report.php?booking_id={$booking['id']}' 
+                <a href='http://kyoshitutor.site/php/submit_session_report.php?booking_id={$booking['id']}' 
                    style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
                     Submit Session Report Now
                 </a>

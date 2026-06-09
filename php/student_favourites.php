@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -18,10 +19,11 @@ $user = $stmt->get_result()->fetch_assoc();
 if (!$user) { header("Location: login.php"); exit(); }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 // Get favourites with tutor details
 $favourites = [];
 $stmt = $conn->prepare("
@@ -55,10 +57,14 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Favourites · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6; --paper:rgba(255,255,255,.88); --ink:#342635; --muted:#7B6178;
@@ -109,11 +115,148 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     .page-header h1{margin:0;font-size:clamp(28px,4vw,44px);letter-spacing:-1.2px}
     .page-header p{margin:8px 0 0;color:var(--muted);font-size:15px}
 
-    /* Stats bar */
-    .stats-bar{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0}
-    .stat-pill{background:var(--paper);border:1px solid rgba(255,255,255,.55);box-shadow:var(--shadow-soft);border-radius:999px;padding:10px 20px;display:flex;align-items:center;gap:8px;font-weight:900;font-size:14px}
-    .stat-pill i{color:var(--hot-pink)}
+   /* Stats Bar - Mobile Friendly */
+.stats-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
 
+.stat-pill {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(231, 90, 155, 0.2);
+    border-radius: 40px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--pink-dark);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.stat-pill i {
+    font-size: 14px;
+    color: var(--hot-pink);
+}
+
+/* Filter Bar - Mobile Responsive */
+.filter-bar {
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    border-radius: 60px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(231, 90, 155, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.filter-chip {
+    background: rgba(242, 138, 178, 0.12);
+    border: none;
+    padding: 8px 18px;
+    border-radius: 40px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #6D4964;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.filter-chip.active {
+    background: linear-gradient(135deg, var(--hot-pink), var(--pink));
+    color: white;
+    box-shadow: 0 4px 12px rgba(231, 90, 155, 0.3);
+}
+
+.sort-select {
+    background: rgba(242, 138, 178, 0.12);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 40px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6D4964;
+    cursor: pointer;
+    margin-left: auto;
+    outline: none;
+}
+
+/* Mobile Responsive (max-width: 768px) */
+@media (max-width: 768px) {
+    .stats-bar {
+        gap: 8px;
+        justify-content: center;
+    }
+    
+    .stat-pill {
+        padding: 6px 14px;
+        font-size: 11px;
+    }
+    
+    .stat-pill i {
+        font-size: 12px;
+    }
+    
+    .filter-bar {
+        border-radius: 24px;
+        padding: 12px;
+        gap: 8px;
+        justify-content: center;
+    }
+    
+    .filter-chip {
+        padding: 6px 14px;
+        font-size: 11px;
+        white-space: nowrap;
+    }
+    
+    .sort-select {
+        padding: 6px 14px;
+        font-size: 11px;
+        margin-left: 0;
+        width: 100%;
+        margin-top: 4px;
+    }
+}
+
+/* Small phones (max-width: 480px) */
+@media (max-width: 480px) {
+    .stats-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    
+    .stat-pill {
+        justify-content: center;
+        width: 100%;
+    }
+    
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+        border-radius: 20px;
+    }
+    
+    .filter-chip {
+        text-align: center;
+        width: 100%;
+    }
+    
+    .sort-select {
+        width: 100%;
+        text-align: center;
+    }
+}
     /* Filter bar */
     .filter-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:22px}
     .filter-chip{border:1px solid rgba(46,42,59,.12);background:rgba(255,255,255,.82);color:#7A5570;padding:10px 16px;border-radius:999px;font-size:13px;font-weight:900;cursor:pointer;transition:.18s ease}
@@ -195,6 +338,9 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+      <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
@@ -235,7 +381,7 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     </nav>
   </div>
 </header>
-
+  <div class="nav-overlay" id="navOverlay"></div>
 <!-- ── MAIN ── -->
 <main class="container">
   <div class="page-header">
@@ -566,5 +712,14 @@ function e($v) { return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   document.getElementById('rateModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeRateModal(); });
   document.getElementById('removeModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeRemoveModal(); });
 </script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

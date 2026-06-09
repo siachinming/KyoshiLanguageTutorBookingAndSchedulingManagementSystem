@@ -365,11 +365,15 @@ input[type="checkbox"] {
 </div>
 
 <div id="toast"></div>
-
 <script>
 function togglePassword() {
   const passwordInput = document.getElementById('loginPassword');
   const eyeIcon = document.getElementById('eyeIcon');
+  
+  if (!passwordInput || !eyeIcon) {
+    console.log("Elements not found");
+    return;
+  }
   
   if (passwordInput.type === 'password') {
     passwordInput.type = 'text';
@@ -384,21 +388,25 @@ function togglePassword() {
 
 function showToast(msg) {
   const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.style.opacity = '1';
-  setTimeout(() => {
-    toast.style.opacity = '0';
-  }, 3000);
+  if (toast) {
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    setTimeout(() => {
+      toast.style.opacity = '0';
+    }, 3000);
+  }
 }
 
-<?php if (isset($_SESSION['error'])): ?>
+// Make sure the function is available globally
+window.togglePassword = togglePassword;
+
+<?php if (isset($_SESSION['error']) && !empty($_SESSION['error'])): ?>
   showToast("<?php echo addslashes($_SESSION['error']); unset($_SESSION['error']); ?>");
 <?php endif; ?>
 
-<?php if (isset($_SESSION['success'])): ?>
+<?php if (isset($_SESSION['success']) && !empty($_SESSION['success'])): ?>
   showToast("<?php echo addslashes($_SESSION['success']); unset($_SESSION['success']); ?>");
 <?php endif; ?>
 </script>
-
 </body>
 </html>

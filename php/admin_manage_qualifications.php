@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 include 'send_certificate_email.php';
 $assetBase = '../assets/img';
 
@@ -266,11 +267,15 @@ function getStatusBadge($status) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Qualifications · Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/astyle.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         * {
@@ -291,21 +296,45 @@ function getStatusBadge($status) {
         }
 
         /* Sidebar - FIXED */
-        .sidebar {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 230px;
-            height: 100vh;
-            background: #272754;
-            color: #E8E4F0;
-            overflow-y: hidden;
-            z-index: 1000;
-            transition: transform 0.3s ease;
-            transform: translateX(0);
-            display: flex;
-            flex-direction: column;
-        }
+        /* Sidebar - FIXED */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 230px;
+    height: 100vh;
+    background: #272754;
+    color: #E8E4F0;
+    overflow-y: auto;
+    z-index: 1000;
+    transition: transform 0.3s ease;
+    transform: translateX(0);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+    .menu-toggle {
+        display: block !important;
+        background: #272754;
+        color: white;
+        border: none;
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 1.3rem;
+    }
+    
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    
+    .sidebar.open {
+        transform: translateX(0);
+    }
+}
 
         .sidebar.closed { transform: translateX(-100%); }
         .sidebar.open { transform: translateX(0); }
@@ -1240,6 +1269,131 @@ function getStatusBadge($status) {
             .tab-bar { flex-wrap: wrap; }
             .tab-btn { padding: 8px 16px; font-size: 12px; }
         }
+
+        /* ============================================
+   TABLE RESPONSIVE FIXES - MOBILE ONLY
+   ============================================ */
+
+@media (max-width: 768px) {
+    /* Make both tables scrollable horizontally */
+    .certificates-container,
+    .qualifications-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -16px;
+        width: calc(100% + 32px);
+        padding: 0 16px;
+    }
+    
+    .certificates-table,
+    .qualifications-table {
+        min-width: 650px;
+        width: max-content;
+    }
+    
+    /* Smaller padding for table cells */
+    .certificates-table th,
+    .certificates-table td,
+    .qualifications-table th,
+    .qualifications-table td {
+        padding: 10px 12px;
+        font-size: 0.75rem;
+    }
+    
+    /* Make action buttons smaller and wrap properly */
+    .certificates-table td:last-child,
+    .qualifications-table td:last-child {
+        white-space: nowrap;
+        min-width: 160px;
+    }
+    
+    .btn-view, .btn-approve, .btn-reject, 
+    .btn-edit, .btn-delete {
+        padding: 4px 8px;
+        font-size: 0.65rem;
+        margin: 2px;
+        display: inline-block;
+    }
+    
+    /* Badge size adjustment */
+    .badge-approved, .badge-pending, .badge-rejected {
+        padding: 3px 8px;
+        font-size: 0.6rem;
+        white-space: nowrap;
+    }
+    
+    /* Filter bar improvements */
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .search-box {
+        width: 100%;
+    }
+    
+    .btn-filter, .btn-reset {
+        text-align: center;
+        width: 100%;
+    }
+    
+    /* Tab bar improvements */
+    .tab-bar {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .tab-btn {
+        padding: 8px 16px;
+        font-size: 0.75rem;
+        flex: 1;
+        text-align: center;
+    }
+    
+    /* Empty state padding */
+    .empty-state {
+        padding: 30px;
+    }
+    
+    .empty-state i {
+        font-size: 36px;
+    }
+    
+    /* Qualification table specific */
+    .qualifications-table td:first-child,
+    .certificates-table td:first-child {
+        min-width: 120px;
+    }
+}
+
+/* Emergency fix for sidebar toggle */
+.menu-toggle {
+    display: block !important;
+    background: #272754;
+    color: white;
+    border: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 1.3rem;
+}
+
+@media (min-width: 769px) {
+    .menu-toggle {
+        display: none !important;
+    }
+}
+
+.sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+}
+
+.sidebar.open {
+    transform: translateX(0);
+}
     </style>
 </head>
 <body>
@@ -1250,7 +1404,7 @@ function getStatusBadge($status) {
         <div class="brand-wrapper">
             <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="brand-icon">
             <div class="brand-title">
-                <h1>Kyoshi</h1>
+                <h1>KYOSHI</h1>
                 <span class="admin-space-text">Admin Space</span>
             </div>
         </div>
@@ -1333,27 +1487,53 @@ function getStatusBadge($status) {
 </aside>
 
 <div class="main-content">
-   <div class="top-bar">
-    <div style="display: flex; align-items: center; gap: 16px;">
-        <a href="admin_tutor_actions.php" class="btn-back" style="display: inline-flex; align-items: center; gap: 8px; background: #e2e8f0; color: #1d3156; padding: 8px 16px; border-radius: 40px; text-decoration: none; font-size: 13px; font-weight: 600; transition: 0.2s;">
-            <i class="bi bi-arrow-left"></i> Back
-        </a>
-        <div class="page-title">
+<div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
+    </div>
+    
+    <!-- Desktop Title with Back Button Beside It -->
+    <div class="page-title">
+        <div class="title-with-back">
+            <a href="admin_tutor_actions.php" class="back-btn-desktop">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back</span>
+            </a>
             <h1>Manage Qualifications</h1>
         </div>
     </div>
-    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
+    
     <div class="relative">
-        <button class="admin-profile" onclick="toggleDropdown()">
+        <div class="admin-profile" onclick="toggleDropdown()">
             <img src="<?= e($profilePic) ?>" alt="Admin">
             <span><?= e($displayName) ?></span>
             <i class="bi bi-chevron-down"></i>
-        </button>
+        </div>
+        
+        <!-- Mobile Profile Button -->
+        <div class="mobile-profile-btn" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+        </div>
+        
         <div class="dropdown" id="profileDropdown">
             <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
             <hr>
             <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
         </div>
+    </div>
+</div>
+
+<!-- Mobile Page Header with Arrow Only (no text) -->
+<div class="mobile-page-header" style="margin-top: 20px;">
+    <div class="mobile-title-with-back">
+        <a href="admin_tutor_actions.php" class="mobile-back-arrow">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="mobile-page-title">Manage Qualifications</h1>
     </div>
 </div>
 
@@ -1584,36 +1764,55 @@ function getStatusBadge($status) {
 
 <script>
 function toggleDropdown() {
-    const dd = document.getElementById('profileDropdown');
-    if (dd) {
-        if (dd.style.display === 'block') {
-            dd.style.display = 'none';
-        } else {
-            // Close any other open dropdowns first
-            closeAllDropdowns();
-            dd.style.display = 'block';
-        }
-    }
-}
-
-function closeAllDropdowns() {
-    const dropdowns = document.querySelectorAll('.dropdown');
-    dropdowns.forEach(dropdown => {
+    const dropdown = document.getElementById('profileDropdown');
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
         dropdown.style.display = 'none';
-    });
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
 
 // Close dropdown when clicking outside
-document.addEventListener('click', function(event) {
-    const adminProfile = document.querySelector('.admin-profile');
+document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
     
-    if (adminProfile && dropdown) {
-        if (!adminProfile.contains(event.target) && !dropdown.contains(event.target)) {
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
+});
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
             dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
         }
     }
 });
+
 
 function switchTab(tab) {
     const currentSearch = document.getElementById('searchInput')?.value || '';
@@ -1661,6 +1860,29 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+// Mobile menu toggle - FIXED
+const menuToggleBtn = document.getElementById('menuToggle');
+const sidebarEl = document.getElementById('sidebar');
+const overlayEl = document.getElementById('sidebarOverlay');
+
+if (menuToggleBtn) {
+    menuToggleBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Menu clicked'); // Debug
+        sidebarEl.classList.toggle('open');
+        if (overlayEl) overlayEl.classList.toggle('active');
+        document.body.style.overflow = sidebarEl.classList.contains('open') ? 'hidden' : '';
+    });
+}
+
+if (overlayEl) {
+    overlayEl.addEventListener('click', function() {
+        sidebarEl.classList.remove('open');
+        overlayEl.classList.remove('active');
+        document.body.style.overflow = '';
+    });
+}
 function applyFilters() {
     const search = document.getElementById('searchInput').value;
     const status = document.getElementById('statusFilter')?.value || 'approved';
@@ -1903,6 +2125,11 @@ document.addEventListener('keydown', function(e) {
     }
 });
 </script>
-
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

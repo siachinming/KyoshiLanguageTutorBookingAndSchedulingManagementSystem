@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) { 
@@ -20,8 +21,11 @@ if (!$user) {
 }
 
 $displayName = $user['fullname'];
-$profilePic = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 // Get filter parameters
 $filterStatus = $_GET['status'] ?? 'all';
 $sortBy = $_GET['sort'] ?? 'due_date_asc';
@@ -159,10 +163,14 @@ function getSubmissionTiming($submitted_at, $due_date) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Assignments · Kyoshi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../css/style.css">
     <style>
         :root{
             --cream:#FFF1F6;--paper:rgba(255,255,255,.88);--ink:#342635;--muted:#7B6178;
@@ -259,6 +267,9 @@ function getSubmissionTiming($submitted_at, $due_date) {
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
         <div>
@@ -304,14 +315,20 @@ function getSubmissionTiming($submitted_at, $due_date) {
   </div>
 </header>
 
+  <div class="nav-overlay" id="navOverlay"></div>
+
+
 <div class="container" style="padding:24px 0 60px;">
-    <div style="position:relative;text-align:center;margin-bottom:20px;">
-        <a href="student_dashboard.php" class="back-link" style="position:absolute;left:0;top:50%;transform:translateY(-50%);">
-            <i class="bi bi-arrow-left"></i> Back
-        </a>
-        <h1 style="margin:0;font-size:28px;"><i class="bi bi-journal-bookmark-fill"></i> My Assignments</h1>
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
+    <a href="student_dashboard.php" class="back-link" style="margin-bottom: 0;">
+        <i class="bi bi-arrow-left"></i><span>Back</span>
+    </a><br>
+    <div style="text-align: center; flex: 1;">
+        <h1 style="margin:0;font-size:28px;">My Assignments</h1>
         <p style="margin:8px 0 0;color:var(--muted);font-size:14px;">Track, submit, and get feedback on your assignments</p>
     </div>
+    <div style="width: 70px;"></div> <!-- Spacer to balance the layout -->
+</div>
 
     <!-- FILTER BAR -->
     <form method="GET" class="filter-bar">
@@ -575,6 +592,13 @@ document.getElementById('submissionForm')?.addEventListener('submit', async func
     } catch (error) {
         showToast('Error uploading submission', true);
     }
+});
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
 });
 </script>
 </body>

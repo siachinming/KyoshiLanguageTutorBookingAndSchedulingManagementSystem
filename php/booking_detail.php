@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 $ratingQueue = isset($_GET['queue']) ? true : false;
 $nextBookingId = null;
@@ -120,7 +121,11 @@ if (!$b) { header("Location: booking_status.php"); exit(); }
 
 $user = $conn->query("SELECT * FROM users WHERE id = $userID")->fetch_assoc();
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 $tutorPic    = !empty($b['tutor_pic']) ? '../uploads/profiles/' . $b['tutor_pic'] : $assetBase . '/profile-tutor.png';
 $payStatus   = $b['payment_status'] ?? null;
 $payMethod   = $b['payment_method'] ?? '';
@@ -240,10 +245,15 @@ unset($_SESSION['success_message']);
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Booking Details · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     /* [Keep all your existing CSS styles here - they are the same] */
     :root{
@@ -370,7 +380,60 @@ unset($_SESSION['success_message']);
     .btn-secondary:hover{transform:translateY(-1px)}
     .btn-danger{padding:11px 22px;border-radius:999px;border:1px solid rgba(201,79,134,.3);background:white;color:var(--pink-dark);font-size:13px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.18s ease}
     .btn-danger:hover{background:rgba(255,241,246,.8)}
+    /* ========== FIX CANCEL BUTTON STYLE ========== */
 
+/* Style for the cancel booking button */
+.btn-cancel {
+    padding: 11px 22px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: .15s ease;
+    text-decoration: none;
+    border: none;
+    white-space: nowrap;
+    background: linear-gradient(135deg, #dc2626, #ef4444);
+    color: white;
+    box-shadow: 0 6px 14px rgba(220, 38, 38, 0.25);
+}
+
+.btn-cancel:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, #b91c1c, #dc2626);
+    box-shadow: 0 8px 18px rgba(220, 38, 38, 0.35);
+}
+
+.btn-cancel:active {
+    transform: translateY(0);
+}
+
+/* Alternative ghost style for cancel button */
+.btn-cancel-ghost {
+    padding: 11px 22px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: .15s ease;
+    text-decoration: none;
+    white-space: nowrap;
+    background: white;
+    color: #dc2626;
+    border: 1px solid rgba(220, 38, 38, 0.3);
+}
+
+.btn-cancel-ghost:hover {
+    background: #fee2e2;
+    border-color: #dc2626;
+    transform: translateY(-1px);
+}
     .star-row{display:flex;gap:8px;margin:12px 0}
     .star-btn{width:40px;height:40px;border-radius:12px;border:2px solid rgba(46,42,59,.10);background:white;font-size:20px;cursor:pointer;transition:.15s ease;display:grid;place-items:center}
     .star-btn.active{border-color:#FFB800;background:rgba(255,184,0,.1)}
@@ -391,6 +454,41 @@ unset($_SESSION['success_message']);
         align-items: center;
         justify-content: center;
     }
+
+    /* Attendance Proof Modal */
+#attendanceProofModal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 99999;
+    align-items: center;
+    justify-content: center;
+}
+
+#attendanceProofModal .modal-box {
+    max-width: 600px;
+    width: 90%;
+    background: white;
+    border-radius: 24px;
+    padding: 28px;
+    text-align: center;
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
 
     .modal-overlay.active {
         display: flex;
@@ -538,6 +636,331 @@ unset($_SESSION['success_message']);
     margin: 4px 0 !important;
     border-color: rgba(242,138,178,.2) !important;
 }
+
+/* ========== FIX PROGRESS BAR FULL WIDTH ========== */
+/* ========== FIX PROGRESS BAR - FULL WIDTH INSIDE CONTAINER ========== */
+.progress-wrap {
+    width: 100%;
+    padding: 18px 12px;
+    margin-bottom: 20px;
+    background: var(--paper);
+    border-radius: 20px;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.progress-steps {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 5px;
+}
+
+.p-step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    text-align: center;
+    min-width: 0;
+}
+.p-step:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    top: 15px;
+    left: calc(50% + 12px);
+    right: calc(-50% + 12px);
+    height: 2px;
+    background: rgba(46,42,59,.10);
+    z-index: 0;
+}
+
+/* Fix for mobile - shorter line */
+@media (max-width: 768px) {
+    .p-step:not(:last-child)::after {
+        left: calc(50% + 8px);
+        right: calc(-50% + 8px);
+    }
+}
+
+@media (max-width: 600px) {
+    .p-step:not(:last-child)::after {
+        left: calc(50% + 6px);
+        right: calc(-50% + 6px);
+    }
+}
+.p-dot {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid rgba(46,42,59,.12);
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 900;
+    color: #9080a0;
+    margin-bottom: 6px;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.p-label {
+    font-size: 10px;
+    font-weight: 900;
+    color: var(--muted);
+    text-align: center;
+    white-space: normal;
+    word-break: keep-all;
+}
+
+/* Mobile progress bar */
+@media (max-width: 600px) {
+    .progress-wrap {
+        padding: 14px 8px;
+    }
+    
+    .p-dot {
+        width: 24px;
+        height: 24px;
+        font-size: 9px;
+    }
+    
+    .p-label {
+        font-size: 8px;
+    }
+    
+    .p-step:not(:last-child)::after {
+        top: 12px;
+        left: calc(50% + 10px);
+        right: calc(-50% + 10px);
+    }
+}
+
+/* ========== FIX TUTOR + SESSION LAYOUT - SIDE BY SIDE ON DESKTOP ========== */
+.booking-details-container {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.tutor-section {
+    flex: 0 0 280px;
+}
+
+.session-section {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Session detail grid */
+.detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* Mobile: Stack */
+@media (max-width: 768px) {
+    .booking-details-container {
+        flex-direction: column;
+    }
+    
+    .tutor-section {
+        flex: 1;
+        width: 100%;
+    }
+    
+    .session-section {
+        width: 100%;
+    }
+    
+    .detail-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ========== FINAL FIXES ========== */
+/* Fix progress bar line length on mobile */
+@media (max-width: 768px) {
+    .p-step:not(:last-child)::after {
+        left: calc(50% + 8px) !important;
+        right: calc(-50% + 8px) !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .p-step:not(:last-child)::after {
+        left: calc(50% + 6px) !important;
+        right: calc(-50% + 6px) !important;
+    }
+}
+
+
+/* Force tutor and session to stack on mobile */
+@media (max-width: 768px) {
+    /* Target by the div's structure instead of style attribute */
+    .card > div {
+        flex-direction: column !important;
+    }
+    
+    .card > div > div:first-child {
+        flex: 1 !important;
+        width: 100% !important;
+        margin-bottom: 20px;
+    }
+    
+    .card > div > div:last-child {
+        width: 100% !important;
+    }
+    
+    .progress-wrap {
+        overflow-x: visible !important;
+    }
+    
+    .progress-steps {
+        min-width: auto !important;
+    }
+}
+/* Mobile: Stack vertically */
+@media (max-width: 768px) {
+    /* Target the flex container in the card */
+    .card .detail-grid {
+        flex-direction: column;
+    }
+    
+    /* Make tutor section full width */
+    .card > div > div:first-child {
+        flex: 1 !important;
+        width: 100% !important;
+    }
+    
+    /* Make session section full width */
+    .card > div > div:last-child {
+        width: 100% !important;
+    }
+    
+    /* Back button text - show on mobile */
+    .back-link span {
+        display: none !important;
+    }
+    
+    /* Progress bar full width on mobile */
+    .progress-wrap {
+        width: 100%;
+        overflow-x: auto;
+    }
+    
+    .progress-steps {
+        min-width: 400px;
+    }
+    
+    /* Tutor section inner adjustments */
+    .card > div > div:first-child img {
+        width: 48px !important;
+        height: 48px !important;
+    }
+    
+    .card > div > div:first-child strong {
+        font-size: 14px !important;
+    }
+    
+    .card > div > div:first-child span {
+        font-size: 11px !important;
+    }
+}
+
+/* ========== FIX STATUS BANNER FULL WIDTH ON MOBILE ========== */
+@media (max-width: 768px) {
+    /* Make status banner full width */
+    .status-banner {
+        flex-direction: column;
+        align-items: flex-start !important;
+        width: 100%;
+        padding: 16px;
+        gap: 12px;
+    }
+    
+    .status-banner .s-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 18px;
+    }
+    
+    .status-banner strong {
+        font-size: 14px;
+    }
+    
+    .status-banner p {
+        font-size: 12px;
+    }
+    
+    /* Make attendance buttons full width on mobile */
+    .status-banner > div[style*="display:flex;gap:8px"] {
+        width: 100%;
+        flex-direction: column;
+    }
+    
+    .status-banner button,
+    .status-banner form {
+        width: 100%;
+    }
+    
+    .status-banner form button {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Fix the "Report Issue" button */
+    .status-banner > div[style*="margin-left: 10px"] {
+        margin-left: 0 !important;
+        width: 100%;
+    }
+    
+    .status-banner > div[style*="margin-left: 10px"] button {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* ========== FIX SESSION DETAILS LAYOUT - Tutor and Session side by side on desktop, stack on mobile ========== */
+/* Container for Tutor + Session */
+.card > div[style*="display:flex;gap:24px;align-items:flex-start"] {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+/* Tutor section - fixed width on desktop */
+.card > div[style*="display:flex;gap:24px;align-items:flex-start"] > div:first-child {
+    flex: 0 0 300px;
+}
+
+/* Session section - takes remaining space */
+.card > div[style*="display:flex;gap:24px;align-items:flex-start"] > div:last-child {
+    flex: 1;
+    min-width: 200px;
+}
+
+
+/* For very small screens */
+@media (max-width: 480px) {
+    .back-link span {
+        font-size: 12px;
+    }
+    
+    .back-link i {
+        font-size: 14px;
+    }
+}
+
+
   </style>
 </head>
 <body>
@@ -545,6 +968,9 @@ unset($_SESSION['success_message']);
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -588,6 +1014,7 @@ unset($_SESSION['success_message']);
       </nav>
   </div>
 </header>
+  <div class="nav-overlay" id="navOverlay"></div>
 <?php if ($error_message): ?>
 <div class="error-toast" id="errorToast">
     <i class="bi bi-exclamation-triangle-fill"></i> 
@@ -638,7 +1065,7 @@ $both_confirmed = ($tutor_confirmed && $student_confirmed);
 ?>
 <div class="container">
   <div class="page-wrap">
-    <a href="booking_status.php" class="back-link"><i class="bi bi-arrow-left"></i> Back to My Bookings</a>
+    <a href="booking_status.php" class="back-link"><i class="bi bi-arrow-left"></i><span>Back to My Bookings</span></a>
 
 <!-- Show resolved dispute message -->
 <?php if (isset($_GET['resolved']) && $_GET['resolved'] == 1): ?>
@@ -946,7 +1373,7 @@ if ($is_minor_dispute && $activeDispute):
     <div class="info-note" style="margin-bottom:12px;"><i class="bi bi-info-circle"></i> After payment, admin will verify and confirm your session within 1–2 business days.</div>
     <div class="action-bar">
       <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-primary"><i class="bi bi-credit-card"></i> Pay Now</a>
-      <button onclick="openCancelModal()" class="btn-action ghost" style="background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;">
+      <button onclick="openCancelModal()" class="btn-cancel">
     <i class="bi bi-x-circle"></i> Cancel Booking
 </button>
     </div>
@@ -962,12 +1389,7 @@ if ($is_minor_dispute && $activeDispute):
         </span>
     </div>
 
-    <div class="pay-row">
-        <span class="pl">Total Paid</span>
-        <span class="pv" style="font-size: 16px; color: #28a745; font-weight: 900;">
-            RM <?= number_format($b['total_paid_amount'] ?? 0, 2) ?>
-        </span>
-    </div>
+
 
 <!-- Payment Breakdown - Show ALL payments -->
 <div class="pay-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
@@ -1006,7 +1428,7 @@ if ($is_minor_dispute && $activeDispute):
         <?php endforeach; ?>
     </div>
     <div style="margin-top: 8px; padding-top: 8px; border-top: 2px solid rgba(0,0,0,0.1); display: flex; justify-content: space-between; width: 100%;">
-        <span style="font-weight: 900;">Total Paid</span>
+        <span class="p1">Total Paid</span>
         <span style="font-weight: 900; color: #28a745;">RM <?= number_format($displayTotal, 2) ?></span>
     </div>
 </div>
@@ -1482,12 +1904,11 @@ Payment made directly during session.
             <?php if (!empty($proofs)): ?>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <?php foreach ($proofs as $proof): ?>
-                    <a href="../uploads/proofs/<?= e($proof['file_path']) ?>" target="_blank" 
-                       style="display: flex; align-items: center; gap: 8px; background: #e8f5e9; padding: 8px 12px; border-radius: 10px; text-decoration: none;">
-                        <i class="bi bi-image" style="color: #2e7d32;"></i>
-                        <span style="font-size: 12px; color: #2e7d32;">View Proof</span>
-                        <i class="bi bi-box-arrow-up-right" style="font-size: 10px; color: #2e7d32;"></i>
-                    </a>
+                    <button onclick="openAttendanceProofModal('<?= e($proof['file_path']) ?>')" 
+                        style="display: flex; align-items: center; gap: 8px; background: #e8f5e9; padding: 8px 12px; border-radius: 10px; text-decoration: none; border: none; cursor: pointer; width: 100%;">
+                            <i class="bi bi-image" style="color: #2e7d32;"></i>
+                            <span style="font-size: 12px; color: #2e7d32;">View Proof</span>
+                        </button>
                     <?php endforeach; ?>
                 </div>
             <?php else: ?>
@@ -1577,7 +1998,7 @@ Payment made directly during session.
 ): ?>
 
 <div class="action-bar">
-    <button class="btn-danger" onclick="openCancelModal()">
+        <button class="btn-cancel" onclick="openCancelModal()">
         <i class="bi bi-x-circle"></i>
         Cancel Booking
     </button>
@@ -1585,6 +2006,27 @@ Payment made directly during session.
 
 <?php endif; ?>
   </div>
+</div>
+
+<!-- Attendance Proof Modal -->
+<div id="attendanceProofModal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); z-index: 99999; align-items: center; justify-content: center;">
+    <div class="modal-box" style="max-width: 600px; width: 90%; background: white; border-radius: 24px; padding: 28px; text-align: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;"><i class="bi bi-camera"></i> Attendance Proof</h3>
+            <button onclick="closeAttendanceProofModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #64748b;">&times;</button>
+        </div>
+        <div id="attendanceProofImageContainer" style="margin-bottom: 20px;">
+            <img id="attendanceProofImage" src="" alt="Attendance Proof" style="max-width: 100%; max-height: 60vh; border-radius: 12px; object-fit: contain;">
+        </div>
+        <div class="modal-actions" style="display: flex; gap: 12px; justify-content: center;">
+            <button type="button" onclick="closeAttendanceProofModal()" class="btn-secondary" style="padding: 10px 24px; border-radius: 30px; background: #64748b; color: white; border: none; cursor: pointer;">
+                <i class="bi bi-x-lg"></i> Close
+            </button>
+            <button type="button" onclick="downloadAttendanceProof()" class="btn-primary" style="padding: 10px 24px; border-radius: 30px; background: linear-gradient(135deg, #E75A9B, #F28AB2); color: white; border: none; cursor: pointer;">
+                <i class="bi bi-download"></i> Download
+            </button>
+        </div>
+    </div>
 </div>
 
 <!-- Cancel Reschedule Modal (for rescheduled status) -->
@@ -1655,6 +2097,7 @@ Payment made directly during session.
 <?php include 'nav_search_modal.php'; ?>
 <script src="../js/search_modal.js"></script>
 <script>
+
 function toggleDropdown(event) {
     if (event) {
         event.stopPropagation();
@@ -1928,5 +2371,117 @@ if (cancelForm) {
     });
 }
 </script>
+<script src="../js/nav.js"></script>
+<script>
+// Attendance Proof Modal Functions
+let currentAttendanceProof = '';
+
+function openAttendanceProofModal(filePath) {
+    console.log("Opening proof with path:", filePath);
+    
+    if (!filePath) {
+        showToast('No proof file found', 'error');
+        return;
+    }
+    
+    currentAttendanceProof = filePath;
+    
+    // Try multiple possible paths
+    const possiblePaths = [
+        filePath,  // Direct as stored
+        '../uploads/proofs/' + filePath.split('/').pop(),  // Just filename in proofs folder
+        '../uploads/attendance_proofs/' + filePath.split('/').pop(),  // Just filename in attendance_proofs folder
+        '../uploads/proofs/' + filePath,  // Full path with proofs folder
+        '../uploads/attendance_proofs/' + filePath,  // Full path with attendance_proofs folder
+        '../../uploads/proofs/' + filePath.split('/').pop(),  // One level up
+        '/uploads/proofs/' + filePath.split('/').pop()  // From root
+    ];
+    
+    let currentPathIndex = 0;
+    const imgElement = document.getElementById('attendanceProofImage');
+    
+    function tryNextPath() {
+        if (currentPathIndex >= possiblePaths.length) {
+            console.log("All paths failed");
+            imgElement.src = '../assets/img/no-image.png';
+            showToast('Could not load image. The file may have been moved or deleted.', 'error');
+            return;
+        }
+        
+        const pathToTry = possiblePaths[currentPathIndex];
+        console.log("Trying path " + (currentPathIndex + 1) + ":", pathToTry);
+        imgElement.src = pathToTry;
+    }
+    
+    imgElement.onload = function() {
+        console.log("Image loaded successfully from:", imgElement.src);
+        // Store the working path for download
+        currentAttendanceProof = imgElement.src;
+    };
+    
+    imgElement.onerror = function() {
+        console.log("Failed to load from:", imgElement.src);
+        currentPathIndex++;
+        tryNextPath();
+    };
+    
+    // Start trying paths
+    tryNextPath();
+    
+    const modal = document.getElementById('attendanceProofModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function closeAttendanceProofModal() {
+    const modal = document.getElementById('attendanceProofModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    const imgElement = document.getElementById('attendanceProofImage');
+    if (imgElement) {
+        imgElement.src = '';
+    }
+    currentAttendanceProof = '';
+}
+
+function downloadAttendanceProof() {
+    if (currentAttendanceProof) {
+        // Extract filename from the working path
+        let downloadPath = currentAttendanceProof;
+        // If it's a full URL, extract the path
+        if (downloadPath.startsWith('http')) {
+            const urlParts = downloadPath.split('/');
+            const filename = urlParts[urlParts.length - 1];
+            downloadPath = '../uploads/proofs/' + filename;
+        }
+        
+        const link = document.createElement('a');
+        link.href = downloadPath;
+        link.download = downloadPath.split('/').pop();
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Download started...', 'success');
+    } else {
+        showToast('No file to download', 'error');
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('attendanceProofModal');
+    if (modal && modal.style.display === 'flex' && event.target === modal) {
+        closeAttendanceProofModal();
+    }
+});
+
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

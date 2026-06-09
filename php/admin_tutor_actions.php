@@ -1,5 +1,6 @@
 <?php
 session_start();
+include 'check_login.php';
 include 'config.php';
 
 $assetBase = '../assets/img';
@@ -74,12 +75,16 @@ function e($value) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kyoshi | Tutor Actions</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&family=Open+Sans&display=swap" rel="stylesheet">
-        <style>
+    <link rel="stylesheet" href="../css/astyle.css">
+    <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
@@ -585,6 +590,180 @@ function e($value) {
                 padding: 20px 16px;
             }
         }
+
+        /* ========== ACTIONS GRID ========== */
+.actions-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: calc(100vh - 200px);
+    padding: 20px 0;
+}
+
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.action-card {
+    background: white;
+    border-radius: 20px;
+    padding: 24px 20px;
+    transition: all 0.2s;
+    text-decoration: none;
+    color: #1E1B2E;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    border: 1px solid #eee;
+}
+
+.action-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    border-color: #E75A9B;
+}
+
+.card-icon {
+    width: 50px;
+    height: 50px;
+    background: #FFF1F6;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    position: relative;
+}
+
+.card-icon i {
+    font-size: 24px;
+    color: #E75A9B;
+}
+
+.card-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #E75A9B;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 20px;
+    min-width: 20px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card-badge.pending {
+    background: #F59E0B;
+}
+
+.card-badge.dispute {
+    background: #DC2626;
+}
+
+.card-title {
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: #1E1B2E;
+}
+
+.card-desc {
+    text-align: center;
+    font-size: 0.7rem;
+    color: #7B6178;
+    line-height: 1.4;
+}
+
+/* ========== RESPONSIVE ========== */
+/* Tablet */
+@media (max-width: 900px) {
+    .actions-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+    }
+    
+    .action-card {
+        padding: 20px 16px;
+    }
+    
+    .card-title {
+        font-size: 0.9rem;
+    }
+    
+    .card-desc {
+        font-size: 0.65rem;
+    }
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+    .actions-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+    
+    .actions-wrapper {
+        min-height: auto;
+        padding: 10px 0;
+    }
+    
+    .action-card {
+        padding: 18px 16px;
+        flex-direction: row;
+        align-items: center;
+        text-align: left;
+        gap: 16px;
+    }
+    
+    .card-icon {
+        margin-bottom: 0;
+        width: 45px;
+        height: 45px;
+    }
+    
+    .card-icon i {
+        font-size: 20px;
+    }
+    
+    .action-card .card-title,
+    .action-card .card-desc {
+        text-align: left;
+    }
+    
+    .card-title {
+        font-size: 0.85rem;
+        margin-bottom: 4px;
+    }
+    
+    .card-desc {
+        font-size: 0.6rem;
+    }
+    
+    /* Remove the odd card centering on mobile */
+    .action-card:last-child:nth-child(odd) {
+        grid-column: span 1;
+        width: 100%;
+    }
+}
+
+/* Desktop large screens */
+@media (min-width: 1200px) {
+    .actions-grid {
+        grid-template-columns: repeat(3, 1fr);
+        max-width: 1100px;
+    }
+}
     </style>
 
 </head>
@@ -596,7 +775,7 @@ function e($value) {
         <div class="brand-wrapper">
             <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="brand-icon">
             <div class="brand-title">
-                <h1>Kyoshi</h1>
+                <h1>KYOSHI</h1>
                 <span class="admin-space-text">Admin Space</span>
             </div>
         </div>
@@ -609,7 +788,7 @@ function e($value) {
         </div>
         <div class="nav-section">
             <div class="nav-section-label">USERS</div>
-            <a href="admin_tutors.php" class="nav-item active">
+            <a href="admin_tutor_actions.php" class="nav-item active">
                 <i class="bi bi-person-badge"></i><span>Tutors</span>
                 <span class="nav-badge"><?= $totalTutors ?></span>
             </a>
@@ -659,24 +838,44 @@ function e($value) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
-        <div class="page-title">
-            <h1>Tutor Actions</h1>
-        </div>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
-        </div>
+ <div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" href="admin_dashboard.php" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
     </div>
+    
+    <!-- Desktop Page Title (visible only on desktop) -->
+    <div class="page-title">
+        <h1>Tutor Actions</h1>
+    </div>
+    <div class="relative">
+    <!-- Desktop Admin Profile -->
+    <div class="admin-profile" onclick="toggleDropdown()">
+        <img src="<?= e($profilePic) ?>" alt="Admin">
+        <span><?= e($displayName) ?></span>
+        <i class="bi bi-chevron-down"></i>
+    </div>
+    
+    <!-- Mobile Profile Button -->
+    <div class="mobile-profile-btn" onclick="toggleDropdown()">
+        <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+    </div>
+    
+    <div class="dropdown" id="profileDropdown">
+        <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+        <hr>
+        <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+    </div>
+</div>
+</div>
+
+<!-- Mobile Page Header (visible only on mobile) -->
+<div class="mobile-page-header">
+    <h1 class="mobile-page-title">Tutor Actions</h1>
+</div>
 
 
     <div class="actions-wrapper">
@@ -761,18 +960,62 @@ function e($value) {
     </div>
 </div>
 </div>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 
 <script>
+// Toggle dropdown function
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
 
-window.addEventListener('click', function(e) {
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
-    const button = document.querySelector('.admin-profile');
-    if (button && !button.contains(e.target) && dropdown && !dropdown.contains(e.target)) {
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
         dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
+});
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
     }
 });
 

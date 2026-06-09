@@ -339,7 +339,7 @@ function sendStudentCancellationEmail($booking, $studentName, $tutorName, $langu
                 </div>
                 " . ($refundMessage ? "<div style='background:#e8f5e9;padding:12px;border-radius:12px;margin:15px 0;text-align:center;'><strong style='color:$refundColor;'>$refundMessage</strong></div>" : "") . "
                 <div style='text-align:center;margin:30px 0 20px;'>
-                    <a href='http://localhost/kyoshi/php/find_language.php' 
+                    <a href='http://kyoshitutor.site/php/find_language.php' 
                        style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
                               color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
                         Book New Session →
@@ -391,7 +391,7 @@ function sendTutorCancellationEmail($booking, $studentName, $tutorName, $languag
                 </div>
                 <p>Your available time slots have been freed up for other students.</p>
                 <div style='text-align:center;margin:30px 0 20px;'>
-                    <a href='http://localhost/kyoshi/php/tutor_dashboard.php' 
+                    <a href='http://kyoshitutor.site/php/tutor_dashboard.php' 
                        style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
                               color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
                         View Dashboard →
@@ -453,7 +453,7 @@ function sendStudentBulkCancellationEmail($conn, $bookingIds, $count, $cancelRea
                     " . ($refundSummary ? "<ul style='margin-top:10px;'>$refundSummary</ul>" : "") . "
                 </div>
                 <div style='text-align:center;margin:30px 0 20px;'>
-                    <a href='http://localhost/kyoshi/php/find_language.php' 
+                    <a href='http://kyoshitutor.site/php/find_language.php' 
                        style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
                               color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
                         Book New Session →

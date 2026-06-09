@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -26,10 +27,13 @@ if (!$user) {
     exit();
 }
 
+
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 
 // Get student preferred languages
 $stmt = $conn->prepare("SELECT language FROM student_preferences WHERE user_id = ?");
@@ -290,11 +294,14 @@ function e($value) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kyoshi Student Dashboard</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
   <style>
-    :root{
+        :root{
       --cream:#FFF1F6;
       --paper:rgba(255,255,255,.88);
       --ink:#342635;
@@ -302,68 +309,216 @@ function e($value) {
       --pink:#F28AB2;
       --pink-dark:#C94F86;
       --hot-pink:#E75A9B;
-      --purple:#A77BE8;
-      --purple-dark:#7648B8;
-      --lavender:#EAD7FF;
-      --peach:#FFD0DD;
-      --mint:#DDF4E3;
-      --sky:#D8ECFF;
-      --rose:#FFC3D8;
-      --line:rgba(46,42,59,.12);
       --shadow:0 18px 45px rgba(201,79,134,.16);
       --shadow-soft:0 10px 26px rgba(201,79,134,.10);
       --radius-xl:32px;
       --radius-lg:24px;
-      --radius-md:18px;
     }
 
-    *{box-sizing:border-box}
-    * {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-}
-
-/* Allow text selection only on input fields and textareas */
-input, textarea, [contenteditable="true"] {
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
-  user-select: text;
-}
-
-/* Optional: Allow selection on specific elements if needed */
-.selection-allowed {
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
-  user-select: text;
-}
-    html{scroll-behavior:smooth}
+    *{box-sizing:border-box; margin:0; padding:0;}
     body{
       margin:0;
       min-height:100vh;
       font-family:"Segoe UI", Arial, sans-serif;
       color:var(--ink);
-      background:
-        linear-gradient(120deg, rgba(255,241,246,.74), rgba(255,203,220,.30)),
-        url("<?= e($assetBase) ?>/background3.jpg") center/cover fixed no-repeat;
-    }
-    body::before{
-      content:"";
-      position:fixed;
-      inset:0;
-      pointer-events:none;
-      z-index:-1;
-      background:
-        radial-gradient(circle at 7% 10%, rgba(231,90,155,.32), transparent 24%),
-        radial-gradient(circle at 90% 8%, rgba(255,195,216,.42), transparent 26%),
-        radial-gradient(circle at 55% 95%, rgba(234,215,255,.30), transparent 28%);
+      background: linear-gradient(120deg, rgba(255,241,246,.74), rgba(255,203,220,.30)), url("../assets/img/background3.jpg") center/cover fixed no-repeat;
     }
 
+/* Make search modal smaller on mobile */
+@media (max-width: 980px) {
+    #searchModal > div {
+        max-width: 95% !important;
+        padding: 16px !important;
+        margin: 0 auto !important;
+    }
+    
+    /* Make search input smaller */
+    #tutorSearchInput {
+        padding: 10px 12px 10px 36px !important;
+        font-size: 14px !important;
+    }
+    
+    /* Make filter button smaller */
+    #filterBtn {
+        width: 38px !important;
+        height: 38px !important;
+        font-size: 16px !important;
+    }
+    
+    /* Make filter panel smaller */
+    #filterPanel {
+        width: 250px !important;
+        max-width: 90vw !important;
+        right: -10px !important;
+        padding: 12px !important;
+    }
+    
+    /* Make filter chips smaller */
+    .filter-chip {
+        padding: 5px 10px !important;
+        font-size: 11px !important;
+    }
+    
+    /* Make price inputs smaller */
+    #priceFrom, #priceTo {
+        padding: 6px 6px 6px 28px !important;
+        font-size: 12px !important;
+    }
+    
+    /* Make filter section titles smaller */
+    #filterPanel p {
+        font-size: 12px !important;
+        margin-bottom: 6px !important;
+    }
+    
+    /* Make tutor search results smaller */
+    .search-tutor-item {
+        padding: 10px !important;
+        gap: 10px !important;
+    }
+    
+    .search-tutor-item img {
+        width: 45px !important;
+        height: 45px !important;
+    }
+    
+    .search-tutor-item strong {
+        font-size: 13px !important;
+    }
+    
+    .search-tutor-item span {
+        font-size: 11px !important;
+    }
+    
+    .search-tutor-item a {
+        padding: 6px 12px !important;
+        font-size: 11px !important;
+    }
+    
+    /* Make result count text smaller */
+    #resultCount {
+        font-size: 11px !important;
+    }
+}
+@media (max-width: 980px) {
+    /* Fix the preferences section panel */
+    .preferences-section .panel {
+        display: block !important;
+        width: 100% !important;
+        padding: 16px !important;
+    }
+    
+    /* Make the two column layout stack vertically */
+    .preferences-section .panel > div {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 24px !important;
+    }
+    
+    /* Make recommended tutors section full width */
+    .preferences-section .panel > div > div:first-child {
+        width: 100% !important;
+    }
+    
+    /* Make top tutors section full width */
+    .preferences-section .panel > div > div:last-child {
+        width: 100% !important;
+    }
+    
+    /* Fix the recommend grid to scroll horizontally */
+    .recommend-grid {
+        display: flex !important;
+        flex-direction: row !important;
+        overflow-x: auto !important;
+        gap: 12px !important;
+        padding-bottom: 8px !important;
+    }
+    
+    /* Make tutor cards smaller on mobile */
+    .tutor-card-new {
+        flex: 0 0 160px !important;
+        width: 160px !important;
+        min-width: 160px !important;
+    }
+    
+    .tutor-card-new .img-wrapper {
+        height: 140px !important;
+    }
+    
+    .tutor-card-new h5 {
+        font-size: 13px !important;
+    }
+    
+    .tutor-card-new .meta {
+        font-size: 11px !important;
+    }
+    
+    /* Fix the top tutors ranking section */
+    .tutor-ranking-list {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+    }
+    
+    .tutor-rank-item {
+        padding: 10px !important;
+    }
+    
+    .rank-number {
+        font-size: 24px !important;
+        width: 45px !important;
+    }
+    
+    .rank-avatar img {
+        width: 40px !important;
+        height: 40px !important;
+    }
+    
+    .rank-name {
+        font-size: 13px !important;
+    }
+    
+    .rank-lessons strong {
+        font-size: 16px !important;
+    }
+}
+    /* FORCE FIX FOR HAMBURGER - ADD AT TOP OF STYLE */
+@media (max-width: 980px) {
+.hamburger-menu {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #7A3D65;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+}
+    
+    .nav-links {
+        display: none !important;
+    }
+
+    
+    .nav-links.show {
+        display: flex !important;
+        position: fixed !important;
+        top: 70px !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        background: white !important;
+        flex-direction: column !important;
+        padding: 20px !important;
+        gap: 10px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        z-index: 9999 !important;
+    }
+}
     a{text-decoration:none;color:inherit}
-    button,input{font-family:inherit}
     .container{width:min(1440px, calc(100% - 40px)); margin:0 auto}
 
     .topbar{
@@ -371,33 +526,165 @@ input, textarea, [contenteditable="true"] {
       background:rgba(255,241,246,.86);
       backdrop-filter:blur(20px);
       border-bottom:1px solid rgba(231,90,155,.18);
-      box-shadow:0 10px 30px rgba(201,79,134,.10);
     }
-    .nav{
-      min-height:78px;
-      display:grid;
-      grid-template-columns:160px 1fr 320px;
-      gap:16px;
+
+        /* Desktop Navigation */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 20px;
+      min-height: 80px;
+      position: relative;  
+    }
+
+  .nav-overlay {
+    position: fixed;    left: 0;
+    width: 100%;
+    height: calc(100% - 70px); 
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    display: none;
+    position:absolute;top:calc(100% + 10px);
+}
+
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .brand img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      border-radius: 14px;
+    }
+    .brand strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.05;
+    }
+    .brand span {
+      display: block;
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* Desktop nav links */
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+    }
+    .nav-links a {
+      padding: 9px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 900;
+      color: #6D4964;
+      white-space: nowrap;
+      transition: .18s ease;
+    }
+    .nav-links a.active,
+    .nav-links a:hover {
+      background: linear-gradient(135deg, var(--hot-pink), var(--pink));
+      color: #fff;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    /* Hamburger - hidden on desktop */
+    .hamburger-menu {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      color: #7A3D65;
+      width: 40px;
+      height: 40px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+    }
+
+    .search-icon-btn {
+      display: none;
+    }
+
+    .search{position:relative;}
+    .search i{position:absolute; left:14px; top:50%; transform:translateY(-50%);}
+    .search input{
+      width:220px; padding:10px 14px 10px 38px;
+      border:1px solid rgba(46,42,59,.1);
+      border-radius:999px;
+      background:rgba(255,255,255,.88);
+      outline:none;
+    }
+    .icon-btn, .profile{
+      border:1px solid rgba(46,42,59,.08);
+      background:rgba(255,255,255,.88);
+      cursor:pointer;
+    }
+    .icon-btn{
+      width:30px; height:30px;
+      border-radius:16px;
+      display:flex;
       align-items:center;
+      justify-content:center;
+      position:relative;
     }
-    .brand{display:flex; align-items:center; gap:10px; min-width:0}
-    .brand img{width:44px; height:44px; object-fit:contain; border-radius:14px}
-    .brand strong{display:block; font-size:18px; line-height:1.05}
-    .brand span{display:block; margin-top:3px; font-size:11px; color:var(--muted); white-space:nowrap}
-
-    .nav-links{
-      display:flex; align-items:center; justify-content:center; gap:6px;
-      overflow:auto; scrollbar-width:none;
-      
+    .dot{
+      position:absolute; top:8px; right:8px;
+      width:8px; height:8px;
+      border-radius:50%;
+      background:#E17C91;
     }
-    .nav-links::-webkit-scrollbar{display:none}
-    .nav-links a{flex:0 0 auto; padding:9px 12px; border-radius:999px; font-size:13px; font-weight:900; color:#6D4964; white-space:nowrap; transition:.18s ease}
-    .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg, var(--hot-pink), var(--pink)); color:#fff; box-shadow:0 8px 18px rgba(231,90,155,.28)}
+    .profile{
+      display:flex; align-items:center; gap:8px;
+      border-radius:999px;
+      padding:5px 12px 5px 6px;
+      font-weight:700;
+    }
+    .profile img{width:34px; height:34px; border-radius:50%; object-fit:cover;}
+    .profile span{font-size:14px; max-width:100px; overflow:hidden; text-overflow:ellipsis;}
+    .search {
+    position: relative; 
+    flex: 0 0 auto;  /* Changed from flex:1 1 auto to prevent growing */
+    width: 150px;     /* Fixed width instead of flexible */
+    min-width: 120px; /* Smaller minimum width */
+    max-width: 200px; /* Maximum width to prevent it getting too big */
+}
 
-    .nav-actions{display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:0}
-    .search{position:relative; flex:1 1 auto; min-width:150px;}
-    .search i{position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#91899F}
-    .search input{width:100%; border:1px solid rgba(46,42,59,.10); background:rgba(255,255,255,.88); outline:none; border-radius:999px; padding:12px 14px 12px 38px; box-shadow:var(--shadow-soft)}
+.search i {
+    position: absolute; 
+    left: 14px; 
+    top: 50%; 
+    transform: translateY(-50%); 
+    color: #91899F;
+}
+
+.search input {
+    width: 100%; 
+    border: 1px solid rgba(46,42,59,.10); 
+    background: rgba(255,255,255,.88); 
+    outline: none; 
+    border-radius: 999px; 
+    padding: 10px 12px 10px 36px;  /* Reduced padding slightly */
+    box-shadow: var(--shadow-soft);
+    font-size: 13px;  /* Slightly smaller font */
+}
     .icon-btn,.profile{border:1px solid rgba(46,42,59,.08); background:rgba(255,255,255,.88); box-shadow:var(--shadow-soft); cursor:pointer}
     .icon-btn{width:44px; height:44px; border-radius:16px; color:#7A4A68; position:relative; flex:0 0 auto}
     .dot{position:absolute; top:10px; right:10px; width:8px; height:8px; border-radius:50%; background:#E17C91}
@@ -615,6 +902,8 @@ input, textarea, [contenteditable="true"] {
 
     .toast{position:fixed; left:50%; bottom:28px; transform:translate(-50%, 18px); opacity:0; pointer-events:none; z-index:99; background:#8E3F70; color:#fff; border-radius:999px; padding:12px 18px; font-size:13px; font-weight:900; transition:.2s ease}
     .toast.show{opacity:1; transform:translate(-50%,0)}
+
+
 .hero-grid-new {
   display: grid;
   grid-template-columns: 1fr 300px;
@@ -705,7 +994,7 @@ input, textarea, [contenteditable="true"] {
     grid-template-columns: 1fr;
   }
 
-    .profile {
+  .profile {
     background: transparent !important;
     border:none;
   }
@@ -735,15 +1024,42 @@ input, textarea, [contenteditable="true"] {
     background: transparent !important;
     border: none !important;
   }
+
+      .brand {
+        position: relative !important;
+        left: -100px !important;
+        top: auto !important;
+        transform: none !important;
+        margin: 0 !important;
+    }
   
   .profile:active {
     background: transparent !important;
     transform: none !important;
   }
 
+  .search {
+        display: none !important;
+    }
+    
+    /* Add a search icon button */
+    .search-icon-btn {
+        display: flex !important;
+        width: 38px;
+        height: 38px;
+        background: rgba(255,255,255,.88);
+        border: 1px solid rgba(46,42,59,.08);
+        border-radius: 16px;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #7A4A68;
+        font-size: 18px;
+    }
+
       .nav{grid-template-columns:1fr auto; min-height:auto; padding:10px 0}
       .nav-links{grid-column:1 / -1; grid-row:2; width:100%; justify-content:flex-start}
-      .search{display:none}
+      .globalSearch{display:none;}
       .booking-item{grid-template-columns:1fr}
       .booking-actions{justify-content:flex-start}
         .profile i.bi-chevron-down {
@@ -758,6 +1074,14 @@ input, textarea, [contenteditable="true"] {
       .material-item,.favourite-item,.tutor-card{grid-template-columns:1fr; display:block}
       .tutor-card img{margin-bottom:12px}
       .hero-card,.hero-side,.panel,.stat-card,.language-card{border-radius:24px}
+            .brand {
+        position: relative !important;
+        left: -10px !important;
+        top: auto !important;
+        transform: none !important;
+        margin: 0 !important;
+    }
+    
     }
 
     .star-rating{display:flex;gap:3px;cursor:pointer}
@@ -801,6 +1125,8 @@ input, textarea, [contenteditable="true"] {
   justify-content: center;
   width: 100%;
 }
+
+media(max)
 
 .sch-cal-nav {
   display: flex;
@@ -972,6 +1298,7 @@ input, textarea, [contenteditable="true"] {
 @media (max-width: 900px) {
     .schedule-widget { grid-template-columns: 1fr; }
 }
+
 
 /* Current Time & Date */
 .current-datetime {
@@ -1576,6 +1903,68 @@ input, textarea, [contenteditable="true"] {
     grid-template-columns: 1fr !important;
   }
 }
+/* ========== COMPLETE HAMBURGER FIX ========== */
+.nav {
+    position: relative !important;
+}
+
+@media (max-width: 980px) {
+    .hamburger-menu {
+        display: flex !important;
+        background: none;
+        border: none;
+        font-size: 28px;
+        cursor: pointer;
+        color: #7A3D65;
+        z-index: 100;
+    }
+    
+    .nav-links {
+        display: none !important;
+        position: absolute !important;
+        top: 100% !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        background: white !important;
+        flex-direction: column !important;
+        padding: 16px !important;
+        gap: 8px !important;
+        box-shadow: 0 20px 30px rgba(0,0,0,0.15) !important;
+        border-radius: 0 0 20px 20px !important;
+        z-index: 9999 !important;
+    }
+    
+    .nav-links.show {
+        display: flex !important;
+    }
+    
+    .nav-links a {
+        padding: 12px 16px !important;
+        font-size: 15px !important;
+        border-radius: 12px !important;
+        width: 100% !important;
+        text-align: left !important;
+    }
+    
+    .brand strong {
+        font-size: 14px !important;
+    }
+    .brand span {
+        font-size: 8px !important;
+    }
+    .brand img {
+        width: 40px !important;
+        height: 40px !important;
+    }
+    
+    .search {
+        display: none !important;
+    }
+    .search-icon-btn {
+        display: flex !important;
+    }
+}
 
   </style>
 </head>
@@ -1583,6 +1972,9 @@ input, textarea, [contenteditable="true"] {
   <header class="topbar">
     <div class="container">
       <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
         <div><strong>Kyoshi</strong>
@@ -1604,6 +1996,9 @@ input, textarea, [contenteditable="true"] {
             <input id="globalSearch" type="text" placeholder="Search language..."
               onclick="openSearch()" readonly style="cursor:pointer;">
           </div>
+              <div class="search-icon-btn" onclick="openSearch()" style="display: none;">
+        <i class="bi bi-search"></i>
+    </div>
           <div style="position:relative;">
           <button class="icon-btn" onclick="toggleNotifications()" id="bellBtn">
     <i class="bi bi-bell"></i>
@@ -1611,7 +2006,7 @@ input, textarea, [contenteditable="true"] {
 </button>
 
           <!-- Notification dropdown -->
-          <div id="notifDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:20px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);width:320px;overflow:hidden;z-index:100;">
+          <div id="notifDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border-radius:20px;box-shadow:0 18px 45px rgba(201,79,134,.2);border:1px solid rgba(242,138,178,.2);width:280px;overflow:hidden;z-index:100;">
             <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(242,138,178,.15);">
               <strong style="font-size:14px;color:#342635;">Notifications</strong>
               <button onclick="markAllRead()" style="background:none;border:none;color:#E75A9B;font-size:12px;font-weight:900;cursor:pointer;">Mark all read</button>
@@ -1647,6 +2042,7 @@ input, textarea, [contenteditable="true"] {
       </nav>
     </div>
 </header>
+<div class="nav-overlay" id="navOverlay" style="margin-top:60px;"></div>
   <main class="container">
     <section class="hero" id="overview">
   <div class="hero-grid-new">
@@ -1817,8 +2213,8 @@ input, textarea, [contenteditable="true"] {
           <!-- LEFT SIDE: Recommended Tutors -->
           <div>
             <div class="recommend-head">
-              <h4>🎓 Recommended Tutors</h4>
-              <a href="search_tutors.php">View All →</a>
+              <h4>Recommended Tutors</h4>
+              <a href="search_tutors.php">View All</a>
             </div>
             <div class="recommend-grid">
               <?php foreach ($recommendedTutors as $tutor): ?>
@@ -2266,43 +2662,63 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
-
 function markRead(id, el, link) {
-    const formData = new FormData();
-    formData.append('id', id);
-
+    // Send as JSON, not FormData
     fetch('mark_notification_read.php', {
         method: 'POST',
-        body: formData
-    }).then(() => {
-        checkUnreadCount();  
-        if (notifOpen) {
-            loadNotifications();
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id: id })
+    }).then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Refresh unread count from server
+            checkUnreadCount();
+            
+            if (notifOpen) {
+                loadNotifications();
+            }
+            
+            // Immediately hide the dot on this notification item
+            const unreadDot = el.querySelector('[style*="border-radius:50%"]');
+            if (unreadDot) {
+                unreadDot.style.background = 'transparent';
+            }
         }
     });
 
     el.style.background = 'white';
-    const unreadDot = el.querySelector('[style*="border-radius:50%"]');
-    if (unreadDot) {
-        unreadDot.style.background = 'transparent';
-    }
 
     if (link) {
         window.location.href = link;
     }
 }
 
-
 function markAllRead() {
-    const formData = new FormData();
-    formData.append('id', 0);
-    fetch('mark_notification_read.php', { method: 'POST', body: formData })
-        .then(() => {
-            checkUnreadCount();  // ← ADD THIS LINE
+    fetch('mark_notification_read.php', { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id: 0 })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Refresh unread count
+            checkUnreadCount();
+            
             if (notifOpen) {
                 loadNotifications();
             }
-        });
+            
+            // Hide all dots in the list
+            document.querySelectorAll('#notifList [style*="border-radius:50%"]').forEach(dot => {
+                dot.style.background = 'transparent';
+            });
+        }
+    });
 }
 
 function timeAgo(dateStr) {
@@ -2410,7 +2826,39 @@ document.addEventListener('click', function(e) {
         }
     }
 });
-    
+// ========== HAMBURGER MENU - WORKING ==========
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const navLinks = document.querySelector('.nav-links');
+
+console.log('Hamburger button found:', hamburgerBtn);
+console.log('Nav links found:', navLinks);
+
+if (hamburgerBtn && navLinks) {
+    hamburgerBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        navLinks.classList.toggle('show');
+        console.log('Menu toggled, classList:', navLinks.classList);
+    });
+}
+
+// Close menu when clicking outside
+document.addEventListener('click', function(e) {
+    if (navLinks && navLinks.classList.contains('show')) {
+        if (!hamburgerBtn.contains(e.target) && !navLinks.contains(e.target)) {
+            navLinks.classList.remove('show');
+        }
+    }
+});
+
+// Close menu when clicking a link inside
+if (navLinks) {
+    navLinks.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', function() {
+            navLinks.classList.remove('show');
+        });
+    });
+}
 </script>
 <script>
 // Dynamic greeting based on user's local time
@@ -2557,6 +3005,23 @@ function schSelectDay(dateStr, el) {
 document.getElementById('schPrev').onclick = () => { schM--; if(schM<0){schM=11;schY--;} renderSchCal(); };
 document.getElementById('schNext').onclick = () => { schM++; if(schM>11){schM=0;schY++;} renderSchCal(); };
 renderSchCal();
+
+// ULTRA SIMPLE HAMBURGER - PASTE THIS AT THE VERY BOTTOM
+document.addEventListener('DOMContentLoaded', function() {
+    var btn = document.getElementById('hamburgerBtn');
+    var menu = document.querySelector('.nav-links');
+    
+    if (btn && menu) {
+        btn.onclick = function(e) {
+            e.preventDefault();
+            if (menu.classList.contains('show')) {
+                menu.classList.remove('show');
+            } else {
+                menu.classList.add('show');
+            }
+        };
+    }
+});
 </script>
 <div id="searchModal" style="display:none;position:fixed;inset:0;background:rgba(52,38,53,.5);backdrop-filter:blur(6px);z-index:200;padding:60px 20px;overflow-y:auto;">
   <div style="max-width:700px;margin:0 auto;background:white;border-radius:28px;padding:28px;box-shadow:0 30px 60px rgba(201,79,134,.2);position:relative;">
@@ -2588,14 +3053,14 @@ renderSchCal();
         </p>
         <div style="display:flex;align-items:center;gap:10px;">
             <div style="flex:1;position:relative;">
-            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#9080a0;font-weight:700;">RM</span>
+            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:10px;color:#9080a0;font-weight:700;">RM</span>
             <input type="number" id="priceFrom" min="0" max="100" value="0" placeholder="0"
                 oninput="filterTutors()"
                 style="width:100%;padding:10px 10px 10px 34px;border:1px solid rgba(46,42,59,.12);border-radius:12px;outline:none;font-size:14px;font-weight:700;color:#342635;">
             </div>
             <span style="color:#9080a0;font-size:13px;flex-shrink:0;">to</span>
             <div style="flex:1;position:relative;">
-            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#9080a0;font-weight:700;">RM</span>
+            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:10px;color:#9080a0;font-weight:700;">RM</span>
             <input type="number" id="priceTo" min="0" max="100" value="100" placeholder="100"
                 oninput="filterTutors()"
                 style="width:100%;padding:10px 10px 10px 34px;border:1px solid rgba(46,42,59,.12);border-radius:12px;outline:none;font-size:14px;font-weight:700;color:#342635;">
@@ -2616,7 +3081,7 @@ renderSchCal();
                 <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="friday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Friday</button>
                 <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="saturday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Saturday</button>
                 <button type="button" class="filter-chip" onclick="toggleFilterChip(this,'day');filterTutors();" data-value="sunday" style="padding:8px 14px;border-radius:999px;border:1px solid rgba(46,42,59,.12);background:white;font-size:13px;font-weight:700;color:#7A5570;cursor:pointer;transition:.15s ease;">Sunday</button>
-            </div><hr>
+            </div><hr style="border:none;border-top:1px solid rgba(242,138,178,.18);margin:14px 0;">
         <!-- Time Slot Filter - Add this after the day filter chips -->
 <div style="margin-bottom:18px;">
     <p style="margin:0 0 10px;font-size:13px;font-weight:900;color:#342635;">
@@ -2733,5 +3198,12 @@ renderSchCal();
 
   </div>
 </div>
+<script>
+// Prevent back button from showing page after logout
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

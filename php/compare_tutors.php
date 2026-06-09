@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -18,9 +19,12 @@ $user = $stmt->get_result()->fetch_assoc();
 if (!$user) { header("Location: login.php"); exit(); }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
+
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 
 function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
@@ -77,9 +81,15 @@ $highestExp   = max(array_column($tutors,'experience'));
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Compare Tutors · Kyoshi</title>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compare Tutors · Kyoshi</title>
+  
+<link rel="stylesheet" href="../css/style.css">
+
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
   <style>
     :root{
@@ -233,6 +243,230 @@ $highestExp   = max(array_column($tutors,'experience'));
       .nav{grid-template-columns:1fr auto}
       .nav-links{display:none}
     }
+
+    /* ========== FIX FOR 900px AND BELOW (HEADER + TABLE) ========== */
+@media (max-width: 900px) {
+    /* Fix top header */
+    .top-header {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+        padding: 16px 0;
+    }
+    
+    .header-left, .header-right {
+        width: auto;
+    }
+    
+    .header-left {
+        order: 1;
+        align-self: flex-start;
+    }
+    
+    .header-center {
+        order: 2;
+    }
+    
+    .header-right {
+        display: none;
+    }
+    
+    .back-link {
+        padding: 8px 16px;
+        font-size: 12px;
+    }
+    
+    /* Fix compare table - make it scroll horizontally */
+    .compare-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Set minimum width for table to enable horizontal scroll */
+    .compare-header,
+    .compare-row,
+    div[style*="grid-template-columns:200px"] {
+        min-width: 600px;
+    }
+
+    /* ========== SCROLL ARROWS FOR COMPARE TABLE ========== */
+.scroll-controls {
+    display: none;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.scroll-arrow {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: white;
+    border: 1px solid rgba(242,138,178,.3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--hot-pink);
+    font-size: 18px;
+    transition: all 0.2s ease;
+    box-shadow: var(--shadow-soft);
+}
+
+.scroll-arrow:hover {
+    background: var(--hot-pink);
+    color: white;
+    transform: scale(1.05);
+}
+
+.scroll-arrow:active {
+    transform: scale(0.95);
+}
+
+/* Hide scrollbar but keep functionality */
+.compare-wrap {
+    overflow-x: auto;
+    scroll-behavior: smooth;
+}
+
+.compare-wrap::-webkit-scrollbar {
+    height: 4px;
+}
+
+.compare-wrap::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.05);
+    border-radius: 10px;
+}
+
+.compare-wrap::-webkit-scrollbar-thumb {
+    background: var(--hot-pink);
+    border-radius: 10px;
+}
+
+/* Show scroll controls only on mobile/tablet */
+@media (max-width: 1000px) {
+    .scroll-controls {
+        display: flex;
+    }
+}
+
+@media (max-width: 600px) {
+    .scroll-arrow {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
+    }
+}
+    
+    /* Make first column sticky */
+    .compare-header-label,
+    .compare-cell-label,
+    .compare-section-title {
+        position: sticky;
+        left: 0;
+        background: var(--paper);
+        z-index: 5;
+    }
+    
+    /* Adjust section titles */
+    .compare-section-title {
+        font-size: 11px;
+        padding: 10px 16px;
+    }
+    
+    /* Adjust cell padding */
+    .compare-cell-label,
+    .compare-header-label {
+        font-size: 11px;
+        padding: 12px 10px;
+    }
+    
+    .compare-cell,
+    .compare-header-tutor {
+        padding: 12px 8px;
+        font-size: 12px;
+    }
+    
+    /* Smaller tutor images */
+    .compare-header-tutor img {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .compare-header-tutor h3 {
+        font-size: 14px;
+    }
+    
+    .btn-book {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
+}
+
+/* ========== FOR 600px AND BELOW ========== */
+@media (max-width: 600px) {
+    .top-header {
+        padding: 12px 0;
+    }
+    
+    .header-center h1 {
+        font-size: 22px;
+    }
+    
+    .header-center p {
+        font-size: 12px;
+    }
+    
+    .back-link span {
+        display: none;
+    }
+    
+    .back-link {
+        padding: 8px 12px;
+    }
+    
+    .back-link i {
+        font-size: 16px;
+    }
+    
+    /* Smaller table cells */
+    .compare-header-label,
+    .compare-cell-label {
+        min-width: 100px;
+        font-size: 10px;
+        padding: 10px 8px;
+    }
+    
+    .compare-cell {
+        font-size: 11px;
+        padding: 10px 6px;
+    }
+    
+    .compare-header-tutor img {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .compare-header-tutor h3 {
+        font-size: 12px;
+    }
+    
+    .sub {
+        font-size: 10px;
+    }
+    
+    .btn-book {
+        padding: 5px 10px;
+        font-size: 10px;
+    }
+    
+    .lang-tag-sm, .mode-tag {
+        font-size: 9px;
+        padding: 2px 6px;
+    }
+}
+    
+    
   </style>
 </head>
 <body>
@@ -240,6 +474,9 @@ $highestExp   = max(array_column($tutors,'experience'));
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+<button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -283,7 +520,7 @@ $highestExp   = max(array_column($tutors,'experience'));
       </nav>
   </div>
 </header>
-
+  <div class="nav-overlay" id="navOverlay"></div>
 <main class="container">
  <div class="top-header">
 
@@ -306,11 +543,21 @@ $highestExp   = max(array_column($tutors,'experience'));
     </p>
   </div>
 
+  <!-- Scroll Hint -->
+
+
   <!-- EMPTY RIGHT (FOR BALANCE) -->
-  <div class="header-right"></div>
 
 </div>
-
+  <div class="header-right"></div>
+<div class="scroll-controls" style="justify-content:center;" >
+    <button class="scroll-arrow" onclick="scrollCompareTable('left')" title="Scroll Left">
+        <i class="bi bi-chevron-left"></i>
+    </button>
+    <button class="scroll-arrow" onclick="scrollCompareTable('right')" title="Scroll Right">
+        <i class="bi bi-chevron-right"></i>
+    </button>
+</div>
   <div class="compare-wrap">
 
     <!-- TUTOR HEADER PROFILES -->
@@ -444,9 +691,9 @@ $highestExp   = max(array_column($tutors,'experience'));
       <?php endforeach; ?>
     </div>
     <div class="compare-row" style="align-items:start;">
-      <div class="compare-cell-label" style="padding-top:20px;"><i class="bi bi-card-text"></i> About</div>
+      <div class="compare-cell-label" style="padding-top:50px;"><i class="bi bi-card-text"></i> About</div>
       <?php foreach ($tutors as $t): ?>
-        <div class="compare-cell" style="text-align:left;align-items:flex-start;padding:16px 20px;color:var(--muted);font-size:13px;line-height:1.55;">
+        <div class="compare-cell" style="text-align:left;align-items:flex-start;justify-content:flex-start;padding:14px 18px;color:var(--muted);font-size:13px;line-height:1.55;height:100%;">
           <?= $t['bio'] ? e(mb_strimwidth($t['bio'],0,160,'...')) : '<span class="na">No bio provided</span>' ?>
         </div>
       <?php endforeach; ?>
@@ -467,8 +714,9 @@ $highestExp   = max(array_column($tutors,'experience'));
         </div>
       <?php endforeach; ?>
     </div>
-
+  <!-- Scroll Controls - Above Table -->
   </div><!-- /compare-wrap -->
+
 </main>
 
 <div class="toast" id="toast"></div>
@@ -488,6 +736,32 @@ $highestExp   = max(array_column($tutors,'experience'));
     const dd=document.getElementById('profileDropdown');
     if(btn&&dd&&!btn.contains(e.target)&&!dd.contains(e.target)) dd.style.display='none';
   });
+</script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+
+// ========== SCROLL TABLE FUNCTION ==========
+function scrollCompareTable(direction) {
+    const tableWrapper = document.querySelector('.compare-wrap');
+    if (tableWrapper) {
+        const scrollAmount = 350;
+        if (direction === 'left') {
+            tableWrapper.scrollLeft -= scrollAmount;
+        } else if (direction === 'right') {
+            tableWrapper.scrollLeft += scrollAmount;
+        }
+    }
+}
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

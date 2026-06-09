@@ -199,7 +199,7 @@ h3 {
   $result = $stmt->get_result();
 
   if ($result->num_rows == 0) {
-      echo "<div class='alert alert-danger'>⏰ This reset link has <strong>expired</strong> or is invalid.<br><a href='forgotpassword.php' style='color:#0ea5e9;'>Request a new one →</a></div>";
+      echo "<div class='alert alert-danger'>This reset link has <strong>expired</strong> or is invalid.</div>";
       echo '<a href="forgotpassword.php" class="btn btn-main" style="text-align:center; display:block; background:#64748b;">Request New Link</a>';
       exit();
   }

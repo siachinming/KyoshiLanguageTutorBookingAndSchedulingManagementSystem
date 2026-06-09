@@ -158,9 +158,9 @@ function sendCancellationEmail($booking, $recipient) {
                     <li>Contact support if you have questions</li>
                 </ul>
                 <div style='text-align:center;margin-top:20px;'>
-                    <a href='http://localhost/kyoshi/php/find_language.php' 
+                    <a href='http://kyoshitutor.site/php/find_language.php' 
                        style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
-                        Book New Session →
+                        Book New Session 
                     </a>
                 </div>
                 <p style='font-size:12px;color:#999;text-align:center;margin-top:20px;'>Keep learning! 📚</p>

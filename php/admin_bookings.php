@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
@@ -119,10 +120,14 @@ function getStatusBadge($status) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Bookings · Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../css/astyle.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
@@ -468,27 +473,55 @@ function getStatusBadge($status) {
 </aside>
 
 <div class="main-content">
-    <div class="top-bar">
-        <div>
-            <div class="page-title">
-                <h1>Manage Bookings</h1>
-            </div>
-        </div>
-        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
+     <div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
+    </div>
+    
+    <!-- Desktop Title with Back Button Beside It -->
+    <div class="page-title">
+        <div class="title-with-back">
+            <a href="admin_student_actions.php" class="back-btn-desktop">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back</span>
+            </a>
+            <h1>Manage Bookings</h1>
         </div>
     </div>
+    
+    <div class="relative">
+        <div class="admin-profile" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin">
+            <span><?= e($displayName) ?></span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        
+        <!-- Mobile Profile Button -->
+        <div class="mobile-profile-btn" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+        </div>
+        
+        <div class="dropdown" id="profileDropdown">
+            <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+            <hr>
+            <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+        </div>
+    </div>
+</div>
 
+<!-- Mobile Page Header with Arrow Only (no text) -->
+<div class="mobile-page-header" style="margin-top: 20px;">
+    <div class="mobile-title-with-back">
+        <a href="admin_student_actions.php" class="mobile-back-arrow">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="mobile-page-title">Manage Bookings</h1>
+    </div>
+</div>
     <?php if (isset($_SESSION['success_message'])): ?>
         <div class="alert-success"><i class="bi bi-check-circle"></i> <?= e($_SESSION['success_message']) ?></div>
         <?php unset($_SESSION['success_message']); endif; ?>
@@ -533,7 +566,7 @@ function getStatusBadge($status) {
         <div class="search-box">
             <i class="bi bi-search"></i>
             <input type="text" id="searchInput"
-                   placeholder="Search by tutor, student or booking ID..."
+                   placeholder="Search by tutor or student name..."
                    value="<?= e($search) ?>">
         </div>
         <select id="statusFilter" class="filter-select">
@@ -545,8 +578,8 @@ function getStatusBadge($status) {
             <option value="cancelled"<?= $status_filter == 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
             <option value="disputed" <?= $status_filter == 'disputed'  ? 'selected' : '' ?>>Disputed</option>
         </select>
-        <button class="btn-filter" onclick="applyFilters()"><i class="bi bi-search"></i> Apply</button>
-        <a href="admin_bookings.php" class="btn-reset"><i class="bi bi-x-circle"></i> Reset</a>
+        <button class="btn-filter" onclick="applyFilters()"><i class="bi bi-search"></i> Search</button>
+        <a href="admin_bookings.php" class="btn-reset" style="text-align:center;"><i class="bi bi-x-circle"></i> Reset</a>
     </div>
 
     <!-- Table -->
@@ -573,6 +606,7 @@ function getStatusBadge($status) {
                 <?php while ($row = $bookings_result->fetch_assoc()):
                     $cb = $row['cancelled_by'] ?? null;
                     $bookingJson = json_encode([
+                        'id'            => $row['id'],
                         'student_name'  => $row['student_name'],
                         'student_email' => $row['student_email'],
                         'tutor_name'    => $row['tutor_name'],
@@ -637,7 +671,9 @@ function getStatusBadge($status) {
 <div id="detailModal" class="modal-overlay">
     <div class="modal-container" style="max-width:560px;">
         <div class="modal-header">
-            <h3><i class="bi bi-calendar-check"></i> Booking Details <span id="modalBookingId" style="color:#B26EA7;"></span></h3>
+    <h3><i class="bi bi-calendar-check"></i> Booking Details 
+                <span id="modalBookingId" style="color:#B26EA7; font-size: 14px;"></span>
+            </h3>
             <button class="modal-close" onclick="closeDetailModal()">&times;</button>
         </div>
         <div class="modal-body" style="padding:0;">
@@ -649,16 +685,56 @@ function getStatusBadge($status) {
 
 
 <script>
-// Dropdown
 function toggleDropdown() {
-    const dd = document.getElementById('profileDropdown');
-    dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+    const dropdown = document.getElementById('profileDropdown');
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
+
+// Close dropdown when clicking outside
 document.addEventListener('click', function(e) {
-    const profile = document.querySelector('.admin-profile');
-    const dd = document.getElementById('profileDropdown');
-    if (profile && dd && !profile.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+    const dropdown = document.getElementById('profileDropdown');
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
 });
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
+    }
+});
+
 
 // Filters
 function applyFilters() {
@@ -751,5 +827,12 @@ setTimeout(() => {
     });
 }, 3000);
 </script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

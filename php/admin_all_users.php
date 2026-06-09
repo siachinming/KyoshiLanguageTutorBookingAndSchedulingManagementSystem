@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 require_once '../vendor/autoload.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -276,11 +277,15 @@ function e($value) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kyoshi | All Users</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/astyle.css">
     <style>
         * {
             margin: 0;
@@ -929,6 +934,94 @@ function e($value) {
                 margin-left: 0;
             }
         }
+
+        /* ============================================
+   MOBILE FILTER BAR RESPONSIVE (max-width: 900px)
+   ============================================ */
+
+@media (max-width: 900px) {
+    /* Filter bar - stack vertically */
+    .filter-bar {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 12px !important;
+        padding: 16px !important;
+    }
+    
+    /* Filter bar form - stack all elements */
+    .filter-bar form {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        width: 100% !important;
+    }
+    
+    /* Filter groups - full width */
+    .filter-group {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 6px !important;
+        width: 100% !important;
+    }
+    
+    .filter-group label {
+        font-size: 12px !important;
+        margin-bottom: 2px !important;
+    }
+    
+    /* Select and input - full width */
+    .filter-group select,
+    .filter-group input {
+        width: 100% !important;
+        padding: 10px 12px !important;
+        font-size: 13px !important;
+    }
+    
+    /* Search input group - full width */
+    .filter-group input[name="search"] {
+        width: 100% !important;
+    }
+    
+    /* Buttons - full width, side by side */
+    .btn-filter,
+    .btn-reset {
+        width: calc(50% - 5px) !important;
+        display: inline-block !important;
+        text-align: center !important;
+        padding: 10px 12px !important;
+    }
+    
+    /* Form buttons container */
+    .filter-bar form div:last-child,
+    .filter-bar form .button-group {
+        display: flex !important;
+        gap: 10px !important;
+        width: 100% !important;
+    }
+    
+    /* Add User button - full width, separate */
+    .filter-bar .btn-add,
+    .filter-bar > .btn-icon.btn-edit {
+        width: 100% !important;
+        text-align: center !important;
+        justify-content: center !important;
+        margin-top: 5px !important;
+    }
+}
+
+/* Even smaller phones */
+@media (max-width: 480px) {
+    .btn-filter,
+    .btn-reset {
+        width: 100% !important;
+        margin-bottom: 5px !important;
+    }
+    
+    .filter-bar form {
+        gap: 8px !important;
+    }
+}
     </style>
 </head>
 <body>
@@ -1004,29 +1097,55 @@ function e($value) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-        <div style="display: flex; align-items: center; gap: 16px;">
-            <a href="admin_dashboard.php" class="btn-back" style="display: inline-flex; align-items: center; gap: 8px; background: #e2e8f0; color: #1d3156; padding: 8px 16px; border-radius: 40px; text-decoration: none; font-size: 13px; font-weight: 600; transition: 0.2s;">
-                <i class="bi bi-arrow-left"></i> Back
+     <div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
+    </div>
+    
+    <!-- Desktop Title with Back Button Beside It -->
+    <div class="page-title">
+        <div class="title-with-back">
+            <a href="admin_dashboard.php" class="back-btn-desktop">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back</span>
             </a>
-            <div class="page-title">
-                <h1>All Users</h1>
-            </div>
-        </div>
-        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
+            <h1>All User</h1>
         </div>
     </div>
+    
+    <div class="relative">
+        <div class="admin-profile" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin">
+            <span><?= e($displayName) ?></span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        
+        <!-- Mobile Profile Button -->
+        <div class="mobile-profile-btn" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+        </div>
+        
+        <div class="dropdown" id="profileDropdown">
+            <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+            <hr>
+            <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+        </div>
+    </div>
+</div>
+
+<!-- Mobile Page Header with Arrow Only (no text) -->
+<div class="mobile-page-header" style="margin-top: 20px;">
+    <div class="mobile-title-with-back">
+        <a href="admin_dashboard.php"  class="mobile-back-arrow">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="mobile-page-title">All User</h1>
+    </div>
+</div>
 
     <?php if (isset($_SESSION['success_message'])): ?>
         <div class="alert-success" id="successAlert">
@@ -1096,13 +1215,24 @@ function e($value) {
                         <tr>
                             <td>
                                 <div style="display: flex; align-items: center; gap: 10px;">
-                                    <?php if (!empty($user['profile_pic'])): ?>
-                                        <img src="../uploads/profiles/<?= e($user['profile_pic']) ?>" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover;">
-                                    <?php else: ?>
-                                        <div style="width: 35px; height: 35px; border-radius: 50%; background: #e0e0e0; display: flex; align-items: center; justify-content: center;">
-                                            <i class="bi bi-person-fill" style="color: #999;"></i>
-                                        </div>
-                                    <?php endif; ?>
+                                    <?php if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])): ?>
+                                    <img src="../uploads/profiles/<?= e($user['profile_pic']) ?>" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover;">
+                                <?php else: ?>
+                                    <?php 
+                                    // Use correct path based on user role
+                                    $role = $user['role'] ?? 'user';
+                                    $defaultAvatar = '../assets/img/profile.png';
+                                    
+                                    if ($role === 'admin') {
+                                        $defaultAvatar = '../assets/img/profile-admin.png';
+                                    } elseif ($role === 'tutor') {
+                                        $defaultAvatar = '../assets/img/profile-tutor.png';
+                                    } elseif ($role === 'student') {
+                                        $defaultAvatar = '../assets/img/profile.png';
+                                    }
+                                    ?>
+                                    <img src="<?= $defaultAvatar ?>" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover; background: #e0e0e0;">
+                                <?php endif; ?>
                                     <strong><?= e($user['fullname']) ?></strong>
                                 </div>
                             </td>
@@ -1211,8 +1341,53 @@ function e($value) {
 <script>
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('profileDropdown');
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
+});
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
+    }
+});
 
 window.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
@@ -1299,6 +1474,11 @@ document.getElementById('editModal').addEventListener('click', function(e) {
     }
 });
 </script>
-
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 
 $assetBase = '../assets/img';
 
@@ -88,11 +89,15 @@ function formatMoney($amount) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Kyoshi | Admin Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&family=Open+Sans&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/astyle.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
@@ -881,7 +886,7 @@ function formatMoney($amount) {
         <div class="brand-wrapper">
             <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="brand-icon">
             <div class="brand-title">
-                <h1>Kyoshi</h1>
+                <h1>KYOSHI</h1>
                 <span class="admin-space-text">Admin Space</span>
             </div>
         </div>
@@ -965,24 +970,44 @@ function formatMoney($amount) {
 
 <!-- Main Content -->
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-        <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
-        <div class="page-title">
-            <h1>Dashboard Overview</h1>
-        </div>
-        <div class="relative">
-            <button class="admin-profile" onclick="toggleDropdown()">
-                <img src="<?= e($profilePic) ?>" alt="Admin">
-                <span><?= e($displayName) ?></span>
-                <i class="bi bi-chevron-down"></i>
-            </button>
-            <div class="dropdown" id="profileDropdown">
-                <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
-                <hr>
-                <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
-        </div>
+<div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" href="admin_dashboard.php" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
     </div>
+    
+    <!-- Desktop Page Title (visible only on desktop) -->
+    <div class="page-title">
+        <h1>Dashboard Overview</h1>
+    </div>
+    <div class="relative">
+    <!-- Desktop Admin Profile -->
+    <div class="admin-profile" onclick="toggleDropdown()">
+        <img src="<?= e($profilePic) ?>" alt="Admin">
+        <span><?= e($displayName) ?></span>
+        <i class="bi bi-chevron-down"></i>
+    </div>
+    
+    <!-- Mobile Profile Button -->
+    <div class="mobile-profile-btn" onclick="toggleDropdown()">
+        <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+    </div>
+    
+    <div class="dropdown" id="profileDropdown">
+        <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+        <hr>
+        <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+    </div>
+</div>
+</div>
+
+<!-- Mobile Page Header (visible only on mobile) -->
+<div class="mobile-page-header">
+    <h1 class="mobile-page-title">Dashboard Overview</h1>
+</div>
 
    <!-- Alerts for pending items -->
 <?php if ($pendingTutors > 0): ?>
@@ -1104,7 +1129,7 @@ function formatMoney($amount) {
     </div>
 
     <!-- Additional Stats -->
-    <div class="stats-grid">
+    <div class="stats-grid" style="min-width:0;">
         <div class="stat-card">
             <div class="stat-icon"><i class="bi bi-star-fill"></i></div>
             <div class="stat-value"><?= number_format($avgRating, 1) ?></div>
@@ -1133,20 +1158,64 @@ function formatMoney($amount) {
 </div>
 
 <script>
+// ============================================
+// SINGLE FUNCTION FOR BOTH MOBILE & DESKTOP
+// ============================================
+
+// Toggle dropdown function
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    if (!dropdown) return;
+    
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
 
-window.addEventListener('click', function(e) {
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
-    const button = document.querySelector('.admin-profile');
-    if (button && !button.contains(e.target) && dropdown && !dropdown.contains(e.target)) {
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
         dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
     }
 });
 
-// Mobile menu toggle
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Close dropdown on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
+    }
+});
+
+// ============================================
+// MOBILE SIDEBAR MENU TOGGLE
+// ============================================
 const menuToggle = document.getElementById('menuToggle');
 const sidebar = document.getElementById('sidebar');
 const overlay = document.getElementById('sidebarOverlay');
@@ -1154,8 +1223,14 @@ const overlay = document.getElementById('sidebarOverlay');
 if (menuToggle) {
     menuToggle.addEventListener('click', function() {
         sidebar.classList.toggle('open');
-        overlay.classList.toggle('active');
+        if (overlay) overlay.classList.toggle('active');
         document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
+        
+        const dropdown = document.getElementById('profileDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+            dropdown.classList.remove('show');
+        }
     });
 }
 
@@ -1166,7 +1241,19 @@ if (overlay) {
         document.body.style.overflow = '';
     });
 }
-// Monthly Bookings Chart - FIXED
+
+// Close sidebar on window resize
+window.addEventListener('resize', function() {
+    if (window.innerWidth > 768) {
+        sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+});
+
+// ============================================
+// MONTHLY BOOKINGS CHART
+// ============================================
 const bookingsCtx = document.getElementById('bookingsChart')?.getContext('2d');
 if (bookingsCtx) {
     const chartLabels = <?= json_encode(array_column($monthlyData, 'month')) ?>;
@@ -1197,29 +1284,11 @@ if (bookingsCtx) {
             scales: {
                 y: {
                     beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Number of Bookings',
-                        font: { size: 11 }
-                    },
-                    ticks: {
-                        stepSize: 1,
-                        precision: 0
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Month',
-                        font: { size: 11 }
-                    }
+                    ticks: { stepSize: 1, precision: 0 }
                 }
             },
             plugins: { 
-                legend: { 
-                    position: 'top', 
-                    labels: { font: { size: 11 } } 
-                },
+                legend: { position: 'top' },
                 tooltip: {
                     callbacks: {
                         label: function(context) {
@@ -1231,7 +1300,10 @@ if (bookingsCtx) {
         }
     });
 }
-// Overview Pie Chart
+
+// ============================================
+// OVERVIEW PIE CHART
+// ============================================
 const overviewCtx = document.getElementById('overviewChart')?.getContext('2d');
 if (overviewCtx) {
     new Chart(overviewCtx, {
@@ -1247,63 +1319,33 @@ if (overviewCtx) {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            plugins: { 
-                legend: { position: 'bottom', labels: { font: { size: 11 } } }
-            }
+            plugins: { legend: { position: 'bottom' } }
         }
     });
 }
 
-// Close sidebar on window resize if screen becomes larger
-window.addEventListener('resize', function() {
-    if (window.innerWidth > 768) {
-        sidebar.classList.remove('open');
-        if (overlay) overlay.classList.remove('active');
-        document.body.style.overflow = '';
-    }
-});
-
-// Auto-dismiss alerts after 5 seconds
+// ============================================
+// AUTO-DISMISS ALERTS
+// ============================================
 function setupAutoDismissAlerts() {
     const alerts = document.querySelectorAll('.alert-card');
-    
     alerts.forEach(alert => {
-        // Set timeout to fade out after 5 seconds
         setTimeout(() => {
             alert.classList.add('fade-out');
-            // Remove from DOM after animation completes
             setTimeout(() => {
-                if (alert.parentNode) {
-                    alert.remove();
-                }
+                if (alert.parentNode) alert.remove();
             }, 500);
-        }, 5000); // 5 seconds
+        }, 5000);
     });
 }
 
-// Add close button to each alert (optional)
 function addCloseButtonToAlerts() {
     const alerts = document.querySelectorAll('.alert-card');
-    
     alerts.forEach(alert => {
-        // Check if close button already exists
         if (!alert.querySelector('.alert-close')) {
             const closeBtn = document.createElement('button');
             closeBtn.innerHTML = '&times;';
             closeBtn.className = 'alert-close';
-            closeBtn.style.cssText = `
-                background: transparent;
-                border: none;
-                font-size: 20px;
-                cursor: pointer;
-                color: #92400E;
-                padding: 0 8px;
-                font-weight: bold;
-                opacity: 0.6;
-                transition: opacity 0.2s;
-            `;
-            closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
-            closeBtn.onmouseout = () => closeBtn.style.opacity = '0.6';
             closeBtn.onclick = () => {
                 alert.classList.add('fade-out');
                 setTimeout(() => alert.remove(), 500);
@@ -1313,12 +1355,18 @@ function addCloseButtonToAlerts() {
     });
 }
 
-// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     setupAutoDismissAlerts();
     addCloseButtonToAlerts();
 });
-</script>
 
+// ============================================
+// PREVENT BACK BUTTON FROM LOGGING OUT
+// ============================================
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

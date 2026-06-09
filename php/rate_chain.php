@@ -19,7 +19,10 @@ if (empty($ids)) {
 $_SESSION['rating_queue'] = $ids;
 $_SESSION['rating_index'] = 0;
 
-// Redirect to first booking
-header("Location: booking_detail.php?id=" . $ids[0] . "#rate&queue=1");
+// Redirect to first booking's rating page with next parameter
+$remainingIds = array_slice($ids, 1);
+$nextParam = !empty($remainingIds) ? '&next=' . implode(',', $remainingIds) : '';
+
+header("Location: rate_session.php?id=" . $ids[0] . "&queue=1" . $nextParam);
 exit();
 ?>

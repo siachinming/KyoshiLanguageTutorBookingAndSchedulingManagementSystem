@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -23,10 +24,12 @@ if (!$user) {
 }
 
 $displayName = $user['fullname'];
-$profilePic = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
-$stmt = $conn->prepare("
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
+    $stmt = $conn->prepare("
     SELECT 
         b.id as booking_id,
         b.language,
@@ -148,12 +151,16 @@ function getAttendanceBadge($session) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Progress · Kyoshi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
+   <link rel="stylesheet" href="../css/style.css">
+   <style>
         :root{
             --cream:#FFF1F6; --paper:rgba(255,255,255,.88); --ink:#342635; --muted:#7B6178;
             --pink:#F28AB2; --hot-pink:#E75A9B;
@@ -431,6 +438,9 @@ function getAttendanceBadge($session) {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
             <a href="student_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Logo">
                 <div><strong>Kyoshi</strong><span>Student Space</span></div>
@@ -471,6 +481,7 @@ function getAttendanceBadge($session) {
         </nav>
     </div>
 </header>
+<div class="nav-overlay" id="navOverlay"></div>
 
 <main class="container">
     <div class="page-wrap">
@@ -777,6 +788,47 @@ function showToast(message, type) {
         toast.style.opacity = '0';
     }, 3000);
 }
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+<script>
+// Mobile hamburger menu functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const hamburgerBtn = document.getElementById('hamburgerBtn');
+    const navLinks = document.querySelector('.nav-links');
+    const navOverlay = document.getElementById('navOverlay');
+    
+    if (hamburgerBtn && navLinks) {
+        hamburgerBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            navLinks.classList.toggle('active');
+            if (navOverlay) navOverlay.classList.toggle('active');
+            document.body.style.overflow = navLinks.classList.contains('active') ? 'hidden' : '';
+        });
+    }
+    
+    if (navOverlay) {
+        navOverlay.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    }
+    
+    // Close menu when clicking a nav link
+    document.querySelectorAll('.nav-links a').forEach(link => {
+        link.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            if (navOverlay) navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    });
+});
 </script>
 </body>
 </html>

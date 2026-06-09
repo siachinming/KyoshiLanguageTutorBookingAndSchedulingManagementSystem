@@ -135,7 +135,7 @@ try {
             <p>If you wish to reschedule, please book a new session with your preferred tutor.</p>
             
             <div style='text-align:center;margin:30px 0 20px;'>
-                <a href='http://localhost/kyoshi/php/find_language.php' 
+                <a href='http://kyoshitutor.site/php/find_language.php' 
                    style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
                           color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
                     Book New Session →
@@ -167,7 +167,7 @@ try {
     $tutorMail->Body    = "
         <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
             <div style='text-align:center;margin-bottom:24px;'>
-                <img src='http://localhost/kyoshi/assets/img/logo.png' alt='Kyoshi' style='height:50px;'>
+                <img src='http://kyoshitutor.site/assets/img/logo.png' alt='Kyoshi' style='height:50px;'>
                 <h2 style='color:#E75A9B;margin:10px 0 0;'>Booking Cancelled</h2>
             </div>
             
@@ -188,7 +188,7 @@ try {
             <p>Your available time slots have been freed up for other students.</p>
             
             <div style='text-align:center;margin:30px 0 20px;'>
-                <a href='http://localhost/kyoshi/php/tutor_dashboard.php' 
+                <a href='http://kyoshitutor.site/php/tutor_dashboard.php' 
                    style='display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#E75A9B,#F28AB2);
                           color:white;border-radius:40px;text-decoration:none;font-weight:bold;'>
                     View Dashboard →

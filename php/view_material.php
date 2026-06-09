@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -22,9 +23,11 @@ if (!$user) {
 }
 
 $displayName = $user['fullname'];
-$profilePic = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 
 // Get material ID
 $materialId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
@@ -105,10 +108,14 @@ function getFileIcon($fileName) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= e($material['title']) ?> · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6;--paper:rgba(255,255,255,.92);--ink:#342635;--muted:#7B6178;
@@ -256,7 +263,8 @@ function getFileIcon($fileName) {
     @media(max-width:900px){
       .material-layout{flex-direction:column}
       .material-sidebar{order:-1}
-      .page-title{font-size:20px !important;}
+      .page-title{font-size:10px !important;}
+      h2{font-size: 0px;}
     }
   </style>
 </head>
@@ -266,6 +274,9 @@ function getFileIcon($fileName) {
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
         <div>
@@ -310,14 +321,14 @@ function getFileIcon($fileName) {
     </nav>
   </div>
 </header>
-
+  <div class="nav-overlay" id="navOverlay"></div>
 <div class="container" style="padding:24px 0 60px;">
     <!-- Header with Back button and centered Material Details title -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <a href="my_materials.php" class="back-link">
-            <i class="bi bi-arrow-left"></i> Back
+            <i class="bi bi-arrow-left"></i><span>Back</span>
         </a>
-        <h2 style="margin:0; font-size: 30px; color: var(--ink); text-align: center; flex:1;">
+        <h2 style="margin:0; font-size: 20px; color: var(--ink); text-align: center; flex:1;">
              Material Details
         </h2>
         <div style="width: 90px;"></div> <!-- Spacer to balance the layout -->
@@ -675,6 +686,14 @@ function showToast(msg) {
   t.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 3000);
 }
+</script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

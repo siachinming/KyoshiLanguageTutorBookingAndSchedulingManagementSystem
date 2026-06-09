@@ -178,7 +178,7 @@ $oldTimeFmt = date('g:i A',     strtotime($original['booking_time']));
 $newDateFmt = date('l, F j, Y', strtotime($new_date));
 $newTimeFmt = date('g:i A',     strtotime($new_time));
 $modeLabel  = $learning_mode === 'online' ? 'Online' : 'Face to Face';
-$reviewLink = "http://localhost/kyoshi/php/tutor_reschedule_requests.php";
+$reviewLink = "http://kyoshitutor.site/php/booking_requests.php";
 
 $mail = new PHPMailer(true);
 try {

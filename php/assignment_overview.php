@@ -1,7 +1,7 @@
 <?php
 session_start();
 include 'config.php';
-
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'tutor') {
@@ -361,11 +361,15 @@ function getAssignmentAttachmentDisplay($assignment) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Assignments - Kyoshi Tutor</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -889,11 +893,228 @@ body::before {
     opacity: 0.8;
     transform: scale(1.02);
 }
+
+/* Mobile responsive - Clean version */
 @media (max-width: 900px) {
-    .submission-row { flex-direction: column; align-items: flex-start; gap: 12px; }
-    .actions-col { text-align: left; width: 100%; }
-    .filter-row { flex-direction: column; align-items: stretch; }
-    .assignment-info { gap: 12px; }
+    /* Header - keep back on left, title center, plus on right */
+    .main > div:first-child {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 8px !important;
+        margin-bottom: 20px !important;
+        flex-wrap: nowrap !important;
+    }
+    
+    /* Back button - LEFT side (order: 1) */
+    .main > div:first-child .back-btn {
+        order: 1 !important;
+        flex-shrink: 0 !important;
+        padding: 8px 12px !important;
+    }
+    
+    .main > div:first-child .back-btn span {
+        display: none !important;
+    }
+    
+    /* Title - CENTER (order: 2) */
+    .main > div:first-child > div:first-child {
+        order: 2 !important;
+        flex: 1 !important;
+        text-align: center !important;
+        min-width: 0 !important;
+    }
+    
+    .main > div:first-child h1 {
+        font-size: 16px !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .main > div:first-child p {
+        display: none !important;
+    }
+    
+    /* Create button - RIGHT side (order: 3) */
+    .main > div:first-child .create-btn {
+        order: 3 !important;
+        flex-shrink: 0 !important;
+        padding: 8px 12px !important;
+    }
+    
+    .main > div:first-child .create-btn span {
+        display: none !important;
+    }
+    
+    /* Submission rows */
+    .submission-row {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 12px !important;
+    }
+    
+    .actions-col {
+        text-align: left !important;
+        width: 100% !important;
+    }
+    
+    /* Filter bar */
+    .filter-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+    
+    .filter-group {
+        width: 100% !important;
+    }
+    
+    .btn-search, .btn-reset {
+        width: 100% !important;
+        justify-content: center !important;
+    }
+    
+    /* Assignment header */
+    .assignment-header-top {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+    }
+    
+    .assignment-actions {
+        width: 100% !important;
+        justify-content: flex-start !important;
+        margin-top: 8px !important;
+    }
+    
+    .assignment-info {
+        flex-direction: column !important;
+        gap: 6px !important;
+    }
+}
+
+
+
+@media (max-width: 768px) {
+    .filter-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .filter-group {
+        width: 100%;
+    }
+    
+    .btn-search, .btn-reset {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 768px) {
+    .assignment-header-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .assignment-actions {
+        width: 100%;
+        justify-content: flex-start;
+        margin-top: 8px;
+    }
+    
+    .assignment-info {
+        flex-direction: column;
+        gap: 6px;
+    }
+}
+
+@media (max-width: 600px) {
+    .modal-container {
+        width: 95%;
+        padding: 20px;
+    }
+    
+    .modal-header h3 {
+        font-size: 18px;
+    }
+    
+    .edit-toggle-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .edit-toggle-btn {
+        width: 100%;
+    }
+    
+    .modal-buttons {
+        flex-direction: column;
+    }
+    
+    .modal-buttons button {
+        width: 100%;
+    }
+}
+
+/* FORCE BACK BUTTON ON LEFT - OVERRIDE EVERYTHING */
+@media (max-width: 900px) {
+    /* Force back button to be first (left) */
+    .main > div:first-child {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 8px !important;
+    }
+    
+    /* Back button - FORCE LEFT */
+    .main > div:first-child .back-btn {
+        order: 0 !important;
+        margin-right: auto !important;
+        margin-left: 0 !important;
+    }
+    
+    /* Title - CENTER */
+    .main > div:first-child > div:first-child {
+        order: 1 !important;
+        flex: 1 !important;
+        text-align: center !important;
+    }
+    
+    /* Create button - FORCE RIGHT */
+    .main > div:first-child .create-btn {
+        order: 2 !important;
+        margin-left: auto !important;
+        margin-right: 0 !important;
+    }
+}
+
+.modal-container embed,
+.modal-container iframe {
+    width: 100%;
+    height: 500px;
+    border-radius: 12px;
+}
+
+.modal-container video {
+    max-width: 100%;
+    border-radius: 12px;
+}
+
+.modal-container audio {
+    width: 100%;
+    border-radius: 40px;
+}
+
+.file-link {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.file-link:hover {
+    transform: translateY(-1px);
+    opacity: 0.9;
 }
 </style>
 </head>
@@ -902,6 +1123,9 @@ body::before {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+                <i class="bi bi-list"></i>
+            </button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
@@ -913,6 +1137,7 @@ body::before {
                 <a href="assignment_overview.php" class="active">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -926,20 +1151,26 @@ body::before {
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+            </div>
         </nav>
     </div>
 </header>
-
+<div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; position: relative;">
-        <a href="tutor_dashboard.php" class="back-btn"><i class="bi bi-arrow-left"></i> Back</a>
-        <div style="position: absolute; left: 50%; transform: translateX(-50%); text-align: center;">
-            <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0;"><i class="bi bi-journal-check"></i> My Assignments</h1>
-            <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px;">Review and grade student submissions</p>
-        </div>
-        <a href="select_booking.php?action=assignment" class="create-btn"><i class="bi bi-plus-lg"></i> Create Assignment</a>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; gap: 16px;">
+    <a href="tutor_dashboard.php" class="back-btn" style="display: inline-flex; align-items: center; gap: 6px; background: white; color: #1d3156; padding: 10px 20px; border-radius: 40px; text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid #e2e8f0; flex-shrink: 0;">
+        <i class="bi bi-arrow-left"></i> <span>Back</span>
+    </a>
+    
+    <div style="text-align: center; flex: 1;">
+        <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0;"><i class="bi bi-journal-check"></i> My Assignments</h1>
+        <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px;">Review and grade student submissions</p>
     </div>
-
+    
+    <a href="select_booking.php?action=assignment" class="create-btn" style="display: inline-flex; align-items: center; gap: 6px; background: #1d3156; color: white; border: none; padding: 10px 20px; border-radius: 40px; font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: none; flex-shrink: 0;">
+        <i class="bi bi-plus-lg"></i> <span>Create Assignment</span>
+    </a>
+</div>
     <?php if (isset($deleteMessage)): ?>
         <div class="alert alert-<?= $deleteMessageType ?>">
             <i class="bi bi-<?= $deleteMessageType === 'success' ? 'check-circle' : 'exclamation-circle' ?>"></i>
@@ -1003,6 +1234,24 @@ body::before {
     </div>
 
     <div id="assignmentsContainer"></div>
+</div>
+<!-- View Submission Modal -->
+<div id="viewSubmissionModal" class="modal-overlay">
+    <div class="modal-container" style="max-width: 700px; width: 90%;">
+        <div class="modal-header">
+            <h3><i class="bi bi-file-text"></i> Student Submission</h3>
+            <button class="modal-close" onclick="closeViewSubmissionModal()">&times;</button>
+        </div>
+        <div id="submissionPreviewContent" style="max-height: 60vh; overflow-y: auto; min-height: 200px;">
+            <!-- Content loads here -->
+        </div>
+        <div class="modal-buttons" style="margin-top: 20px; justify-content: center;">
+            <button class="btn-cancel" onclick="closeViewSubmissionModal()">Close</button>
+            <button id="downloadSubmissionBtn" class="btn-save" style="background: #1d3156;">
+                <i class="bi bi-download"></i> Download File
+            </button>
+        </div>
+    </div>
 </div>
 
 <!-- Grade Modal -->
@@ -1772,12 +2021,12 @@ function renderAssignments(assignments) {
                             <span class="status-badge ${statusClass}">${statusIcon} ${statusText}</span>
                         </div>
                         <div class="file-col">
-                            ${sub.file_path ? `
-                                <a href="../uploads/assignments/submission/${escapeHtml(sub.file_path)}" class="file-link" target="_blank">
-                                    <i class="bi bi-eye"></i> View Submission
-                                    <span class="file-size">${formatFileSize(sub.file_size)}</span>
-                                </a>
-                            ` : '<span class="no-file">No file attached</span>'}
+                           ${sub.file_path ? `
+    <button onclick="openViewSubmissionModal('${escapeHtml(sub.file_path)}', '${escapeHtml(sub.file_name || 'submission')}', ${sub.file_size || 0})" class="file-link" style="background: #1d3156; color: white; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+        <i class="bi bi-eye"></i> View Submission
+        <span class="file-size" style="color: #cbd5e1;">${formatFileSize(sub.file_size)}</span>
+    </button>
+` : '<span class="no-file">No file attached</span>'}
                         </div>
                         <div class="actions-col">
                            <button class="btn-grade" onclick="openGradeModal(${sub.id}, '${escapeHtml(sub.grade || '')}', '${escapeHtml(sub.feedback || '')}')">
@@ -1802,31 +2051,35 @@ function applyFilters() {
     const languageFilter = document.getElementById('languageFilter').value;
     const statusFilter = document.getElementById('statusFilter').value;
     const sortBy = document.getElementById('sortBy').value;
-    // Filter by late policy
-const latePolicyFilter = document.getElementById('latePolicyFilter').value;
-if (latePolicyFilter !== 'all') {
-    filtered = filtered.filter(a => {
-        // Skip assignments without due date
-        if (!a.due_date || a.due_date === '0000-00-00 00:00:00') {
-            return latePolicyFilter === 'no_late' ? false : (latePolicyFilter === 'all');
-        }
-        
-        switch (latePolicyFilter) {
-            case 'no_late':
-                return a.allow_late_submission != 1;
-            case 'always':
-                return a.allow_late_submission == 1 && a.late_cutoff_type === 'no_limit';
-            case 'days':
-                return a.allow_late_submission == 1 && a.late_cutoff_type === 'days_after';
-            case 'specific':
-                return a.allow_late_submission == 1 && a.late_cutoff_type === 'specific_date';
-            default:
-                return true;
-        }
-    });
-}
+    const latePolicyFilter = document.getElementById('latePolicyFilter').value;
+    
+    // Start with all assignments
     let filtered = [...allAssignments];
     
+    // Filter by late policy
+    if (latePolicyFilter !== 'all') {
+        filtered = filtered.filter(a => {
+            // Skip assignments without due date
+            if (!a.due_date || a.due_date === '0000-00-00 00:00:00') {
+                return latePolicyFilter === 'no_late' ? false : true;
+            }
+            
+            switch (latePolicyFilter) {
+                case 'no_late':
+                    return a.allow_late_submission != 1;
+                case 'always':
+                    return a.allow_late_submission == 1 && a.late_cutoff_type === 'no_limit';
+                case 'days':
+                    return a.allow_late_submission == 1 && a.late_cutoff_type === 'days_after';
+                case 'specific':
+                    return a.allow_late_submission == 1 && a.late_cutoff_type === 'specific_date';
+                default:
+                    return true;
+            }
+        });
+    }
+    
+    // Filter by search term
     if (searchTerm) {
         filtered = filtered.filter(a => 
             (a.title && a.title.toLowerCase().includes(searchTerm)) ||
@@ -1834,10 +2087,12 @@ if (latePolicyFilter !== 'all') {
         );
     }
     
+    // Filter by language
     if (languageFilter !== 'all') {
         filtered = filtered.filter(a => a.language === languageFilter);
     }
     
+    // Filter by status
     if (statusFilter === 'pending') {
         filtered = filtered.filter(a => {
             const subs = submissionsData[a.id] || [];
@@ -1852,6 +2107,7 @@ if (latePolicyFilter !== 'all') {
         filtered = filtered.filter(a => parseInt(a.submission_count) === 0);
     }
     
+    // Sort
     switch (sortBy) {
         case 'latest': filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); break;
         case 'oldest': filtered.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); break;
@@ -1867,6 +2123,7 @@ if (latePolicyFilter !== 'all') {
     renderAssignments(filtered);
     if (filtered.length === 0) showToast('No assignments match your filters', '#dc2626');
 }
+
 
 function resetFilters() {
     document.getElementById('searchInput').value = '';
@@ -1892,6 +2149,8 @@ window.onclick = function(event) {
     const gradeModal = document.getElementById('gradeModal');
     const editModal = document.getElementById('editAssignmentModal');
     const deleteModal = document.getElementById('deleteAssignmentModal');
+    const viewModal = document.getElementById('viewSubmissionModal');
+if (event.target === viewModal) closeViewSubmissionModal();
     if (event.target === gradeModal) closeGradeModal();
     if (event.target === editModal) closeEditAssignmentModal();
     if (event.target === deleteModal) closeDeleteAssignmentModal();
@@ -1906,6 +2165,104 @@ setTimeout(function() {
     });
 }, 4000);
 
+let currentSubmissionPath = '';
+let currentSubmissionName = '';
+
+function openViewSubmissionModal(filePath, fileName, fileSize) {
+    currentSubmissionPath = filePath;
+    currentSubmissionName = fileName;
+    
+    const contentDiv = document.getElementById('submissionPreviewContent');
+    const downloadBtn = document.getElementById('downloadSubmissionBtn');
+    const fullPath = '../uploads/assignments/submission/' + filePath;
+    const fileExt = fileName.split('.').pop().toLowerCase();
+    
+    // Show loading state
+    contentDiv.innerHTML = '<div style="text-align: center; padding: 40px;"><i class="bi bi-hourglass-split" style="font-size: 32px;"></i><p>Loading...</p></div>';
+    
+    // Set download button action
+    downloadBtn.onclick = function() {
+        window.location.href = fullPath;
+    };
+    
+    // Check file type and display appropriately
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
+        contentDiv.innerHTML = `
+            <div style="text-align: center;">
+                <img src="${fullPath}" alt="Submission" style="max-width: 100%; border-radius: 12px; max-height: 50vh; object-fit: contain;">
+                <p style="margin-top: 12px; font-size: 12px; color: #64748b;">${fileName} (${formatFileSize(fileSize)})</p>
+            </div>
+        `;
+    } 
+    else if (fileExt === 'pdf') {
+        contentDiv.innerHTML = `
+            <embed src="${fullPath}" style="width: 100%; height: 500px; border-radius: 12px;" type="application/pdf">
+            <p style="margin-top: 12px; font-size: 12px; color: #64748b; text-align: center;">${fileName} (${formatFileSize(fileSize)})</p>
+        `;
+    }
+    else if (['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(fileExt)) {
+        contentDiv.innerHTML = `
+            <video controls style="width: 100%; border-radius: 12px; max-height: 50vh;">
+                <source src="${fullPath}">
+                Your browser does not support the video tag.
+            </video>
+            <p style="margin-top: 12px; font-size: 12px; color: #64748b; text-align: center;">${fileName} (${formatFileSize(fileSize)})</p>
+        `;
+    }
+    else if (['mp3', 'wav', 'ogg', 'm4a'].includes(fileExt)) {
+        contentDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px; background: #f8fafc; border-radius: 16px;">
+                <i class="bi bi-mic" style="font-size: 64px; color: #E75A9B;"></i>
+                <audio controls style="width: 100%; margin-top: 20px;">
+                    <source src="${fullPath}">
+                    Your browser does not support the audio tag.
+                </audio>
+                <p style="margin-top: 12px; font-size: 12px; color: #64748b;">${fileName} (${formatFileSize(fileSize)})</p>
+            </div>
+        `;
+    }
+    else if (fileExt === 'txt') {
+        fetch(fullPath)
+            .then(response => response.text())
+            .then(text => {
+                contentDiv.innerHTML = `
+                    <div style="background: #f8fafc; padding: 16px; border-radius: 12px;">
+                        <pre style="white-space: pre-wrap; font-family: monospace; font-size: 13px; margin: 0;">${escapeHtml(text)}</pre>
+                    </div>
+                    <p style="margin-top: 12px; font-size: 12px; color: #64748b;">${fileName} (${formatFileSize(fileSize)})</p>
+                `;
+            })
+            .catch(() => {
+                contentDiv.innerHTML = `
+                    <div style="text-align: center; padding: 60px; background: #f8fafc; border-radius: 16px;">
+                        <i class="bi bi-file-earmark" style="font-size: 64px; color: #cbd5e1;"></i>
+                        <p style="margin-top: 16px;">Cannot preview this file.</p>
+                        <p style="font-size: 13px; color: #64748b;">${fileName}</p>
+                    </div>
+                `;
+            });
+        return;
+    }
+    else {
+        contentDiv.innerHTML = `
+            <div style="text-align: center; padding: 60px; background: #f8fafc; border-radius: 16px;">
+                <i class="bi bi-file-earmark" style="font-size: 64px; color: #cbd5e1;"></i>
+                <p style="margin-top: 16px;">Preview not available for this file type.</p>
+                <p style="font-size: 13px; color: #64748b;">${fileName}</p>
+                <p style="margin-top: 16px;">Click Download to view the file.</p>
+            </div>
+        `;
+    }
+    
+    document.getElementById('viewSubmissionModal').classList.add('active');
+}
+
+function closeViewSubmissionModal() {
+    document.getElementById('viewSubmissionModal').classList.remove('active');
+    document.getElementById('submissionPreviewContent').innerHTML = '';
+    currentSubmissionPath = '';
+    currentSubmissionName = '';
+}
 // File input handler
 const fileInput = document.getElementById('edit_new_file');
 if (fileInput) {
@@ -1995,6 +2352,13 @@ if (editLateCutoffType) {
     editLateCutoffType.addEventListener('change', updateEditLateOptions);
 }
 
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

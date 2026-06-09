@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 
 $assetBase = '../assets/img';
 
@@ -381,12 +382,15 @@ function formatSessionDateTime($date, $time) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My Teaching Materials - Kyoshi Tutor</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="../css/style.css">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -958,6 +962,55 @@ body::before {
     .session-row { flex-direction: column; align-items: flex-start; gap: 4px; }
     .session-label { width: auto; }
 }
+
+/* Mobile responsive - hide button text on small screens */
+@media (max-width: 900px) {
+    .back-btn span {
+        display: none;
+    }
+    
+    .back-btn {
+        padding: 10px 16px !important;
+    }
+    
+    .add-material-btn span {
+        display: none;
+    }
+    
+    .add-material-btn {
+        padding: 10px 16px !important;
+    }
+
+    .abc{
+        margin-bottom: 20px;
+    }
+
+        .material-title {
+        font-size: 15px !important;
+    }
+    
+    .upload-date {
+        font-size: 9px;
+        align-items: flex-start;
+    }
+}
+
+/* For very small screens */
+@media (max-width: 600px) {
+    .back-btn {
+        padding: 8px 12px !important;
+    }
+    
+    .add-material-btn {
+        padding: 8px 12px !important;
+    }
+    
+    .page-header-centered h1 {
+        font-size: 18px !important;
+    }
+}
+
+
 </style>
 </head>
 
@@ -966,6 +1019,9 @@ body::before {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+                <i class="bi bi-list"></i>
+            </button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
@@ -977,6 +1033,7 @@ body::before {
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -990,31 +1047,31 @@ body::before {
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+            </div>
         </nav>
     </div>
 </header>
-
+ <div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; position: relative;">
-        <!-- Left: Back Button -->
-        <a href="tutor_dashboard.php" class="back-btn" style="display: inline-flex; align-items: center; gap: 8px; background: white; color: #1d3156; padding: 10px 20px; border-radius: 40px; text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid #e2e8f0; transition: 0.25s;">
-            <i class="bi bi-arrow-left"></i> Back
-        </a>
-        
-        <!-- Center: Title -->
-        <div style="position: absolute; left: 50%; transform: translateX(-50%); text-align: center;">
-            <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0; letter-spacing: -0.5px;">
-                <i class="bi bi-journal-bookmark-fill" style="margin-right: 10px;"></i> My Teaching Materials
-            </h1>
-            <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px; font-weight: 500;">Manage all the learning materials you've shared with your students</p>
-        </div>
-        
-        <!-- Right: Add Button -->
-        <!-- Right: Add Button -->
-<a href="select_booking.php?action=upload" class="add-material-btn" style="background: #1d3156; color: white; border: none; padding: 10px 24px; border-radius: 40px; font-weight: 600; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s; text-decoration: none;">
-    <i class="bi bi-plus-lg"></i> Add New Material
-</a>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-wrap: wrap; gap: 16px;">
+    <!-- Left: Back Button -->
+    <a href="tutor_dashboard.php" class="back-btn" style="display: inline-flex; align-items: center; gap: 8px; background: white; color: #1d3156; padding: 10px 20px; border-radius: 40px; text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid #e2e8f0; transition: 0.25s;">
+        <i class="bi bi-arrow-left"></i> <span>Back</span>
+    </a>
+    
+    <!-- Center: Title -->
+    <div style="text-align: center; flex: 1;">
+        <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0; letter-spacing: -0.5px;">
+            <i class="bi bi-journal-bookmark-fill" style="margin-right: 10px;"></i> My Teaching Materials
+        </h1>
+        <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px; font-weight: 500;">Manage all the learning materials you've shared with your students</p>
     </div>
+    
+    <!-- Right: Add Button -->
+    <a href="select_booking.php?action=upload" class="add-material-btn" style="background: #1d3156; color: white; border: none; padding: 10px 24px; border-radius: 40px; font-weight: 600; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s; text-decoration: none;">
+        <i class="bi bi-plus-lg"></i> <span>Add New Material</span>
+    </a>
+</div>
 
     <?php if ($deleteMessage): ?>
         <div class="alert alert-<?= $deleteMessageType === 'success' ? 'success' : 'error' ?>">
@@ -1085,7 +1142,14 @@ body::before {
 <!-- Edit Modal -->
 <div id="editModal" class="modal">
     <div class="modal-content" style="max-width: 600px;">
-        <h3><i class="bi bi-pencil-square"></i> Edit Material</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h3 style="margin: 0; font-size: 20px; display: flex; align-items: center; gap: 8px;">
+        <i class="bi bi-pencil-square"></i> Edit Material
+    </h3>
+    <button onclick="closeEditModal()" style="background: none; border: none; font-size: 22px; cursor: pointer; color: #64748b; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.2s;">
+        <i class="bi bi-x-lg"></i>
+    </button>
+</div>
         <form method="POST" action="" id="editForm" enctype="multipart/form-data">
             <input type="hidden" name="material_id" id="edit_material_id">
             <input type="hidden" name="edit_material" value="1">
@@ -1874,6 +1938,12 @@ window.onclick = function(event) {
 
 
 </script>
-
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

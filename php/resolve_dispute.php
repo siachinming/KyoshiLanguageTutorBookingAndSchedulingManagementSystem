@@ -114,7 +114,7 @@ if ($action === 'resolve') {
                 <p><strong>Issue Type:</strong> {$issueLabel}</p>
             </div>
             <div style='text-align:center;margin-top:20px;'>
-                <a href='http://localhost/kyoshi/php/booking_detail.php?id={$booking_id}&resolved=1' 
+                <a href='http://kyoshitutor.site/php/booking_detail.php?id={$booking_id}&resolved=1' 
                    style='display:inline-block;padding:10px 20px;background:#28a745;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
                     View Session →
                 </a>

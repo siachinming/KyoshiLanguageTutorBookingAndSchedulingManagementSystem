@@ -2,6 +2,7 @@
 session_start();
 include 'config.php';
 include 'insert_notification.php';
+include 'check_login.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -88,7 +89,7 @@ function sendAssignmentEmail($booking, $title, $description, $due_date, $tutorNa
                 {$due_text}
             </div>
             <div style='text-align:center;'>
-                <a href='http://localhost/kyoshi/php/assignments.php?booking_id={$booking['id']}'
+                <a href='http://kyoshitutor.site/php/my_assignments.php?booking_id={$booking['id']}'
                    style='display:inline-block;padding:12px 30px;background:#1d3156;
                           color:white;border-radius:30px;text-decoration:none;'>View Assignment</a>
             </div>
@@ -328,8 +329,12 @@ $stmt->bind_param(
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Create Assignment · Kyoshi</title>
+    <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -539,6 +544,9 @@ $stmt->bind_param(
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
@@ -550,6 +558,7 @@ $stmt->bind_param(
                 <a href="assignment_overview.php" class="active">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>" alt="">
@@ -562,6 +571,7 @@ $stmt->bind_param(
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
+            </div>
             </div>
         </nav>
     </div>
@@ -1004,6 +1014,13 @@ if (dueDateInput) {
     // Check initial state on page load
     toggleLateOptionsByDueDate();
 }
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

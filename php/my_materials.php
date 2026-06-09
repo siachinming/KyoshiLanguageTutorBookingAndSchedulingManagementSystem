@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -22,10 +23,11 @@ if (!$user) {
 }
 
 $displayName = $user['fullname'];
-$profilePic = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 // Get all learning materials with tutor info
 $allMaterials = [];
 $result = $conn->query("
@@ -189,10 +191,14 @@ function getFileIcon($fileName) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Materials · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6;
@@ -348,12 +354,77 @@ function getFileIcon($fileName) {
       .filter-group{min-width:auto;}
     }
     @media(max-width:600px){.materials-grid{grid-template-columns:1fr}.classrooms-grid{grid-template-columns:1fr}}
+  /* ========== FIX BACK BUTTON ON MOBILE ========== */
+@media (max-width: 768px) {
+    /* Fix container for the back button and title */
+    .container > div:first-child {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+        position: relative;
+        min-height: 60px;
+    }
+        .btn-reset {
+        width: 100% !important;
+        justify-content: center !important;
+        margin-top: 8px;
+    }
+    
+    /* Back button - position at top left on mobile */
+    .back-link {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        transform: none !important;
+        margin: 0 !important;
+        padding: 8px 12px;
+        font-size: 12px;
+        z-index: 10;
+    }
+    
+    /* Hide the text on mobile, show only icon */
+    .back-link span {
+        display: none;
+    }
+    
+    .back-link i {
+        font-size: 16px;
+    }
+    
+    /* Title - centered with some top margin */
+    .container > div:first-child h1 {
+        font-size: 22px !important;
+        margin: 0 !important;
+        padding-top: 10px;
+    }
+    
+    .container > div:first-child p {
+        font-size: 12px;
+        margin-top: 5px !important;
+    }
+}
+
+/* For very small screens */
+@media (max-width: 480px) {
+    .back-link {
+        padding: 6px 10px;
+    }
+    
+    .container > div:first-child h1 {
+        font-size: 20px !important;
+    }
+}
   </style>
 </head>
 <body>
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
         <div>
@@ -398,12 +469,12 @@ function getFileIcon($fileName) {
     </nav>
   </div>
 </header>
-
+  <div class="nav-overlay" id="navOverlay"></div>
 <div class="container" style="padding:24px 0 60px;">
   
   <div style="position:relative;text-align:center;margin-bottom:20px;">
     <a href="student_dashboard.php" class="back-link" style="position:absolute;left:0;top:50%;transform:translateY(-50%);margin:0;">
-      <i class="bi bi-arrow-left"></i> Back
+      <i class="bi bi-arrow-left"></i><span>Back</span>
     </a>
     <h1 style="margin:0;font-size:28px;letter-spacing:-.6px;">My Learning Materials</h1>
     <p style="margin:5px 0 0;color:var(--muted);font-size:14px;">Access all resources shared by your tutors</p>
@@ -763,5 +834,14 @@ window.addEventListener('beforeunload', function() {
     }
 });
 </script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

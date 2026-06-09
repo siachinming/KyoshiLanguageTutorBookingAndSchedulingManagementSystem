@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
@@ -13,8 +14,11 @@ $user = $stmt->get_result()->fetch_assoc();
 if (!$user) { header("Location: login.php"); exit(); }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 // Filters
 $filterStatus = $_GET['status'] ?? 'all';
 $filterFrom   = $_GET['date_from'] ?? '';
@@ -224,9 +228,13 @@ function methodIcon($m) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Payments · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6;--paper:rgba(255,255,255,.88);--ink:#342635;--muted:#7B6178;
@@ -458,6 +466,9 @@ function methodIcon($m) {
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -501,12 +512,14 @@ function methodIcon($m) {
       </nav>
   </div>
 </header>
+  <div class="nav-overlay" id="navOverlay"></div>
+
 
 <div class="container" style="padding:24px 0 60px;">
 
   <div style="position:relative;text-align:center;margin-bottom:20px;">
     <a href="student_dashboard.php" class="back-link" style="position:absolute;left:0;top:50%;transform:translateY(-50%);margin:0;">
-      <i class="bi bi-arrow-left"></i> Back
+      <i class="bi bi-arrow-left"></i><span>Back</span>
     </a>
     <h1 style="margin:0;font-size:32px;letter-spacing:-.6px;">My Payments</h1>
     <p style="margin:8px 0 0;color:var(--muted);font-size:15px;">Track all your payment records and download receipts.</p>
@@ -709,7 +722,7 @@ foreach ($remainingPayments as $rp) {
          <div class="pay-actions">
             <?php if ($p['payment_status'] !== 'rejected'): ?>
                 <a href="booking_detail.php?id=<?= $p['booking_id'] ?>" class="btn-action primary">
-                    <i class="bi bi-eye"></i> View Detals
+                    <i class="bi bi-eye"></i> View Details
                 </a>
             <?php endif; ?>
             <a href="payment_form.php?booking_id=<?= $p['booking_id'] ?>" class="btn-action purple">
@@ -1057,6 +1070,28 @@ function toggleSelectAll(type) {
   updateUI();
 }
 
+function validatePreferredDateTime() {
+    const datetimeInput = document.getElementById('preferredDateTime');
+    if (!datetimeInput) return true;
+    
+    const value = datetimeInput.value;
+    if (!value) return true; // Empty is handled separately
+    
+    // Check if the time part ends with :00
+    const timePart = value.split('T')[1];
+    if (timePart && !timePart.endsWith(':00')) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Invalid Time',
+            text: 'Please select a time ending in :00 (e.g., 10:00, 14:00, 18:00). Only full hour slots are available.',
+            confirmButtonColor: '#E75A9B'
+        });
+        datetimeInput.value = '';
+        return false;
+    }
+    return true;
+}
+
 function viewProofImage(imageSrc) {
     const modal = document.getElementById('imageModal');
     const img = document.getElementById('fullImage');
@@ -1310,7 +1345,6 @@ function toggleSelectionMode() {
                 </div>
                 
                 <div style="background: #f8f9fa; padding: 12px; border-radius: 12px; margin-bottom: 15px;">
-                    <p style="margin: 0 0 5px 0;"><strong>Payment ID:</strong> #${paymentId}</p>
                     <p style="margin: 0 0 5px 0;"><strong>Booking:</strong> ${language} with ${tutorName}</p>
                     <p style="margin: 0;"><strong>Session Date:</strong> ${bookingDate}</p>
                 </div>
@@ -1327,7 +1361,6 @@ function toggleSelectionMode() {
                     <p style="margin: 0; color: #991b1b; font-size: 13px;">${notes || 'No additional notes provided.'}</p>
                 </div>
                 
-                ${guidanceHtml}
                 
                 <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
                     ${actionButtons}
@@ -1340,11 +1373,8 @@ function toggleSelectionMode() {
             </div>
         `,
         icon: 'info',
-        confirmButtonColor: '#E75A9B',
-        confirmButtonText: 'Close',
-        width: '550px',
         showCloseButton: true,
-        showConfirmButton: true
+        showConfirmButton: false
     });
 }
 
@@ -1735,6 +1765,14 @@ function submitDisputeWithProof() {
             showToast('Please select a preferred new date and time for reschedule', true);
             return;
         }
+        
+        // VALIDATE TIME ENDS WITH :00
+        const timePart = preferredDateTime.split('T')[1];
+        if (timePart && !timePart.endsWith(':00')) {
+            showToast('Please select a time ending in :00 (e.g., 10:00, 14:00, 18:00)', true);
+            return;
+        }
+        
         // Format the date/time nicely
         const formattedDateTime = new Date(preferredDateTime);
         if (isNaN(formattedDateTime.getTime())) {
@@ -1827,7 +1865,7 @@ function submitDisputeWithProof() {
         });
     });
 }
-</script><!-- Enhanced Dispute Modal with Proof Upload -->
+</script>
 <div id="disputeModal" class="modal-overlay" style="display:none;">
     <div class="modal-container" style="max-width: 600px;">
         <div class="modal-header" style="padding: 20px 24px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;">
@@ -1897,7 +1935,13 @@ function submitDisputeWithProof() {
                 
                 <div id="rescheduleDateDiv" style="display:none; margin-bottom: 20px;">
                     <label style="display:block; font-weight:700; margin-bottom:8px;">Preferred New Date & Time</label>
-                    <input type="datetime-local" id="preferredDateTime" name="preferred_datetime" style="width:100%; padding:12px; border-radius:12px; border:1px solid #ddd;">
+                    <input type="datetime-local" id="preferredDateTime" name="preferred_datetime" 
+                        step="3600" 
+                        onchange="validatePreferredDateTime()"
+                        style="width:100%; padding:12px; border-radius:12px; border:1px solid #ddd;">
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        <i class="bi bi-info-circle"></i> Please select a time ending in :00 (e.g., 10:00, 14:00, 18:00)
+                    </small>
                 </div>
                 
                 <!-- PROOF UPLOAD SECTION -->
@@ -1944,6 +1988,271 @@ function submitDisputeWithProof() {
     </div>
 </div>
 <style>
+/* ========== MOBILE RESPONSIVE FIXES FOR MY PAYMENTS ========== */
+
+/* Tablet and below (900px) */
+@media (max-width: 900px) {
+    /* Fix summary cards - stack vertically */
+    .summary-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    /* Fix filter bar - full width */
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    
+    .filter-group {
+        width: 100%;
+        min-width: auto;
+    }
+    
+    .btn-reset {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+    
+    /* Fix payment cards */
+    .payment-card {
+        padding: 16px;
+    }
+    
+    /* Fix pay-top section - wrap on mobile */
+    .pay-top {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    
+    .tutor-img {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .pay-top-info h4 {
+        font-size: 15px;
+    }
+    
+    .pay-top-info .sub {
+        font-size: 12px;
+    }
+    
+    /* Fix status badge */
+    .status-badge {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
+    
+    /* Fix pay body grid - 2 columns */
+    .pay-body {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    
+    /* Fix pay actions - wrap and full width on small */
+    .pay-actions {
+        flex-wrap: wrap;
+    }
+    
+    .btn-action {
+        padding: 8px 14px;
+        font-size: 11px;
+    }
+    
+    /* Fix back button */
+    .back-link {
+        position: relative !important;
+        transform: none !important;
+        margin-bottom: 16px;
+        display: inline-flex;
+        width: fit-content;
+    }
+    
+    .back-link span {
+        display: inline;
+    }
+}
+
+/* Mobile (600px and below) */
+@media (max-width: 600px) {
+    /* Pay body - single column */
+    .pay-body {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Pay top - stack vertically */
+    .pay-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .tutor-img {
+        width: 48px;
+        height: 48px;
+    }
+    
+    /* Status badge - full width on mobile */
+    .status-badge {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Action buttons - full width */
+    .pay-actions {
+        flex-direction: column;
+    }
+    
+    .btn-action {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Bulk bar fixes */
+    .bulk-action-inner {
+        flex-direction: column;
+        text-align: center;
+        padding: 12px 16px;
+    }
+    
+    .bulk-info {
+        text-align: center;
+    }
+    
+    .bulk-btns {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .bulk-btn {
+        flex: 1;
+        justify-content: center;
+    }
+    
+    /* Back button hide text on very small */
+    .back-link span {
+        display: none;
+    }
+    
+    .back-link {
+        padding: 8px 12px;
+    }
+    
+    /* Page title smaller */
+    h1 {
+        font-size: 24px !important;
+    }
+    
+    /* Pending refund banner fixes */
+    div[style*="background: linear-gradient(135deg, #fef3c7, #fffbeb)"] {
+        padding: 12px !important;
+    }
+    
+    div[style*="background: linear-gradient(135deg, #fef3c7, #fffbeb)"] > div {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    div[style*="margin-left: auto"] {
+        margin-left: 0 !important;
+        margin-top: 8px;
+    }
+}
+
+/* Extra small (400px and below) */
+@media (max-width: 400px) {
+    .payment-card {
+        padding: 12px;
+    }
+    
+    .pay-top-info h4 {
+        font-size: 14px;
+    }
+    
+    .btn-action {
+        padding: 7px 12px;
+        font-size: 10px;
+    }
+    
+
+}
+
+.status-badge {
+    font-size: 10px;
+    padding: 5px 10px;
+    white-space: nowrap;
+}
+
+/* For mobile, allow text to wrap if needed */
+@media (max-width: 600px) {
+    .status-badge {
+        font-size: 10px;
+        padding: 4px 8px;
+        white-space: normal;
+        text-align: center;
+        line-height: 1.3;
+    }
+}
+
+/* For very small screens, make badge full width */
+@media (max-width: 480px) {
+    .status-badge {
+        width: 100%;
+        justify-content: center;
+        padding: 6px 10px;
+    }
+}
+
+
+@media (max-width: 600px) {
+    /* Remove extra padding */
+    .payment-card {
+        padding: 16px !important;
+    }
+    
+    /* Move checkbox to top-right corner */
+    .payment-card > div[style*="position: absolute; top: 15px; left: 15px"] {
+        left: auto !important;
+        right: 12px !important;
+        top: 12px !important;
+        z-index: 20;
+    }
+    
+    /* Make the pay-top take full width without overlapping checkbox */
+    .pay-top {
+                display: flex;
+        flex-wrap: nowrap !important;
+
+        gap: 10px;
+        padding-right: 35px;
+        width: 100%;
+    }
+    
+    /* Ensure tutor image and text don't get cut off */
+    .pay-top-info {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    /* Adjust tutor image size */
+    .tutor-img {
+        width: 48px;
+        height: 48px;
+        flex-shrink: 0;
+    }
+
+    .status-badge {
+        flex-shrink: 0;
+        white-space: nowrap;
+        padding: 5px 10px;
+        font-size: 10px;
+        margin-left: auto;
+    }
+}
+
+
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -2017,8 +2326,155 @@ function submitDisputeWithProof() {
     background: #e08bb1;
 }
 
+/* ========== FIX BACK BUTTON POSITION AND FROM/TO FULL WIDTH ========== */
+
+/* Fix back button to stay on left */
+.container > div:first-child {
+    position: relative;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.back-link {
+    position: absolute !important;
+    left: 0 !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    margin: 0 !important;
+}
+
+/* Make From and To date inputs full width on mobile */
+@media (max-width: 600px) {
+    /* From and To date inputs - full width and stacked */
+    .filter-bar .filter-group:nth-child(2),
+    .filter-bar .filter-group:nth-child(3) {
+        width: 100%;
+    }
+    
+    .filter-bar .filter-group:nth-child(2) input,
+    .filter-bar .filter-group:nth-child(3) input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+}
+
+/* Alternative - wrap From and To in a row on desktop, stack on mobile */
+@media (min-width: 601px) {
+    .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+    }
+    
+    .filter-bar .filter-group:nth-child(2),
+    .filter-bar .filter-group:nth-child(3) {
+        flex: 1;
+        min-width: 140px;
+    }
+}
+
+@media (max-width: 600px) {
+    .filter-bar .filter-group:nth-child(2),
+    .filter-bar .filter-group:nth-child(3) {
+        width: 100%;
+    }
+}
+/* ========== MAKE VIEW DETAILS MODAL SMALLER ========== */
+
+/* Make the Swal modal smaller */
+.swal2-popup {
+    width: 450px !important;
+    max-width: 90% !important;
+    padding: 20px !important;
+    font-size: 13px !important;
+}
+
+/* Make the content inside smaller */
+.swal2-html-container {
+    max-height: 400px !important;
+    overflow-y: auto !important;
+}
+
+/* Make the status badge in modal smaller */
+.swal2-html-container .status-badge-modal {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+}
+
+/* Reduce padding in modal sections */
+.swal2-html-container > div > div {
+    padding: 8px 12px !important;
+    margin-bottom: 10px !important;
+}
+
+/* Make headings smaller */
+.swal2-html-container strong {
+    font-size: 12px !important;
+}
+
+/* Make buttons in modal smaller */
+.swal2-actions .btn-action {
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+}
+
+/* Adjust the amount text */
+.swal2-html-container .amount {
+    font-size: 16px !important;
+}
+
+/* For very small screens */
+@media (max-width: 500px) {
+    .swal2-popup {
+        width: 95% !important;
+        padding: 15px !important;
+    }
+    
+    .swal2-html-container {
+        max-height: 350px !important;
+    }
+    
+    .swal2-html-container > div > div {
+        padding: 6px 10px !important;
+    }
+}
+
+/* ========== FIX DOUBLE SCROLLBAR IN MODAL ========== */
+
+/* Prevent body from scrolling when modal is open */
+.swal2-shown {
+    overflow: hidden !important;
+    padding-right: 0 !important;
+}
+
+/* Ensure modal doesn't cause body scroll */
+body.swal2-shown {
+    overflow: hidden !important;
+}
+
+/* Make modal container handle scrolling */
+.swal2-container {
+    overflow-y: auto !important;
+}
+
+/* Modal content scrolls internally, body doesn't scroll */
+.swal2-html-container {
+    overflow-y: auto !important;
+    max-height: 60vh !important;
+}
+
 
 </style>
+
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 <?php include 'nav_search_modal.php'; ?>
 <script src="../js/search_modal.js"></script>
 

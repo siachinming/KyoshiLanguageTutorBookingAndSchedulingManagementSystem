@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -18,10 +19,11 @@ $user = $stmt->get_result()->fetch_assoc();
 if (!$user) { header("Location: login.php"); exit(); }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
 // Get tutor ID from URL
@@ -135,9 +137,13 @@ if (!empty($tutor['phone'])) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= e($tutor['fullname']) ?> · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6; --paper:rgba(255,255,255,.88); --ink:#342635; --muted:#7B6178;
@@ -239,13 +245,17 @@ if (!empty($tutor['phone'])) {
     .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,18px);opacity:0;pointer-events:none;z-index:99;background:#8E3F70;color:#fff;border-radius:999px;padding:12px 18px;font-size:13px;font-weight:900;transition:.2s ease}
     .toast.show{opacity:1;transform:translate(-50%,0)}
 
-    @media(max-width:1024px){.profile-grid{grid-template-columns:1fr}}
+    @media(max-width:1024px){.profile-grid{grid-template-columns:1fr}
+          .back-link span {
+        display: none;
+    }}
     @media(max-width:640px){
       .nav{grid-template-columns:1fr auto}
       .nav-links{display:none}
       .tutor-hero{flex-direction:column}
       .tutor-hero img{width:90px;height:90px}
       .action-row{gap:8px}
+
       .btn-fav,.btn-wa{width:42px;height:42px;font-size:16px}
       .btn-book{padding:12px 16px;font-size:13px}
     }
@@ -256,6 +266,9 @@ if (!empty($tutor['phone'])) {
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+                 <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -300,11 +313,12 @@ if (!empty($tutor['phone'])) {
   </div>
 </header>
 
+  <div class="nav-overlay" id="navOverlay"></div></main>
 <main class="container">
   <div class="page">
 
     <a href="javascript:history.back()" class="back-link">
-      <i class="bi bi-arrow-left"></i> Back
+      <i class="bi bi-arrow-left"></i><span>Back</span>
     </a>
 
     <div class="profile-grid">
@@ -397,13 +411,13 @@ if (!empty($tutor['phone'])) {
               <?php foreach($reviews as $review):
                 $studentPic = !empty($review['student_pic'])
                     ? '../uploads/profiles/' . $review['student_pic']
-                    : $assetBase . '/profile-student.png';
+                    : $assetBase . '/profile.png';
                 $rStars = round($review['rating']);
               ?>
               <div class="review-item">
                 <div class="review-header">
                   <?php $isAnon = ($review['is_anonymous'] ?? 0); ?>
-                  <img src="<?= $isAnon ? e($assetBase).'/profile-student.png' : e($studentPic) ?>" 
+                  <img src="<?= $isAnon ? e($assetBase).'/profile.png' : e($studentPic) ?>" 
                        alt="<?= $isAnon ? 'Anonymous' : e($review['student_name']) ?>">
                   <div>
                     <div class="review-name">
@@ -491,7 +505,13 @@ if (!empty($tutor['phone'])) {
 </main>
 
 <div class="toast" id="toast"></div>
-
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+<script src="../js/nav.js"></script>
 <script>
   function toggleFav() {
     const btn = document.getElementById('favBtn');

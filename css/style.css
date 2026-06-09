@@ -1,0 +1,152 @@
+.hamburger-menu {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #7A3D65;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+}
+
+.search-icon-btn {
+    display: none;
+}
+
+
+.nav-overlay.show {
+    display: block;
+}
+
+
+@media (min-width: 100px) and (max-width: 1200px){
+    .nav {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        position: relative !important;
+        width:100%;
+        min-height: 60px !important;
+    }
+    
+    .profile span {
+        display: none !important;
+    }
+    
+    .profile i.bi-chevron-down {
+        display: none !important;
+    }
+
+    .back-link span{
+        display:none !important;
+    }
+    
+    /* Make profile button smaller - only show icon */
+    .profile {
+        padding: 6px !important;
+        background: rgba(255,255,255,.88) !important;
+        border-radius: 50% !important;
+        width: 40px !important;
+        height: 40px !important;
+        display: flex !important;
+
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    
+    .profile img {
+        width: 32px !important;
+        height: 32px !important;
+        left:20px !important;
+        margin: 0 !important;
+    }
+
+    .hamburger-menu {
+        display: flex !important;
+        position: absolute !important;
+        left:-12px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        margin: 0 !important;
+        z-index: 10 !important;
+    }
+    
+    .brand {
+        position: absolute !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        margin: 0 !important;
+    }
+    
+    .brand strong {
+        font-size: 14px !important;
+        display: none !important;
+    }
+    
+    .brand span {
+        font-size: 8px !important;
+        display: none !important;
+    }
+    
+    .brand img {
+        width: 60px !important;
+        height: 60px !important;
+    }
+    
+    .nav-actions {
+                position: absolute !important;
+        right: -12px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        margin: 0 !important;
+    }
+    
+    .nav-links {
+        display: none !important;
+        position: fixed !important;
+        top: 100% !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        background: white !important;
+        flex-direction: column !important;
+        padding: 16px !important;
+        gap: 8px !important;
+        box-shadow: 0 20px 30px rgba(0,0,0,0.15) !important;
+        border-radius: 0 0 20px 20px !important;
+        z-index: 1000 !important;
+    }
+    
+    .nav-links.show {
+        display: flex !important;
+    }
+
+    #profileDropdown {
+        position: absolute !important;
+        top: calc(100% + 10px) !important;
+        right: -6px !important;
+        left: auto !important;
+        bottom: auto !important;
+        width: auto !important;
+        min-width: 200px !important;
+        border-radius: 16px !important;
+    }
+    
+    .nav-links a {
+        padding: 12px 16px !important;
+        font-size: 15px !important;
+        border-radius: 12px !important;
+        width: 100% !important;
+    }
+    
+    .lang-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+

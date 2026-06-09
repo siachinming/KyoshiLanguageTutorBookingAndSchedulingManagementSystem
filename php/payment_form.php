@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -217,8 +218,11 @@ $user = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 $displayName = $user['fullname'];
-$profilePic = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 function sendAdminPaymentEmail($booking_ids, $method, $receiptNo, $total_amount, $student_name, $student_email) {
     global $conn;
     
@@ -254,7 +258,7 @@ function sendAdminPaymentEmail($booking_ids, $method, $receiptNo, $total_amount,
                         <td style='padding:8px;border:1px solid #ddd;'>" . date('d M Y, g:i A', strtotime($booking['booking_date'] . ' ' . $booking['booking_time'])) . "</td></tr>";
     }
     
-    $adminLink = "http://localhost/kyoshi/php/admin/pending_payments.php";
+    $adminLink = "http://kyoshitutor.site/php/admin/admin_payments.php";
     
     $mail = new PHPMailer(true);
     
@@ -386,7 +390,7 @@ function sendStudentPaymentEmail($student_email, $student_name, $booking_ids, $m
                 </div>
                 
                 <div style='text-align:center;margin:20px 0;'>
-                    <a href='http://localhost/kyoshi/php/my_payments.php' style='display:inline-block;padding:10px 25px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>View My Payments</a>
+                    <a href='http://kyoshitutor.site/php/my_payments.php' style='display:inline-block;padding:10px 25px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>View My Payments</a>
                 </div>
                 
                 <p style='margin-top:20px;color:gray;font-size:13px;'>Kyoshi Learning Platform</p>
@@ -485,10 +489,14 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <!DOCTYPE html>
 <html lang="en">
 <head>
+   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Payment · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6;--paper:rgba(255,255,255,.88);--ink:#342635;--muted:#7B6178;
@@ -567,12 +575,27 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     @media(max-width:900px){.payment-grid{grid-template-columns:1fr}}
     @media(max-width:600px){.method-grid{grid-template-columns:1fr};.nav{grid-template-columns:1fr auto};.nav-links{grid-column:1/-1}}
     .method-card.disabled{pointer-events:none;border:2px dashed #ccc;background:#f5f5f5;}  
+  /* Fix banking details alignment */
+#detailsBanking div div {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    text-align: left !important;
+}
+
+#detailsBanking div div span,
+#detailsBanking div div strong {
+    display: inline-block !important;
+}
   </style>
 </head>
 <body>
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -616,13 +639,14 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       </nav>
   </div>
 </header>
+  <div class="nav-overlay" id="navOverlay"></div>
 
 <div class="container">
   <div class="page-wrap">
     <?php if ($is_multi): ?>
       <a href="my_payments.php" class="back-link"><i class="bi bi-arrow-left"></i> Back to Payments</a>
     <?php else: ?>
-      <a href="booking_detail.php?id=<?= $first_booking['id'] ?>" class="back-link"><i class="bi bi-arrow-left"></i> Back to Booking</a>
+      <a href="booking_detail.php?id=<?= $first_booking['id'] ?>" class="back-link"><i class="bi bi-arrow-left"></i> <span>Back to Booking</span></Back></a>
     <?php endif; ?>
 
     <?php if (isset($error)): ?>
@@ -672,28 +696,52 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
                 <button type="button" onclick="submitStripe()" class="btn-primary"><i class="bi bi-credit-card"></i> Pay with Card</button>
                 <!-- TEMPORARY DEBUG BUTTON - REMOVE AFTER FIXING -->
               </div>
-
-              <div id="detailsBanking" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);text-align:center;">
-                <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-bank"></i> Transfer to this account:</p>
-                <div style="display:grid;gap:8px;">
-                  <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
-                    <span style="color:#4A7A55;font-weight:700;">Bank</span><strong>Maybank</strong>
-                  </div>
-                  <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
-                    <span style="color:#4A7A55;font-weight:700;">Account Name</span><strong>Kyoshi Education Sdn Bhd</strong>
-                  </div>
-                  <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;">
-                    <span style="color:#4A7A55;font-weight:700;">Account Number</span><strong style="letter-spacing:1px;">1234 5678 9012</strong>
-                  </div>
-                </div>
-                <p style="margin:12px 0 0;font-size:12px;color:#4A7A55;font-weight:700;"><i class="bi bi-info-circle"></i> Use booking ID(s) as reference.</p>
-              </div>
+<div id="detailsBanking" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);text-align:center;">
+    <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-bank"></i> Transfer to this account:</p>
+    <div style="display:grid;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
+            <span style="color:#4A7A55;font-weight:700;">Bank</span>
+            <strong style="text-align:right;flex:1;margin-left:auto;">Maybank</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;border-bottom:1px solid rgba(45,106,66,.15);">
+            <span style="color:#4A7A55;font-weight:700;">Account Name</span>
+            <strong style="text-align:right;flex:1;margin-left:auto;">Kyoshi Education Sdn Bhd</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;">
+            <span style="color:#4A7A55;font-weight:700;">Account Number</span>
+            <strong style="text-align:right;flex:1;margin-left:auto;letter-spacing:1px;">1234 5678 9012</strong>
+        </div>
+    </div>
+    <p style="margin:12px 0 0;font-size:12px;color:#4A7A55;font-weight:700;"><i class="bi bi-info-circle"></i> Use booking ID(s) as reference.</p>
+</div>
               <div id="detailsDuitnow" style="display:none;padding:16px;border-radius:16px;background:rgba(221,244,230,.5);border:1px solid rgba(45,106,66,.2);text-align:center;">
-                <p style="margin:0 0 12px;font-size:13px;font-weight:900;color:#2D6A42;"><i class="bi bi-qr-code"></i> Scan this QR to pay:</p>
-                <img src="../assets/img/duitnow_qr.png" alt="DuitNow QR" style="width:180px;height:180px;object-fit:contain;border-radius:12px;border:2px solid rgba(45,106,66,.2);background:white;padding:8px;">
-                <p style="margin:12px 0 0;font-size:13px;font-weight:900;color:#2D6A42;">Kyoshi Education Sdn Bhd</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#4A7A55;font-weight:700;">Reference: Use booking ID(s)</p>
-              </div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <p style="margin:0;font-size:13px;font-weight:900;color:#2D6A42;">
+            <i class="bi bi-qr-code"></i> Scan this QR to pay:
+        </p>
+        <button type="button" onclick="toggleQRCode()" id="qrToggleBtn" style="background:none; border:none; font-size:20px; cursor:pointer; color:#2D6A42; padding:5px 10px;">
+            <i class="bi bi-dash-circle" id="qrToggleIcon"></i>
+        </button>
+    </div>
+    <div id="qrCodeContainer" style="display: block;">
+        <img src="../assets/img/duitnow_qr.jpeg" alt="DuitNow QR" 
+             style="width:180px;height:180px;object-fit:contain;border-radius:12px;border:2px solid rgba(45,106,66,.2);background:white;padding:8px; cursor:pointer;" 
+             onclick="expandQRCode()">
+        <p style="margin:12px 0 0;font-size:13px;font-weight:900;color:#2D6A42;">Kyoshi Education Sdn Bhd</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#4A7A55;font-weight:700;">Reference: Use booking ID(s)</p>
+    </div>
+</div>
+
+<!-- QR Code Expanded Modal -->
+<div id="qrModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;">
+    <div style="position:relative;background:white;padding:20px;border-radius:20px;max-width:500px;width:90%;text-align:center;">
+        <button type="button" onclick="closeQRModal()" style="position:absolute;top:-15px;right:-15px;background:#dc2626;color:white;border:none;width:40px;height:40px;border-radius:50%;font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&times;</button>
+        <h3 style="margin:0 0 15px 0;color:#2D6A42;"><i class="bi bi-qr-code"></i> DuitNow QR Code</h3>
+        <img src="../assets/img/duitnow_qr.jpeg" alt="DuitNow QR" style="width:100%;max-width:400px;height:auto;border-radius:12px;border:2px solid #2D6A42;">
+        <p style="margin:15px 0 0 0;font-weight:700;color:#2D6A42;">Kyoshi Education Sdn Bhd</p>
+        <button type="button" onclick="closeQRModal()" style="margin-top:15px;padding:10px 20px;background:#2D6A42;color:white;border:none;border-radius:30px;cursor:pointer;">Close</button>
+    </div>
+</div>
             </div>
           </div>
           
@@ -899,6 +947,66 @@ function submitStripe() {
     const dd = document.getElementById('profileDropdown');
     if (btn && dd && !btn.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
   });
+</script>
+<script>
+// QR Code expand/collapse functions
+let qrExpanded = true;
+
+function toggleQRCode() {
+    const qrContainer = document.getElementById('qrCodeContainer');
+    const toggleIcon = document.getElementById('qrToggleIcon');
+    
+    console.log("Toggle clicked, current state:", qrExpanded);
+    
+    if (qrExpanded) {
+        // Collapse/Hide the QR code
+        qrContainer.style.display = 'none';
+        toggleIcon.className = 'bi bi-plus-circle';
+        qrExpanded = false;
+    } else {
+        // Expand/Show the QR code
+        qrContainer.style.display = 'block';
+        toggleIcon.className = 'bi bi-dash-circle';
+        qrExpanded = true;
+    }
+}
+
+function expandQRCode() {
+    const modal = document.getElementById('qrModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        console.log("Modal opened");
+    }
+}
+
+function closeQRModal() {
+    const modal = document.getElementById('qrModal');
+    if (modal) {
+        modal.style.display = 'none';
+        console.log("Modal closed");
+    }
+}
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeQRModal();
+    }
+});
+
+// Close modal when clicking outside
+document.getElementById('qrModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeQRModal();
+    }
+});
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

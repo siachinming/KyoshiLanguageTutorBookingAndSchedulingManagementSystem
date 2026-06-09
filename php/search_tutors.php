@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -18,10 +19,11 @@ $user = $stmt->get_result()->fetch_assoc();
 if (!$user) { header("Location: login.php"); exit(); }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
 // Get selected language from URL
@@ -90,10 +92,14 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Search Tutors<?= $selectedLang ? ' · '.$selectedLang : '' ?> · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6; --paper:rgba(255,255,255,.88); --ink:#342635; --muted:#7B6178;
@@ -102,7 +108,8 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
       --shadow:0 18px 45px rgba(201,79,134,.16); --shadow-soft:0 10px 26px rgba(201,79,134,.10);
       --radius-xl:32px; --radius-lg:24px;
     }
-    *{box-sizing:border-box} html{scroll-behavior:smooth}
+    *{box-sizing:border-box} 
+    
     body{
       margin:0; min-height:100vh; font-family:"Segoe UI",Arial,sans-serif; color:var(--ink);
       background:linear-gradient(120deg,rgba(255,241,246,.74),rgba(255,203,220,.30)),
@@ -141,9 +148,80 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
     .back-link{display:inline-flex;align-items:center;gap:6px;color:var(--pink-dark);font-weight:900;font-size:13px;padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(46,42,59,.08);transition:.18s ease}
     .back-link:hover{transform:translateY(-1px)}
 
+    /* TOOLBAR - SEARCH, SORT, FILTER ON SAME LINE */
+.toolbar{
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.search-wrap{
+    flex: 2;
+    position: relative;
+}
+.search-wrap i{
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #91899F;
+}
+.search-wrap input{
+    width: 100%;
+    height: 48px;
+    padding: 0 16px 0 42px;
+    border: 1px solid rgba(46,42,59,.10);
+    border-radius: 999px;
+    background: rgba(255,255,255,.88);
+    outline: none;
+    font-size: 14px;
+    box-shadow: var(--shadow-soft);
+}
+.sort-select{
+    flex: 1;
+    height: 48px;
+    padding: 0 16px;
+    border: 1px solid rgba(46,42,59,.10);
+    border-radius: 999px;
+    background: rgba(255,255,255,.88);
+    font-size: 13px;
+    font-weight: 700;
+    color: #7A5570;
+    cursor: pointer;
+    outline: none;
+    box-shadow: var(--shadow-soft);
+}
+.filter-toggle{
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    border: 1px solid rgba(242,138,178,.3);
+    background: rgba(255,255,255,.88);
+    cursor: pointer;
+    font-size: 18px;
+    color: #E75A9B;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-soft);
+}
+
     /* LANG TABS */
     .lang-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
-    .lang-tab{font-size:8px;padding:10px 92px;border-radius:999px;border:1px solid rgba(46,42,59,.10);background:rgba(255,255,255,.78);color:#7A5570;font-size:13px;font-weight:900;cursor:pointer;transition:.18s ease;text-decoration:none}
+    .lang-tab{
+    display: inline-block;
+    padding: 10px 24px;
+    border-radius: 999px;
+    border: 1px solid rgba(46,42,59,.10);
+    background: rgba(255,255,255,.78);
+    color: #7A5570;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: .18s ease;
+    text-decoration: none;
+}
     .lang-tab:hover{transform:translateY(-1px)}
     .lang-tab.active{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff;border-color:var(--pink);box-shadow:0 8px 18px rgba(231,90,155,.28)}
 
@@ -198,6 +276,31 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
     .btn-view:hover{transform:translateY(-1px)}
     .compare-checkbox{width:36px;height:36px;border-radius:12px;border:1.5px solid rgba(46,42,59,.14);background:rgba(255,255,255,.88);cursor:pointer;display:grid;place-items:center;font-size:16px;transition:.18s ease;color:#9080a0}
     .compare-checkbox.selected{background:linear-gradient(135deg,var(--hot-pink),var(--pink));border-color:var(--pink);color:white;box-shadow:0 6px 14px rgba(231,90,155,.28)}
+/* HEART BUTTON */
+.fav-btn{
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    border: 1.5px solid rgba(46,42,59,.14);
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    color: #aaa;
+    transition: .2s;
+}
+.fav-btn.active{
+    background: linear-gradient(135deg, #ff6b9d, #ff8fb1);
+    color: white;
+    border-color: #ff6b9d;
+    box-shadow: 0 6px 14px rgba(231,90,155,.3);
+}
+.fav-btn:hover{
+    transform: scale(1.05);
+}
+
 
     /* EMPTY STATE */
     .empty-state{grid-column:1/-1;text-align:center;padding:48px 24px;background:rgba(255,241,246,.82);border:1px dashed rgba(46,42,59,.16);border-radius:var(--radius-lg);color:var(--muted);font-weight:700}
@@ -233,183 +336,542 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
   border-radius: 20px;
   margin-bottom: 20px;
 }
-
 .top-header{
-    display:grid;
-    grid-template-columns:140px 1fr 140px;
-    align-items:center;
-    margin:28px 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 28px 0 24px;
+    gap: 20px;
 }
-
 .header-left{
-    display:flex;
-    align-items:center;
+    flex-shrink: 0;
 }
-
 .header-center{
-    text-align:center;
+    flex: 1;
+    text-align: center;
 }
-
 .header-center h1{
-    margin:0;
-    font-size:clamp(28px,4vw,42px);
-    line-height:1.1;
+    margin: 0;
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 1.1;
 }
-
 .header-center p{
-    margin-top:8px;
-    font-size:14px;
-    color:var(--muted);
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--muted);
 }
-
 .header-right{
-    width:100%;
+    flex-shrink: 0;
+    width: 80px;
 }
-
 .back-link{
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
-    padding:10px 16px;
-    border-radius:999px;
-    background:white;
-    color:var(--pink-dark);
-    font-weight:800;
-    box-shadow:var(--shadow-soft);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-radius: 999px;
+    background: white;
+    color: var(--pink-dark);
+    font-weight: 800;
+    font-size: 13px;
+    box-shadow: var(--shadow-soft);
+    transition: 0.2s;
 }
-
-@media(max-width:640px){
-
-    .top-header{
-        grid-template-columns:1fr;
-        gap:14px;
-        padding-left: 20px;
-        padding-right: 20px;
+.back-link:hover{
+    transform: translateX(-3px);
+}
+/* ========== RESPONSIVE FIXES FOR 900px AND BELOW ========== */
+@media (max-width: 900px) {
+    /* Fix container padding */
+    .container {
+        width: 100%;
+        padding-left: 16px;
+        padding-right: 16px;
     }
-
-    .header-left{
-        justify-content:flex-start;
+    
+    /* Fix toolbar layout - KEEP ON SAME LINE */
+    .toolbar {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        flex-wrap: nowrap;
     }
-
-    .header-center{
-        text-align:center;
+    
+    .search-wrap {
+        flex: 2;
+        min-width: 0;
     }
-
-    .header-right{
-        display:none;
+    
+    .search-wrap input {
+        height: 44px;
+        font-size: 14px;
+        width: 100%;
+    }
+    
+    .sort-select {
+        flex: 1;
+        min-width: 0;
+        height: 44px;
+        padding: 0 8px;
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .filter-toggle {
+        flex: 0 0 auto;
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Fix language tabs - horizontal scroll */
+    .lang-scroll {
+        display: flex;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        gap: 10px;
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+        scrollbar-width: none;
+    }
+    
+    .lang-scroll::-webkit-scrollbar {
+        display: none;
+    }
+    
+    .lang-tab {
+        flex: 0 0 auto;
+        padding: 8px 18px;
+        font-size: 13px;
+    }
+    
+    /* Fix filter panel on mobile - slides up from bottom */
+    .filter-panel {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        border-radius: 24px 24px 0 0;
+        max-height: 80vh;
+        overflow-y: auto;
+        margin-bottom: 0;
+        padding: 20px;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .filter-panel.open {
+        transform: translateY(0);
+    }
+    
+    /* Add overlay when filter is open */
+    .filter-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+        display: none;
+    }
+    
+    .filter-overlay.open {
+        display: block;
+    }
+    
+    /* Filter rows stack vertically */
+    .filter-row {
+        flex-direction: column;
+        gap: 16px;
+    }
+    
+    .filter-group {
+        width: 100%;
+    }
+    
+    .filter-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .fchip {
+        padding: 8px 14px;
+        font-size: 12px;
+    }
+    
+    .price-row {
+        display: flex;
+        gap: 10px;
+    }
+    
+    /* Fix tutor grid - 2 columns on tablet */
+    .tutor-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+    }
+    
+   .top-header{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 28px 0 24px;
+    gap: 20px;
+}
+.header-left{
+    flex-shrink: 0;
+}
+.header-center{
+    flex: 1;
+    text-align: center;
+}
+.header-center h1{
+    margin: 0;
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 1.1;
+}
+.header-center p{
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--muted);
+}
+.header-right{
+    flex-shrink: 0;
+    width: 80px;
+}
+.back-link{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    top:20px;
+    border-radius: 999px;
+    background: white;
+    color: var(--pink-dark);
+    font-weight: 800;
+    font-size: 13px;
+    box-shadow: var(--shadow-soft);
+    transition: 0.2s;
+}
+.back-link:hover{
+    transform: translateX(-3px);
+}
+    
+    /* Fix results header */
+    .results-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    /* Fix compare float bar on mobile */
+    .compare-float {
+        left: 16px;
+        right: 16px;
+        transform: translateX(0) translateY(80px);
+        width: calc(100% - 32px);
+        border-radius: 20px;
+        white-space: normal;
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 12px 16px;
+        bottom: 16px;
+    }
+    
+    .compare-float.show {
+        transform: translateX(0) translateY(0);
+    }
+    
+    .compare-avatars {
+        order: 1;
+    }
+    
+    .compare-float-label {
+        order: 2;
+        font-size: 12px;
+    }
+    
+    .btn-compare-go, .btn-compare-clear {
+        order: 3;
+        padding: 8px 16px;
+        font-size: 12px;
+    }
+    
+    /* Fix profile dropdown on mobile */
+    .profile span {
+        display: none;
+    }
+    
+    .profile {
+        padding: 6px;
     }
 }
 
-.toolbar{
-    display:flex;
-    gap:12px;
-    align-items:center;
-    margin-bottom:18px;
+/* ========== FOR 600px AND BELOW (MOBILE) - STILL SAME LINE ========== */
+@media (max-width: 600px) {
+    /* Keep toolbar on same line but smaller */
+    .toolbar {
+        gap: 6px;
+    }
+    
+    .search-wrap input {
+        height: 40px;
+        font-size: 13px;
+    }
+    
+    .sort-select {
+        height: 40px;
+        font-size: 11px;
+        padding: 0 6px;
+    }
+    
+    .filter-toggle {
+        width: 40px;
+        height: 40px;
+    }
+    
+    /* Single column tutor grid */
+    .tutor-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    /* Adjust card padding */
+    .tutor-card-top {
+        padding: 14px 14px 10px;
+    }
+    
+    .tutor-card-top img {
+        width: 56px;
+        height: 56px;
+    }
+    
+    .tutor-name {
+        font-size: 15px;
+    }
+    
+    .tutor-meta {
+        font-size: 11px;
+    }
+    
+    .tutor-langs {
+        padding: 0 14px 10px;
+    }
+    
+    .lang-tag {
+        font-size: 9px;
+        padding: 4px 8px;
+    }
+    
+    .tutor-bio {
+        padding: 0 14px 10px;
+        font-size: 12px;
+    }
+    
+    .tutor-card-bottom {
+        padding: 10px 14px;
+        flex-wrap: wrap;
+    }
+    
+    .tutor-price {
+        font-size: 16px;
+    }
+    
+    .tutor-actions {
+        gap: 6px;
+    }
+    
+    .fav-btn, .compare-checkbox {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+    }
+    
+    .btn-view {
+        padding: 7px 14px;
+        font-size: 12px;
+    }
+    
+    /* Language tabs smaller */
+    .lang-tab {
+        padding: 6px 14px;
+        font-size: 12px;
+    }
 }
 
-.search-wrap{
-    position:relative;
-    flex:1;
+/* ========== FIX FOR 900px AND BELOW (HEADER + TABLE) ========== */
+@media (max-width: 900px) {
+    /* Fix top header */
+    .top-header {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+        margin-top:0;
+    }
+    
+    .header-left, .header-right {
+        width: auto;
+    }
+    
+    .header-left {
+        order: 1;
+        align-self: flex-start;
+    }
+    
+    .header-center {
+        order: 2;
+    }
+    
+    .header-right {
+        display: none;
+    }
+    
+    .back-link {
+        padding: 8px 16px;
+        font-size: 12px;
+    }
+    
+    /* Fix compare table - make it scroll horizontally */
+    .compare-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Set minimum width for table to enable horizontal scroll */
+    .compare-header,
+    .compare-row,
+    div[style*="grid-template-columns:200px"] {
+        min-width: 600px;
+    }
+    
+    /* Make first column sticky */
+    .compare-header-label,
+    .compare-cell-label,
+    .compare-section-title {
+        position: sticky;
+        left: 0;
+        background: var(--paper);
+        z-index: 5;
+    }
+    
+    /* Adjust section titles */
+    .compare-section-title {
+        font-size: 11px;
+        padding: 10px 16px;
+    }
+    
+    /* Adjust cell padding */
+    .compare-cell-label,
+    .compare-header-label {
+        font-size: 11px;
+        padding: 12px 10px;
+    }
+    
+    .compare-cell,
+    .compare-header-tutor {
+        padding: 12px 8px;
+        font-size: 12px;
+    }
+    
+    /* Smaller tutor images */
+    .compare-header-tutor img {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .compare-header-tutor h3 {
+        font-size: 14px;
+    }
+    
+    .btn-book {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
 }
 
-.search-wrap i{
-    position:absolute;
-    left:15px;
-    top:50%;
-    transform:translateY(-50%);
-    color:#91899F;
-}
+/* ========== FOR 600px AND BELOW ========== */
+@media (max-width: 600px) {
+    .top-header {
+        padding: 12px 0;
+    }
+    
+    .header-center h1 {
+        font-size: 22px;
+    }
+    
+    .header-center p {
+        font-size: 12px;
+    }
+    
+    .back-link span {
+        display: none;
+    }
+    
+    .back-link {
+        padding: 8px 12px;
+    }
+    
+    .back-link i {
+        font-size: 16px;
+    }
+    
+    /* Smaller table cells */
+    .compare-header-label,
+    .compare-cell-label {
+        min-width: 100px;
+        font-size: 10px;
+        padding: 10px 8px;
+    }
+    
+    .compare-cell {
+        font-size: 11px;
+        padding: 10px 6px;
+    }
+    
+    .compare-header-tutor img {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .compare-header-tutor h3 {
+        font-size: 12px;
+    }
+    
+    .sub {
+        font-size: 10px;
+    }
+    
+    .btn-book {
+        padding: 5px 10px;
+        font-size: 10px;
+    }
+    
+    .lang-tag-sm, .mode-tag {
+        font-size: 9px;
+        padding: 2px 6px;
+    }
+} 
+/* ========== ADD FILTER OVERLAY ELEMENT ========== */
+</style>
 
-.search-wrap input{
-    width:100%;
-    height:48px;
-    padding:0 16px 0 42px;
-    border:none;
-    border-radius:999px;
-    background:rgba(255,255,255,.9);
-    box-shadow:var(--shadow-soft);
-    font-size:14px;
-    outline:none;
-}
-
-.sort-select{
-    height:48px;
-    padding:0 16px;
-    border:none;
-    border-radius:999px;
-    background:rgba(255,255,255,.9);
-    box-shadow:var(--shadow-soft);
-    font-size:13px;
-    font-weight:700;
-    color:#7A5570;
-    outline:none;
-    cursor:pointer;
-}
-
-.filter-toggle{
-    width:48px;
-    height:48px;
-    border:none;
-    border-radius:16px;
-    background:white;
-    box-shadow:var(--shadow-soft);
-    display:grid;
-    place-items:center;
-    cursor:pointer;
-}
-
-.lang-scroll{
-    display:flex;
-    gap:10px;
-    overflow-x:auto;
-
-    width:100%;
-    align-items:center;
-
-    padding: 0 0 8px 0;
-    margin-bottom: 24px;
-}
-.toolbar,
-.lang-scroll{
-    width:100%;
-    max-width:100%;
-}
-
-.lang-scroll::-webkit-scrollbar{
-    display:none;
-}
-
-.lang-scroll-wrapper{
-    width:100%;
-}
-
-.fav-btn{
-  width:36px;
-  height:36px;
-  border-radius:12px;
-  border:1.5px solid rgba(46,42,59,.14);
-  background:white;
-  display:grid;
-  place-items:center;
-  cursor:pointer;
-  font-size:16px;
-  color:#aaa;
-  transition:.2s;
-}
-
-.fav-btn.active{
-  background:linear-gradient(135deg,#ff6b9d,#ff8fb1);
-  color:white;
-  border-color:#ff6b9d;
-  box-shadow:0 6px 14px rgba(231,90,155,.3);
-}
-  </style>
 </head>
 <body>
 
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+                  <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -453,6 +915,7 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
       </nav>
   </div>
 </header>
+  <div class="nav-overlay" id="navOverlay"></div>
 
 <main class="container">
 <div class="content-wrapper"></div>
@@ -573,6 +1036,8 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
     </div>
   </div>
 
+<!-- Add this HTML right after the filter panel div (before closing main) -->
+<div id="filterOverlay" class="filter-overlay" onclick="toggleFilter()"></div>
   <!-- Results Header -->
   <div class="results-header">
     <span class="result-count" id="resultCount"><?= count($allTutors) ?> tutor<?= count($allTutors) !== 1 ? 's' : '' ?> found</span>
@@ -673,7 +1138,13 @@ $allLanguages = ['Japanese','English','Mandarin','Korean','Malay'];
 </div>
 
 <div class="toast" id="toast"></div>
-
+<script>
+// Prevent back button from showing page after logout
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 <script>
   let activeMode = [];
   let activeRating = 0;
@@ -890,5 +1361,6 @@ function toggleFavourite(btn){
     });
           }
 </script>
+<script src="../js/nav.js"></script>
 </body>
 </html>

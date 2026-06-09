@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 
 $assetBase = '../assets/img';
 
@@ -111,11 +112,15 @@ function e($value) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Session Reports - Kyoshi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -425,6 +430,112 @@ function e($value) {
             .card-actions a,
             .card-actions button { white-space: normal; text-align: center; justify-content: center; }
         }
+        /* Fix header alignment on mobile - Session Reports */
+@media (max-width: 900px) {
+    /* Header layout - keep everything on one line */
+    .main > div:first-child {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 8px !important;
+        margin-bottom: 20px !important;
+        flex-wrap: nowrap !important;
+    }
+    
+    /* Back button - LEFT side */
+    .main > div:first-child .back-btn {
+        order: 0 !important;
+        flex-shrink: 0 !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+    }
+    
+    .main > div:first-child .back-btn i {
+        font-size: 14px;
+    }
+    
+    .main > div:first-child .back-btn span {
+        display: none !important;
+    }
+    
+    /* Title - CENTER */
+    .main > div:first-child > div:first-child {
+        order: 1 !important;
+        position: static !important;
+        left: auto !important;
+        transform: none !important;
+        flex: 1 !important;
+        text-align: center !important;
+        min-width: 0 !important;
+        width: auto !important;
+    }
+    
+    .main > div:first-child h1 {
+        font-size: 16px !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .main > div:first-child p {
+        display: none !important;
+    }
+    
+    /* Create button - RIGHT side */
+    .main > div:first-child .create-btn {
+        order: 2 !important;
+        flex-shrink: 0 !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+    }
+    
+    .main > div:first-child .create-btn i {
+        font-size: 14px;
+    }
+    
+    .main > div:first-child .create-btn span {
+        display: none !important;
+    }
+    
+    /* Empty spacer div */
+    .main > div:first-child > div:last-child {
+        display: none !important;
+    }
+    
+    /* Filter bar - stack vertically */
+    .filter-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+    
+    .filter-group {
+        width: 100% !important;
+    }
+    
+    .btn-search, .btn-reset {
+        width: 100% !important;
+        justify-content: center !important;
+        margin-top: 5px;
+    }
+    
+    /* Report cards - full width */
+    .reports-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Report card actions - stack */
+    .card-actions {
+        flex-direction: column !important;
+    }
+    
+    .card-actions a,
+    .card-actions button {
+        width: 100% !important;
+        justify-content: center !important;
+        text-align: center !important;
+    }
+}
     </style>
 </head>
 <body>
@@ -432,6 +543,10 @@ function e($value) {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+                <i class="bi bi-list"></i>
+            </button>
+
             <a href="<?= $role === 'tutor' ? 'tutor_dashboard.php' : 'student_dashboard.php' ?>" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span><?= $role === 'tutor' ? 'Teacher Space' : 'Student Learning Space' ?></span></div>
@@ -452,6 +567,7 @@ function e($value) {
                     <a href="view_session_reports.php" class="active">My Reports</a>
                 <?php endif; ?>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -470,47 +586,54 @@ function e($value) {
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
             </div>
+            </div>
         </nav>
     </div>
 </header>
-
+  <div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; position: relative;">
-        <a href="<?= $backUrl ?>" class="back-btn">
-            <i class="bi bi-arrow-left"></i> Back
-        </a>
-        <div style="position: absolute; left: 50%; transform: translateX(-50%); text-align: center;">
-            <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0;">
-                Session Reports
-            </h1>
-            <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px;">
-                <?= $role === 'tutor' ? 'Track and document lesson progress for your students' : 'Review your session reports and progress summaries from your tutors' ?>
-            </p>
-        </div>
-        <?php if ($role === 'tutor' && $booking_id === 0): ?>
-            <a href="submit_session_report.php" class="create-btn">
-                <i class="bi bi-plus-lg"></i> Create Report
-            </a>
-        <?php else: ?>
-            <div style="width: 100px;"></div>
-        <?php endif; ?>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; gap: 16px;">
+    <a href="<?= $backUrl ?>" class="back-btn">
+        <i class="bi bi-arrow-left"></i> <span>Back</span>
+    </a>
+    
+    <div style="text-align: center; flex: 1;">
+        <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0;">
+            Session Reports
+        </h1>
+        <p style="color: #1e293b; margin: 4px 0 0; font-size: 12px;">
+            <?= $role === 'tutor' ? 'Track and document lesson progress for your students' : 'Review your session reports and progress summaries from your tutors' ?>
+        </p>
     </div>
+    
+    <?php if ($role === 'tutor' && $booking_id === 0): ?>
+        <a href="submit_session_report.php" class="create-btn">
+            <i class="bi bi-plus-lg"></i> <span>Create Report</span>
+        </a>
+    <?php else: ?>
+        <div style="width: 80px;"></div>
+    <?php endif; ?>
+</div>
 
     <?php if ($role === 'tutor' && $pendingReportCount > 0 && $booking_id === 0): ?>
-        <div class="pending-warning">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b; font-size: 24px;"></i>
-                <div>
-                    <strong style="color: #92400e;">Action Required: <?= $pendingReportCount ?> Session Report<?= $pendingReportCount != 1 ? 's' : '' ?> Pending</strong>
-                    <p style="margin: 4px 0 0; font-size: 13px; color: #b45309;">Payment will only be released after you submit AND admin verifies session reports.</p>
-                </div>
+    <div class="pending-warning" id="reportAlert">
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+            <i class="bi bi-exclamation-triangle-fill" style="color: #f59e0b; font-size: 24px;"></i>
+            <div>
+                <strong style="color: #92400e;">Action Required: <?= $pendingReportCount ?> Session Report<?= $pendingReportCount != 1 ? 's' : '' ?> Pending</strong>
+                <p style="margin: 4px 0 0; font-size: 13px; color: #b45309;">Payment will only be released after you submit AND admin verifies session reports.</p>
             </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
             <a href="submit_session_report.php" style="background: #f59e0b; color: white; padding: 10px 24px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 13px;">
                 Submit Reports Now
             </a>
+            <button onclick="dismissAlert('reportAlert')" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #92400e; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: 0.2s;">
+                <i class="bi bi-x-lg"></i>
+            </button>
         </div>
-    <?php endif; ?>
-
+    </div>
+<?php endif; ?>
     <?php if ($role === 'tutor' && $booking_id > 0): ?>
         <div class="alert alert-info" style="background: #e0f2fe; color: #0369a1; border-left: 4px solid #0284c7;">
             <i class="bi bi-info-circle"></i>
@@ -919,7 +1042,16 @@ function applyAllFilters() {
     renderReports(filtered);
 }
 
-
+function dismissAlert(alertId) {
+    const alert = document.getElementById(alertId);
+    if (alert) {
+        alert.style.transition = 'opacity 0.3s ease';
+        alert.style.opacity = '0';
+        setTimeout(() => {
+            alert.style.display = 'none';
+        }, 300);
+    }
+}
 
 // Automatic search - triggered when user types
 function onSearchInput() {
@@ -1005,6 +1137,13 @@ setTimeout(function() {
         }
     });
 }, 4000);
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

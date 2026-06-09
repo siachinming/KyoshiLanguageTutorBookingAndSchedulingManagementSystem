@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 
 $assetBase = '../assets/img';
 
@@ -187,13 +188,16 @@ function e($value){
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>Kyoshi Tutor Dashboard</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="../css/style.css">
 <style>
 /* Your existing CSS styles remain the same */
 *{
@@ -271,47 +275,47 @@ body::before{
     letter-spacing:0.5px;
 }
 
-.nav-links{
-    display:flex;
+.nav-links {
+    display: flex;
     gap: 28px;
     align-items: center;
     flex-wrap: wrap;
 }
 
-.nav-links a{
-    text-decoration:none;
-    color:#1d3156;
-    font-size:14px;
-    font-weight:600;
-    position:relative;
-    transition:0.25s;
+.nav-links a {
+    text-decoration: none;
+    color: #1d3156;
+    font-size: 14px;
+    font-weight: 600;
+    position: relative;
+    transition: 0.25s;
     padding: 6px 0;
     white-space: nowrap;
+    display: inline-block;  /* Add this */
 }
 
 .nav-links a:hover,
-.nav-links a.active{
-    color:#496894;
-    font-weight:700;
+.nav-links a.active {
+    color: #496894;
+    font-weight: 700;
 }
-
-.nav-links a::after{
-    content:'';
-    position:absolute;
-    left:0;
-    bottom:-6px;
-    width:0%;
-    height:3px;
-    background:#496894;
-    transition:0.25s;
-    border-radius:10px;
+/* Underline styles */
+.nav-links a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -6px;
+    width: 0%;
+    height: 4px;
+    background: #496894;
+    transition: width 0.3s ease;
+    border-radius: 10px;
 }
 
 .nav-links a:hover::after,
-.nav-links .active::after{
-    width:100%;
+.nav-links a.active::after {
+    width: 100%;
 }
-
 .profile{
     display:flex;
     align-items:center;
@@ -642,6 +646,198 @@ body::before{
         font-size: 12px;
     }
 }
+/* Fix for profile dropdown positioning */
+.nav-actions {
+    position: relative;
+}
+
+.nav-actions > div {
+    position: relative;
+}
+
+.profile {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border-radius: 999px;
+    padding: 6px 12px 6px 6px;
+    font-weight: 900;
+    color: #7A3D65;
+    border: 1px solid rgba(46, 42, 59, 0.08);
+    background: rgba(255, 255, 255, 0.88);
+    cursor: pointer;
+}
+
+.profile img {
+    width: 34px;
+    height: 34px;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+/* Dropdown - positioned to the RIGHT */
+.dropdown {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    left: auto;
+    width: 220px;
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    display: none;
+    border: 1px solid #e2edf7;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+}
+
+.dropdown.show {
+    display: block;
+}
+
+.dropdown a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    text-decoration: none;
+    color: #1e293b;
+    font-size: 13px;
+    font-weight: 500;
+    transition: 0.2s;
+}
+
+.dropdown a:hover {
+    background: #f8fafc;
+}
+
+.dropdown hr {
+    border: none;
+    border-top: 1px solid #ecf3f9;
+    margin: 0;
+}
+
+/* Hamburger Menu Styles */
+.hamburger-menu {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #1d3156;
+    padding: 8px 12px;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    z-index: 100;
+}
+
+
+.nav-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 60;
+}
+
+.nav-overlay.active {
+    display: block;
+}
+/* Mobile Responsive */
+@media(max-width: 980px) {
+    .hamburger-menu {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        order: 1;
+    }
+    
+    .brand {
+        order: 2;
+    }
+    
+    .nav-actions {
+        order: 3;
+    }
+    
+    .nav {
+        flex-wrap: wrap;
+        position: relative;
+        justify-content: space-between;
+    }
+    
+    .nav-links {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(20px);
+        flex-direction: column;
+        border-radius: 0 0 24px 24px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        z-index: 70;
+        padding: 16px;
+        gap: 10px;
+        border: 1px solid rgba(231, 90, 155, 0.2);
+        border-top: none;
+        width: 100%;
+    }
+    
+    .nav-links.active {
+        display: flex;
+    }
+    
+    .nav-links a {
+        padding: 12px 16px;
+        width: 100%;
+        text-align: center;
+        background: transparent !important;  /* Remove background */
+        border-radius: 12px;
+        color: #1d3156 !important;  /* Keep text color */
+    }
+    
+    .nav-links a:hover {
+        background: rgba(231, 90, 155, 0.1) !important;  /* Light hover effect only */
+        color: #1d3156 !important;
+    }
+    
+    .nav-links a.active {
+        color: #496894 !important;  /* Active text color - blue */
+        font-weight: 700;
+        background: transparent !important;  /* No pink background */
+        position: relative;
+    }
+    
+    /* Add underline for active on mobile too */
+    .nav-links a.active::after {
+        content: '';
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100% !important;
+        height: 3px;
+        background: #496894;
+        border-radius: 10px;
+        display: block;
+    }
+    
+    .nav-links a::after {
+        display: none;
+    }
+    
+    /* Dropdown on mobile - stays on right */
+    .dropdown {
+        right: 0;
+        left: auto;
+        min-width: 180px;
+    }
+}
 </style>
 </head>
 
@@ -650,7 +846,11 @@ body::before{
 <header class="topbar">
 <div class="container">
 <nav class="nav">
+    <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
     <a href="tutor_dashboard.php" class="brand">
+
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
         <div>
             <strong>Kyoshi</strong>
@@ -665,7 +865,7 @@ body::before{
         <a href="assignment_overview.php">My Assignments</a>
         <a href="view_session_reports.php">My Reports</a>
     </div>
-
+<div class="nav-actions">
     <div style="position:relative;">
         <button class="profile" onclick="toggleDropdown()">
             <img src="<?= e($profilePic) ?>">
@@ -685,10 +885,12 @@ body::before{
             </a>
         </div>
     </div>
+</div>
 </nav>
 </div>
 </header>
 
+  <div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
 
 <div class="hero">
@@ -796,11 +998,18 @@ body::before{
     </div>
 </div>
 </div>
-
 <script>
-function toggleDropdown(){
+function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    const isVisible = dropdown.style.display === 'block';
+    
+    // Close all other dropdowns
+    document.querySelectorAll('.dropdown').forEach(dd => {
+        if (dd !== dropdown) dd.style.display = 'none';
+    });
+    
+    // Toggle current dropdown
+    dropdown.style.display = isVisible ? 'none' : 'block';
 }
 
 function dismissAlert(alertId, type) {
@@ -819,14 +1028,54 @@ function dismissAlert(alertId, type) {
     }
 }
 
-window.addEventListener('click', function(e){
+// Close dropdown when clicking outside
+window.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
     const button = document.querySelector('.profile');
-    if(button && !button.contains(e.target) && dropdown && !dropdown.contains(e.target)){
+    if (button && dropdown && !button.contains(e.target) && !dropdown.contains(e.target)) {
         dropdown.style.display = 'none';
     }
 });
-</script>
 
+// Mobile hamburger menu
+document.addEventListener('DOMContentLoaded', function() {
+    const hamburgerBtn = document.getElementById('hamburgerBtn');
+    const navLinks = document.querySelector('.nav-links');
+    const navOverlay = document.getElementById('navOverlay');
+    
+    if (hamburgerBtn && navLinks) {
+        hamburgerBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            navLinks.classList.toggle('active');
+            if (navOverlay) navOverlay.classList.toggle('active');
+            document.body.style.overflow = navLinks.classList.contains('active') ? 'hidden' : '';
+        });
+    }
+    
+    if (navOverlay) {
+        navOverlay.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    }
+    
+    // Close menu when clicking a nav link
+    document.querySelectorAll('.nav-links a').forEach(link => {
+        link.addEventListener('click', function() {
+            navLinks.classList.remove('active');
+            if (navOverlay) navOverlay.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    });
+});
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

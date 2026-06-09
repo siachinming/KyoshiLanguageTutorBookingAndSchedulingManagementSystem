@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
@@ -53,7 +54,11 @@ $user = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 $tutorPic    = !empty($b['tutor_pic']) ? '../uploads/profiles/' . $b['tutor_pic'] : $assetBase . '/profile-tutor.png';
 
 // Get tutor availability
@@ -102,9 +107,13 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reschedule Booking · Kyoshi</title>
+  <link rel="stylesheet" href="../css/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
   <style>
     :root{
@@ -283,6 +292,9 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+      <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
@@ -313,10 +325,10 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     </nav>
   </div>
 </header>
-
+  <div class="nav-overlay" id="navOverlay"></div>
 <div class="container">
   <a href="booking_detail.php?id=<?= $bookingID ?>" class="back-link">
-    <i class="bi bi-arrow-left"></i> Back to Booking
+    <i class="bi bi-arrow-left"></i><span>Back to Booking</span>
   </a>
 
   <!-- RESCHEDULE NOTICE -->
@@ -506,7 +518,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
           <i class="bi bi-info-circle"></i> After confirming, your reschedule request will be sent to the tutor for approval. Your original booking remains active until the tutor responds. Your payment is carried over.
         </div>
         <div class="form-nav">
-          <button class="btn-prev" onclick="goStep(2)"><i class="bi bi-arrow-left"></i> Back</button>
+          <button class="btn-prev" onclick="goStep(2)">Back</button>
           <button class="btn-next" onclick="submitReschedule()" id="submitBtn"><i class="bi bi-check2-circle"></i> Confirm Reschedule</button>
         </div>
       </div>
@@ -683,8 +695,7 @@ let selectedTime = null;
     while(cur<=rangeEnd){const ds=dateStr(cur);if(isAvail(cur)&&!isPast(cur)&&!sessions[ds])sessions[ds]={dayName:dayName(cur),slots:new Set()};cur.setDate(cur.getDate()+1);}
     renderDayPanels();updateSummary();
   }
-  
-// Check if student already has another booking at this date/time with ANY tutor
+  // Check if student already has another booking at this date/time with ANY tutor
 async function checkStudentOwnSchedule(date, time) {
     try {
         const response = await fetch('check_student_schedule.php', {
@@ -700,14 +711,15 @@ async function checkStudentOwnSchedule(date, time) {
         const data = await response.json();
         
         if (data.hasConflict) {
-            showToast(`You already have a session with ${data.tutor_name} at ${time.substring(0,5)} on this date. Please choose a different time.`);
+            showToast(`⚠️ You already have a session with ${data.tutor_name || 'another tutor'} at ${time.substring(0,5)} on this date. Please choose a different time.`);
             return true;
         }
         return false;
     } catch (error) {
         console.error('Error checking schedule:', error);
-        showToast('Unable to check schedule. Please try again.');
-        return false;
+        // Don't show error - just allow the reschedule to proceed
+        showToast('Unable to check schedule. Please proceed with caution.');
+        return false; // Allow the reschedule to continue
     }
 }
 
@@ -1081,6 +1093,14 @@ function closeRescheduleRulesModal() {
     } else {
         console.log('submitReschedule function NOT found!');
     }
+</script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>

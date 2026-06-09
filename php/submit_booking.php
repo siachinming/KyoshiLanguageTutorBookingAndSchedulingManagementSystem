@@ -160,7 +160,7 @@ $locationLine = ($mode === 'face_to_face' && $location) ? "<p style='margin:6px 
 $focusLine = $focus ? "<p style='margin:6px 0;'><strong>Focus Areas:</strong> {$focus}</p>" : '';
 $notesLine = $notes ? "<p style='margin:6px 0;'><strong>Student Notes:</strong> {$notes}</p>" : '';
 
-$tutorDashboardLink = "http://localhost/kyoshi/php/tutor_dashboard.php";
+$tutorDashboardLink = "http://kyoshitutor.site/php/tutor_dashboard.php";
 
 // Email body - NO EMOJIS, proper HTML
 $emailBody = '<!DOCTYPE html>

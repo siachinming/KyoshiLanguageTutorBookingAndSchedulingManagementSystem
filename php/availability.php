@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 
 $assetBase = '../assets/img';
 
@@ -291,13 +292,16 @@ function e($value) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Manage Availability - Kyoshi Tutor</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="../css/style.css">
 <style>*{
     margin:0;
     padding:0;
@@ -911,6 +915,9 @@ body::before{
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+                <i class="bi bi-list"></i>
+            </button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div>
@@ -925,6 +932,7 @@ body::before{
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
+            <div class="nav-actions">
             <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
@@ -932,33 +940,33 @@ body::before{
                     <i class="bi bi-chevron-down"></i>
                 </button>
                 <div class="dropdown" id="profileDropdown">
-                    <a href="tutor_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
+                    <a href="teacher_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
                     <a href="earnings.php"><i class="bi bi-wallet2"></i> My Earnings</a>
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
-            </div>
+            </div></div>
         </nav>
     </div>
 </header>
-
+<div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 15px; position: relative;">
     <a href="tutor_dashboard.php" class="back-btn" style="flex-shrink: 0;">
         <i class="bi bi-arrow-left"></i> Back
     </a>
-    
-    <div style="position: absolute; left: 50%; transform: translateX(-50%); text-align: center;">
-        <h1 style="font-size: 28px; font-weight: 800; color: #1d3156; margin: 0; white-space: nowrap;">
-            Manage Availability
-        </h1>
-        <p style="color: #1e293b; margin: 6px 0 0; font-size: 13px; font-weight: 500;">
-            Set your available teaching hours
-        </p>
-    </div>
+
+    <div style="position: absolute; left: 50%; transform: translateX(-50%); text-align: center; width: 100%;">
+    <h1 style="font-size: 28px; font-weight: 800; color: #1d3156; margin: 0;">
+        Manage Availability
+    </h1>
+    <p style="color: #1e293b; margin: 6px 0 0; font-size: 13px; font-weight: 500;">
+        Set your available teaching hours
+    </p>
+</div>
     
     <div style="width: 70px; flex-shrink: 0;"></div>
-</div><br>
+</div>
 
     <?php if ($message): ?>
         <div class="alert alert-<?= e($messageType) ?>">
@@ -1142,6 +1150,15 @@ setTimeout(function() {
     });
 }, 4000);
 </script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 <!-- Edit Slot Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
     <div style="background:white; border-radius:24px; width:500px; max-width:90%; padding:28px; box-shadow:0 20px 40px rgba(0,0,0,0.2);">

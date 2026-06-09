@@ -141,11 +141,11 @@ function sendRefundEmail($payment, $refund_amount, $refund_receipt_number) {
             </div>
             
             <div style='text-align:center;margin-top:24px;'>
-                <a href='http://localhost/kyoshi/php/receipt_refund.php?refund_id=" . $refund_receipt_number . "&payment_id=" . $payment['id'] . "' 
+                <a href='http://kyoshitutor.site/kyoshi/php/receipt_refund.php?refund_id=" . $refund_receipt_number . "&payment_id=" . $payment['id'] . "' 
                    style='display:inline-block;padding:10px 24px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;margin-right:10px;'>
                      📄 Download Refund Receipt
                 </a>
-                <a href='http://localhost/kyoshi/php/my_payments.php' 
+                <a href='http://kyoshitutor.site/php/my_payments.php' 
                    style='display:inline-block;padding:10px 24px;background:#64748b;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
                     View My Payments
                 </a>

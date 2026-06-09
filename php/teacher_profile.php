@@ -2,6 +2,7 @@
 session_start();
 include 'config.php';
 include 'insert_notification.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -85,7 +86,7 @@ $availability = $availStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // Get certificates
 $certStmt = $conn->prepare("
-    SELECT id, certificate_name, file_path, uploaded_at, status
+    SELECT id, certificate_name, file_path, uploaded_at, status, admin_notes
     FROM tutor_certificates 
     WHERE tutor_id = ? 
     ORDER BY uploaded_at DESC
@@ -674,10 +675,13 @@ function e($value) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My Profile - Kyoshi Tutor</title>
-
+<link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- SweetAlert2 for better modals -->
@@ -1251,6 +1255,198 @@ body::before {
     align-items: center;
     gap: 4px;
 }
+
+/* Fix header alignment on mobile - Teacher Profile */
+@media (max-width: 900px) {
+    /* Header layout - keep everything on one line */
+    .main > div:first-child {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 8px !important;
+        margin-bottom: 20px !important;
+        flex-wrap: nowrap !important;
+    }
+    
+    /* Back button - LEFT side */
+    .main > div:first-child .back-btn {
+        order: 0 !important;
+        flex-shrink: 0 !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+    }
+    
+    .main > div:first-child .back-btn i {
+        font-size: 14px;
+    }
+    
+    .main > div:first-child .back-btn span,
+    .main > div:first-child .back-btn {
+        /* Remove text on mobile */
+        font-size: 0;
+    }
+    
+    .main > div:first-child .back-btn i {
+        font-size: 16px;
+        margin-right: 0;
+    }
+    
+    /* Title - CENTER */
+    .main > div:first-child > div:first-child {
+        order: 1 !important;
+        position: static !important;
+        left: auto !important;
+        transform: none !important;
+        flex: 1 !important;
+        text-align: center !important;
+        min-width: 0 !important;
+        width: auto !important;
+    }
+    
+    .main > div:first-child h1 {
+        font-size: 16px !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .main > div:first-child p {
+        display: none !important;
+    }
+    
+    /* Empty spacer div */
+    .main > div:first-child > div:last-child {
+        display: none !important;
+    }
+    
+    /* Tabs - wrap and smaller */
+    .tabs {
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+        width: 100% !important;
+        border-radius: 16px !important;
+    }
+    
+    .tab {
+        padding: 6px 12px !important;
+        font-size: 11px !important;
+    }
+    
+    /* Profile layout stack */
+    .profile-layout {
+        grid-template-columns: 1fr !important;
+        gap: 16px !important;
+    }
+    
+    /* Sidebar stats */
+    .sidebar-stats {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+    }
+    
+    .s-stat {
+        padding: 10px !important;
+    }
+    
+    .s-stat strong {
+        font-size: 16px !important;
+    }
+    
+    /* Form panels */
+    .form-panel {
+        padding: 20px !important;
+    }
+    
+    .form-panel h3 {
+        font-size: 18px !important;
+    }
+    
+    .form-row {
+        flex-direction: column !important;
+        gap: 12px !important;
+    }
+    
+    /* Modal on mobile */
+    .modal-container {
+        width: 95% !important;
+        margin: 0 auto !important;
+    }
+    
+    .modal-body {
+        padding: 20px !important;
+    }
+    
+    /* Certificate items */
+    .certificate-item {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+    }
+    
+    /* Info tags wrap */
+    .info-tags {
+        gap: 8px !important;
+    }
+    
+    .info-tag {
+        font-size: 11px !important;
+        padding: 6px 12px !important;
+    }
+}
+
+/* Cancel Button Style */
+.btn-cancel {
+    background: #e2e8f0;
+    color: #475569;
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: none;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-cancel:hover {
+    background: #cbd5e1;
+    transform: translateY(-1px);
+}
+
+.btn-cancel:active {
+    transform: translateY(0);
+}
+
+/* If you want a red cancel button (like for delete actions) */
+.btn-cancel-danger {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: none;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-cancel-danger:hover {
+    background: #fecaca;
+    transform: translateY(-1px);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .btn-cancel, .btn-cancel-danger {
+        padding: 6px 16px;
+        font-size: 12px;
+    }
+}
 </style>
 </head>
 
@@ -1259,6 +1455,9 @@ body::before {
 <header class="topbar">
     <div class="container">
         <nav class="nav">
+            <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
             <a href="tutor_dashboard.php" class="brand">
                 <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
                 <div><strong>Kyoshi</strong><span>Teacher Space</span></div>
@@ -1270,7 +1469,7 @@ body::before {
                 <a href="assignment_overview.php">My Assignments</a>
                 <a href="view_session_reports.php">My Reports</a>
             </div>
-            <div style="position:relative;">
+            <div class="nav-actions">         <div style="position:relative;">
                 <button class="profile" onclick="toggleDropdown()">
                     <img src="<?= e($profilePic) ?>">
                     <span><?= e($displayName) ?></span>
@@ -1282,16 +1481,17 @@ body::before {
                     <hr>
                     <a href="logout.php" style="color:#dc2626;"><i class="bi bi-box-arrow-right"></i> Logout</a>
                 </div>
+                </div>
             </div>
         </nav>
     </div>
 </header>
-
+<div class="nav-overlay" id="navOverlay"></div>
 <div class="main">
     <!-- Header with Back Button -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; position: relative;">
         <a href="tutor_dashboard.php" class="back-btn">
-            <i class="bi bi-arrow-left"></i> Back
+            <i class="bi bi-arrow-left"></i> <span>Back</span>
         </a>
         <div style="position: absolute; left: 50%; transform: translateX(-50%); text-align: center;">
             <h1 style="font-size: 24px; font-weight: 800; color: #1d3156; margin: 0;"><i class="bi bi-person-circle"></i> My Profile</h1>
@@ -1511,42 +1711,53 @@ body::before {
                 </div>
                 <button type="submit" class="btn-primary" style="width: auto; padding: 12px 30px;"><i class="bi bi-upload"></i> Upload Certificate</button>
             </form>
-            
             <?php if (!empty($certificates)): ?>
-            <div class="section-divider"></div>
-            <h3><i class="bi bi-file-earmark-text"></i> My Qualifications</h3>
-            <p class="sub" style="font-size: 12px;">Certificates with "Approved" status will be shown on your profile</p>
-            
-            <?php foreach ($certificates as $cert): ?>
-            <div class="certificate-item">
-                <div>
-                    <i class="bi bi-file-earmark-pdf"></i>
-                    <strong><?= e($cert['certificate_name']) ?></strong>
-                    <div style="font-size: 11px; color: #64748b;">Uploaded on <?= date('d M Y', strtotime($cert['uploaded_at'])) ?></div>
-                </div>
-                <div>
-                    <?php if ($cert['status'] == 'pending'): ?>
-                        <span class="cert-status-pending"><i class="bi bi-clock-history"></i> Pending Verification</span>
-                    <?php elseif ($cert['status'] == 'approved'): ?>
-                        <span class="cert-status-approved"><i class="bi bi-check-circle-fill"></i> Approved ✓</span>
-                    <?php else: ?>
-                        <span class="cert-status-rejected"><i class="bi bi-x-circle-fill"></i> Rejected</span>
-                    <?php endif; ?>
-                    
-                    <?php if ($cert['file_path']): ?>
-                        <a href="../uploads/certificates/<?= e($cert['file_path']) ?>" target="_blank" class="btn-outline" style="padding: 5px 12px; font-size: 11px; display: inline-block; width: auto;">View</a>
-                    <?php endif; ?>
-                    
-                    <?php if ($cert['status'] == 'pending'): ?>
-                        <form method="POST" style="display:inline;">
-                            <input type="hidden" name="action" value="delete_certificate">
-                            <input type="hidden" name="cert_id" value="<?= $cert['id'] ?>">
-                            <button type="submit" class="btn-outline" style="background: #fee2e2; color: #dc2626; padding: 5px 12px; font-size: 11px; width: auto;" onclick="return confirm('Delete this certificate?')">Delete</button>
-                        </form>
-                    <?php endif; ?>
-                </div>
+<div class="section-divider"></div>
+<h3><i class="bi bi-file-earmark-text"></i> My Qualifications</h3>
+<p class="sub" style="font-size: 12px;">Certificates with "Approved" status will be shown on your profile</p>
+
+<?php foreach ($certificates as $cert): ?>
+<div class="certificate-item">
+    <div style="flex: 1;">
+        <i class="bi bi-file-earmark-pdf"></i>
+        <strong><?= e($cert['certificate_name']) ?></strong>
+        <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+            Uploaded on <?= date('d M Y', strtotime($cert['uploaded_at'])) ?>
+        </div>
+        <?php if ($cert['status'] == 'rejected' && !empty($cert['admin_notes'])): ?>
+            <div style="margin-top: 8px; padding: 8px; background: #fee2e2; border-radius: 8px; border-left: 3px solid #dc2626;">
+                <i class="bi bi-chat-dots"></i> <strong style="color: #991b1b; font-size: 11px;">Rejection Reason:</strong>
+                <p style="color: #7f1d1d; font-size: 11px; margin-top: 4px;"><?= nl2br(e($cert['admin_notes'])) ?></p>
             </div>
-            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <?php if ($cert['status'] == 'pending'): ?>
+            <span class="cert-status-pending"><i class="bi bi-clock-history"></i> Pending Verification</span>
+        <?php elseif ($cert['status'] == 'approved'): ?>
+            <span class="cert-status-approved"><i class="bi bi-check-circle-fill"></i> Approved ✓</span>
+        <?php else: ?>
+            <span class="cert-status-rejected"><i class="bi bi-x-circle-fill"></i> Rejected</span>
+        <?php endif; ?>
+        
+        <?php if ($cert['file_path']): ?>
+            <button onclick="viewCertificateModal('<?= e($cert['file_path']) ?>', '<?= e($cert['certificate_name']) ?>')" class="btn-outline" style="padding: 5px 12px; font-size: 11px; display: inline-block; width: auto;">
+                <i class="bi bi-eye"></i> View
+            </button>
+        <?php endif; ?>
+        
+        <?php if ($cert['status'] == 'pending'): ?>
+            <form method="POST" style="display:inline;">
+                <input type="hidden" name="action" value="delete_certificate">
+                <input type="hidden" name="cert_id" value="<?= $cert['id'] ?>">
+                <button type="submit" class="btn-outline" style="background: #fee2e2; color: #dc2626; padding: 5px 12px; font-size: 11px; width: auto;" onclick="return confirm('Delete this certificate?')">
+                    <i class="bi bi-trash"></i> Delete
+                </button>
+            </form>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endforeach; ?>
             
             <div style="background: #fef3c7; border-radius: 12px; padding: 12px; margin-top: 15px;">
                 <p style="font-size: 12px; color: #92400e; margin: 0;"><i class="bi bi-question-circle-fill"></i> <strong>What happens next?</strong></p>
@@ -1630,6 +1841,35 @@ body::before {
         </div>
     </div>
 </div>
+</div>
+<!-- Certificate View Modal -->
+<div id="certificateModal" class="modal-overlay" style="display: none;">
+    <div class="modal-container" style="max-width: 600px; width: 90%;">
+        <div class="modal-header">
+            <h2><span id="certModalTitle">Certificate</span></h2>
+            <button class="modal-close" onclick="closeCertificateModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align: center; padding: 20px;">
+            <div id="certificatePreview" style="max-height: 60vh; overflow-y: auto;">
+                <!-- Content will be loaded here -->
+                <img id="certImage" src="" alt="Certificate" style="max-width: 100%; display: none; border-radius: 12px;">
+                <embed id="certPDF" src="" style="width: 100%; height: 500px; display: none; border-radius: 12px;">
+                <div id="certNotSupported" style="display: none; text-align: center; padding: 40px;">
+                    <i class="bi bi-file-earmark" style="font-size: 64px; color: #cbd5e1;"></i>
+                    <p style="margin-top: 16px;">Preview not available for this file type.</p>
+                    <p style="font-size: 13px; color: #64748b;">Click Download to view the file.</p>
+                </div>
+            </div>
+        </div>
+    <div class="modal-footer" style="justify-content: center; gap: 12px;">
+    <button type="button" class="btn-cancel" onclick="closeCertificateModal()">
+        <i class="bi bi-x-lg"></i> Close
+    </button>
+    <button type="button" id="downloadCertBtn" class="btn-primary" style="background: #1d3156; padding: 8px 20px;" onclick="downloadCertificate()">
+        <i class="bi bi-download"></i> Download
+    </button>
+</div>
+    </div>
 </div>
 <!-- Edit Profile Modal -->
 <div id="editProfileModal" style="display: none;">
@@ -2353,6 +2593,183 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Certificate Modal Functions
+let currentCertPath = '';
+let currentCertName = '';
+
+function viewCertificateModal(filePath, certName) {
+    console.log('Viewing certificate:', filePath, certName);
+    
+    if (!filePath) {
+        showToast('No certificate file found', 'error');
+        return;
+    }
+    
+    // First, close any existing modal instance completely
+    closeCertificateModal();
+    
+    // Small delay to ensure cleanup is complete
+    setTimeout(function() {
+        currentCertPath = filePath;
+        currentCertName = certName;
+        
+        const fullPath = '../uploads/certificates/' + filePath;
+        const fileExt = filePath.split('.').pop().toLowerCase();
+        
+        const imgElement = document.getElementById('certImage');
+        const pdfElement = document.getElementById('certPDF');
+        const notSupported = document.getElementById('certNotSupported');
+        const titleSpan = document.getElementById('certModalTitle');
+        
+        // Reset all displays
+        if (imgElement) {
+            imgElement.style.display = 'none';
+            imgElement.onload = null;
+            imgElement.onerror = null;
+        }
+        if (pdfElement) {
+            pdfElement.style.display = 'none';
+        }
+        if (notSupported) {
+            notSupported.style.display = 'none';
+        }
+        
+        if (titleSpan) {
+            titleSpan.innerHTML = certName;
+        }
+        
+        // Check if file exists by trying to fetch it first
+        fetch(fullPath, { method: 'HEAD' })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('File not found');
+                }
+                
+                // File exists, now display it
+                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
+                    if (imgElement) {
+                        imgElement.onload = function() {
+                            console.log('Image loaded successfully');
+                            imgElement.style.display = 'block';
+                        };
+                        imgElement.onerror = function() {
+                            console.error('Image failed to load:', fullPath);
+                            if (notSupported) notSupported.style.display = 'block';
+                            showToast('Failed to load image. File may be corrupted.', 'error');
+                        };
+                        imgElement.src = fullPath;
+                    }
+                } 
+                else if (fileExt === 'pdf') {
+                    if (pdfElement) {
+                        pdfElement.onerror = function() {
+                            console.error('PDF failed to load:', fullPath);
+                            if (notSupported) notSupported.style.display = 'block';
+                            showToast('Failed to load PDF. File may be corrupted.', 'error');
+                        };
+                        pdfElement.src = fullPath;
+                        pdfElement.style.display = 'block';
+                    }
+                }
+                else {
+                    if (notSupported) notSupported.style.display = 'block';
+                }
+                
+                const modal = document.getElementById('certificateModal');
+                if (modal) {
+                    modal.style.display = 'flex';
+                    document.body.style.overflow = 'hidden';
+                }
+            })
+            .catch(error => {
+                console.error('File check failed:', error);
+                if (notSupported) notSupported.style.display = 'block';
+                showToast('Certificate file not found or cannot be accessed.', 'error');
+                
+                const modal = document.getElementById('certificateModal');
+                if (modal) {
+                    modal.style.display = 'flex';
+                    document.body.style.overflow = 'hidden';
+                }
+            });
+    }, 50);
+}
+function closeCertificateModal() {
+    const modal = document.getElementById('certificateModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    document.body.style.overflow = 'auto';
+    
+    // Clear all content and remove event handlers to prevent memory issues
+    const imgElement = document.getElementById('certImage');
+    const pdfElement = document.getElementById('certPDF');
+    const notSupported = document.getElementById('certNotSupported');
+    
+    if (imgElement) {
+        // Remove event handlers before clearing src
+        imgElement.onload = null;
+        imgElement.onerror = null;
+        imgElement.src = '';
+        imgElement.style.display = 'none';
+    }
+    if (pdfElement) {
+        pdfElement.src = '';
+        pdfElement.style.display = 'none';
+    }
+    if (notSupported) {
+        notSupported.style.display = 'none';
+    }
+    
+    // Reset variables
+    currentCertPath = '';
+    currentCertName = '';
+}
+
+function downloadCertificate() {
+    if (currentCertPath) {
+        const fullPath = '../uploads/certificates/' + currentCertPath;
+        const link = document.createElement('a');
+        link.href = fullPath;
+        link.download = currentCertName + '_' + currentCertPath;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Download started...', 'success');
+    } else {
+        showToast('No file to download', 'error');
+    }
+}
+
+// Escape HTML function
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// Close modal when clicking outside
+window.addEventListener('click', function(event) {
+    const modal = document.getElementById('certificateModal');
+    if (modal && modal.style.display === 'flex' && event.target === modal) {
+        closeCertificateModal();
+    }
+});
+
+// Also close with Escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        const modal = document.getElementById('certificateModal');
+        if (modal && modal.style.display === 'flex') {
+            closeCertificateModal();
+        }
+    }
+});
+
 <?php if (isset($_SESSION['success_message'])): ?>
     showToast("<?= $_SESSION['success_message'] ?>");
     <?php unset($_SESSION['success_message']); ?>
@@ -2362,6 +2779,14 @@ document.addEventListener('DOMContentLoaded', function() {
     <?php unset($_SESSION['error_message']); ?>
 <?php endif; ?>
 </script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 <div id="bankModal" style="display: none;">
     <div class="modal-overlay" onclick="closeBankModal(event)">
         <div class="modal-container" style="max-width: 750px; width: 90%;" onclick="event.stopPropagation()">

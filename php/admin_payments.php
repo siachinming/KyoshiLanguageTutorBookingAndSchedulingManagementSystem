@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -522,11 +523,16 @@ function e($value) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kyoshi | Payments</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../css/astyle.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
+
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
                 * {
@@ -1515,6 +1521,103 @@ td:has(.proof-image) {
         display: none;
     }
 }
+
+/* ============================================
+   URGENT BANNER RESPONSIVE (max-width: 900px)
+   ============================================ */
+
+@media (max-width: 900px) {
+    /* Urgent banner container */
+    .urgent-banner {
+        padding: 15px !important;
+        margin-bottom: 20px !important;
+    }
+    
+    /* Flex container in urgent banner */
+    .urgent-banner > div:first-child {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 12px !important;
+    }
+    
+    /* Banner text section */
+    .urgent-banner > div:first-child > div:first-child {
+        text-align: center !important;
+    }
+    
+    /* Banner title */
+    .urgent-banner > div:first-child i {
+        font-size: 24px !important;
+    }
+    
+    .urgent-banner > div:first-child strong {
+        font-size: 16px !important;
+        margin-left: 5px !important;
+    }
+    
+    .urgent-banner > div:first-child p {
+        font-size: 12px !important;
+        margin-top: 5px !important;
+    }
+    
+    /* Verify All button */
+    .urgent-banner form {
+        width: 100% !important;
+    }
+    
+    .btn-urgent {
+        width: 100% !important;
+        padding: 10px 16px !important;
+        font-size: 13px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+    }
+    
+    /* Table inside urgent banner */
+    .urgent-banner > div:last-child {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        max-height: 400px !important;
+    }
+    
+    .urgent-banner > div:last-child table {
+        min-width: 600px !important;
+        width: 100% !important;
+    }
+    
+    .urgent-banner > div:last-child th,
+    .urgent-banner > div:last-child td {
+        padding: 8px 10px !important;
+        font-size: 12px !important;
+    }
+    
+    /* Hours warning text */
+    .hours-warning {
+        font-size: 10px !important;
+    }
+    
+    /* Verify button inside banner */
+    .urgent-banner .btn-verify {
+        padding: 4px 10px !important;
+        font-size: 11px !important;
+        white-space: nowrap !important;
+    }
+}
+
+/* Even smaller phones */
+@media (max-width: 480px) {
+    .urgent-banner > div:last-child th,
+    .urgent-banner > div:last-child td {
+        padding: 6px 8px !important;
+        font-size: 11px !important;
+    }
+    
+    .btn-urgent {
+        font-size: 12px !important;
+    }
+}
     </style>
 </head>
 <body>
@@ -1588,22 +1691,38 @@ td:has(.proof-image) {
 </aside>
 
 <div class="main-content" id="mainContent">
-    <div class="top-bar">
-    <div style="display: flex; align-items: center; gap: 16px;">
-        <a href="admin_student_actions.php" class="btn-back" style="display: inline-flex; align-items: center; gap: 8px; background: #e2e8f0; color: #1d3156; padding: 8px 16px; border-radius: 40px; text-decoration: none; font-size: 13px; font-weight: 600; transition: 0.2s;">
-            <i class="bi bi-arrow-left"></i> Back
-        </a>
-        <div class="page-title">
-            <h1>Payments</h1>
+        <div class="top-bar">
+    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
+    
+    <!-- Mobile Logo (visible only on mobile) -->
+    <div class="mobile-logo">
+        <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi" class="mobile-logo-img">
+        <span class="mobile-logo-text">KYOSHI</span>
+    </div>
+    
+    <!-- Desktop Title with Back Button Beside It -->
+    <div class="page-title">
+        <div class="title-with-back">
+            <a href="admin_student_actions.php" class="back-btn-desktop">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back</span>
+            </a>
+            <h1>Payment</h1>
         </div>
     </div>
-    <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i> Menu</button>
+    
     <div class="relative">
-        <button class="admin-profile" onclick="toggleDropdown()">
+        <div class="admin-profile" onclick="toggleDropdown()">
             <img src="<?= e($profilePic) ?>" alt="Admin">
             <span><?= e($displayName) ?></span>
             <i class="bi bi-chevron-down"></i>
-        </button>
+        </div>
+        
+        <!-- Mobile Profile Button -->
+        <div class="mobile-profile-btn" onclick="toggleDropdown()">
+            <img src="<?= e($profilePic) ?>" alt="Admin" class="mobile-profile-img">
+        </div>
+        
         <div class="dropdown" id="profileDropdown">
             <a href="admin_profile.php"><i class="bi bi-person-circle"></i> My Profile</a>
             <hr>
@@ -1612,6 +1731,15 @@ td:has(.proof-image) {
     </div>
 </div>
 
+<!-- Mobile Page Header with Arrow Only (no text) -->
+<div class="mobile-page-header" style="margin-top: 20px;">
+    <div class="mobile-title-with-back">
+        <a href="admin_student_actions.php" class="mobile-back-arrow">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="mobile-page-title">Payments</h1>
+    </div>
+</div>
     <?php if ($message): ?>
     <div class="message <?= $messageType ?>"><?= $message ?></div>
     <?php endif; ?>
@@ -2285,19 +2413,49 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
 </div>
 
 <script>
+// Single toggle function - works for both open and close
 function toggleDropdown() {
     const dropdown = document.getElementById('profileDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    if (!dropdown) return;
+    
+    // Toggle based on current display state
+    const isVisible = dropdown.style.display === 'block';
+    
+    if (isVisible) {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    } else {
+        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
+    }
 }
 
-
-window.addEventListener('click', function(e) {
+// Close dropdown when clicking outside (only one listener)
+document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('profileDropdown');
-    const button = document.querySelector('.admin-profile');
-    if (button && !button.contains(e.target) && dropdown && !dropdown.contains(e.target)) {
+    const mobileProfileBtn = document.querySelector('.mobile-profile-btn');
+    const desktopProfile = document.querySelector('.admin-profile');
+    
+    if (!dropdown) return;
+    
+    const isClickOnMobileBtn = mobileProfileBtn && mobileProfileBtn.contains(e.target);
+    const isClickOnDesktop = desktopProfile && desktopProfile.contains(e.target);
+    const isClickInsideDropdown = dropdown.contains(e.target);
+    
+    // If click is NOT on any profile button and NOT inside dropdown, close it
+    if (!isClickOnMobileBtn && !isClickOnDesktop && !isClickInsideDropdown) {
         dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
     }
 });
+
+// Prevent dropdown from closing when clicking inside it
+const dropdownEl = document.getElementById('profileDropdown');
+if (dropdownEl) {
+    dropdownEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
 
 function openVerifyModal(paymentId) {
     document.getElementById('verifyPaymentId').value = paymentId;
@@ -2685,6 +2843,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
 </body>
 </html>

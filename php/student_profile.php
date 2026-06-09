@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -23,10 +24,11 @@ if (!$user) {
 }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic'] . '?v=' . time()
-    : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 // Get preferred languages
 $preferredLanguages = [];
 $result = $conn->query("SELECT language FROM student_preferences WHERE user_id = $userID");
@@ -298,10 +300,14 @@ $allModes = ['online', 'face_to_face'];
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Profile · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6; --paper:rgba(255,255,255,.88); --ink:#342635; --muted:#7B6178;
@@ -459,14 +465,233 @@ $allModes = ['online', 'face_to_face'];
 }
     @media(max-width:900px){.profile-layout{grid-template-columns:1fr}}
     @media(max-width:980px){.nav{grid-template-columns:1fr auto;min-height:auto;padding:10px 0}.nav-links{grid-column:1/-1;grid-row:2;width:100%}}
-    @media(max-width:760px){.container{width:min(100% - 22px,100%)}.profile-nav span,.brand span{display:none}}
+    @media(max-width:760px){.container{width:min(100% - 22px,100%)}.profile-nav span,.brand span{display:none}.}
+        /* Responsive Design */
+    @media(max-width: 1100px) {
+        .nav {
+            grid-template-columns: 160px minmax(0, 1fr) 280px;
+            gap: 12px;
+        }
+        .nav-links a {
+            padding: 8px 10px;
+            font-size: 12px;
+        }
+    }
+    
+    @media(max-width: 980px) {
+        .nav {
+            grid-template-columns: 1fr auto;
+            min-height: auto;
+            padding: 12px 0;
+            gap: 16px;
+        }
+        .nav-links {
+            grid-column: 1 / -1;
+            grid-row: 2;
+            width: 100%;
+            justify-content: flex-start;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 8px;
+        }
+        .nav-actions {
+            justify-content: flex-end;
+        }
+        .brand span {
+            display: none;
+        }
+        .profile-nav span {
+            max-width: 120px;
+        }
+            .profile-nav i.bi-chevron-down {
+        display: none;
+    }
+    }
+    
+    @media(max-width: 900px) {
+        .container {
+            width: calc(100% - 24px);
+            padding: 0 12px;
+        }
+        
+        .profile-layout {
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        
+        .profile-sidebar {
+            position: relative;
+            top: 0;
+            padding: 24px;
+        }
+        
+        .form-panel {
+            padding: 20px;
+        }
+        
+        .form-grid {
+            grid-template-columns: 1fr;
+            gap: 14px;
+        }
+        
+        .chip-group {
+            gap: 8px;
+        }
+        
+        .pref-chip {
+            padding: 8px 14px;
+            font-size: 12px;
+        }
+        
+        .tabs {
+            flex-wrap: wrap;
+            width: 100%;
+        }
+        
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 10px 12px;
+            font-size: 12px;
+        }
+        
+        .sidebar-stats {
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .s-stat strong {
+            font-size: 18px;
+        }
+        
+        .lang-proficiency-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        
+        .lang-proficiency-row > div:first-child {
+            min-width: auto;
+        }
+        
+        .chip-group {
+            width: 100%;
+        }
+        
+        .edit-actions {
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .edit-actions .btn-primary,
+        .edit-actions .btn-outline {
+            width: 100%;
+        }
+        
+        .breadcrumb {
+            margin-bottom: 16px;
+            font-size: 12px;
+        }
+        
+        .page-wrap {
+            padding: 20px 0 40px;
+        }
+    }
+    
+    @media(max-width: 600px) {
+        .brand strong {
+            font-size: 15px;
+        }
+        
+        .nav-links a {
+            padding: 6px 10px;
+            font-size: 11px;
+        }
+        
+        .profile-nav {
+            padding: 5px 10px 5px 5px;
+        }
+        
+        .profile-nav img {
+            width: 28px;
+            height: 28px;
+        }
+        
+        .profile-nav span {
+            max-width: 80px;
+            font-size: 12px;
+        }
+        
+        .avatar-wrap {
+            width: 100px;
+            height: 100px;
+        }
+        
+        .avatar-wrap img {
+            width: 100px;
+            height: 100px;
+        }
+        
+        .sidebar-name {
+            font-size: 20px;
+        }
+        
+        .form-panel h3 {
+            font-size: 18px;
+        }
+        
+        .form-panel .sub {
+            font-size: 12px;
+        }
+        
+        .pref-chip {
+            padding: 6px 12px;
+            font-size: 11px;
+        }
+        
+        .btn-primary, .btn-outline {
+            padding: 11px 16px;
+            font-size: 12px;
+        }
+    }
+    
+    @media(max-width: 480px) {
+        .container {
+            width: calc(100% - 16px);
+        }
+        
+        .profile-sidebar {
+            padding: 20px;
+        }
+        
+        .sidebar-stats .s-stat {
+            padding: 10px;
+        }
+        
+        .s-stat strong {
+            font-size: 16px;
+        }
+        
+        .s-stat span {
+            font-size: 10px;
+        }
+        
+        .pref-chip {
+            padding: 6px 10px;
+            font-size: 10px;
+        }
+    }
   </style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+      <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
       <a href="student_dashboard.php" class="brand">
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
@@ -499,7 +724,7 @@ $allModes = ['online', 'face_to_face'];
     </nav>
   </div>
 </header>
-
+  <div class="nav-overlay" id="navOverlay"></div>
 <main class="container">
   <div class="page-wrap">
     <div class="breadcrumb">
@@ -835,5 +1060,14 @@ $allModes = ['online', 'face_to_face'];
   <?php if ($successMsg): ?> showToast("<?= e($successMsg) ?>"); <?php endif; ?>
   <?php if ($errorMsg): ?> showToast("<?= addslashes(htmlspecialchars_decode(e($errorMsg))) ?>"); <?php endif; ?>
 </script>
+
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+
 </body>
 </html>

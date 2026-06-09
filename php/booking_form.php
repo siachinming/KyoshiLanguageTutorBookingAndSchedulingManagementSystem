@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 
 if (!isset($_SESSION['user_id'])) {
@@ -33,9 +34,11 @@ $user = $stmt->get_result()->fetch_assoc();
 if (!$user) { header("Location: login.php"); exit(); }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic'])
-    ? '../uploads/profiles/' . $user['profile_pic']
-    : $assetBase . '/profile-student.png';
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 
 // Get tutor info
 $stmt = $conn->prepare("
@@ -136,7 +139,7 @@ $stmt->close();
 
 $tutorPic = !empty($tutor['profile_pic'])
     ? '../uploads/profiles/' . $tutor['profile_pic']
-    : $assetBase . '/profile-tutor.png';
+    : $assetBase. '/profile-tutor.png';
 
 $tutorLangs = array_filter(array_map('trim', explode(',', $tutor['languages'] ?? '')));
 $tutorModes = array_filter(array_map('trim', explode(',', $tutor['teaching_modes'] ?? '')));
@@ -150,9 +153,14 @@ $availJson = json_encode($availability);
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Book <?= e($tutor['fullname']) ?> · Kyoshi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../css/style.css">
   <style>
     :root{
       --cream:#FFF1F6; --paper:rgba(255,255,255,.88); --ink:#342635; --muted:#7B6178;
@@ -293,7 +301,7 @@ $availJson = json_encode($availability);
     .btn-prev:hover{background:rgba(255,255,255,.88)}
     .btn-next{padding:11px 26px;border-radius:999px;border:none;background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:white;font-size:13px;font-weight:900;cursor:pointer;box-shadow:0 8px 20px rgba(231,90,155,.28);transition:.18s ease}
     .btn-next:hover{transform:translateY(-1px)}
-
+    
     /* SUMMARY CARD */
     .summary-card{background:var(--paper);border:1px solid rgba(255,255,255,.55);box-shadow:var(--shadow);border-radius:var(--radius-xl);padding:24px;position:sticky;top:96px}
     .summary-card h3{margin:0 0 18px;font-size:18px}
@@ -313,7 +321,7 @@ $availJson = json_encode($availability);
     .avail-note{padding:12px 16px;border-radius:14px;background:rgba(221,244,230,.6);border:1px solid rgba(45,106,66,.2);color:#2D6A42;font-size:13px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
     .no-avail-note{padding:12px 16px;border-radius:14px;background:rgba(255,217,199,.5);border:1px solid rgba(163,95,63,.2);color:#A35F3F;font-size:13px;font-weight:700;margin-bottom:16px}
 
-    @media(max-width:900px){.booking-grid{grid-template-columns:1fr}}
+    @media(max-width:900px){.booking-grid{grid-template-columns:1fr} .back-link span {display:none;} .button-prev span{display:none;}}
   </style>
 </head>
 <body data-tutor-state="<?= e($tutor['location'] ?? '') ?>" data-tutor-modes="<?= e(implode(',', array_values($tutorModes))) ?>">
@@ -321,6 +329,9 @@ $availJson = json_encode($availability);
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+      <button class="hamburger-menu" id="hamburgerBtn">
+                <i class="bi bi-list"></i>
+            </button>
          <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -364,10 +375,11 @@ $availJson = json_encode($availability);
       </nav>
   </div>
 </header>
+<div class="nav-overlay" id="navOverlay"></div>
 
 <div class="container">
   <a href="tutor_profile.php?id=<?= $tutorID ?>" class="back-link">
-    <i class="bi bi-arrow-left"></i> Back to Profile
+    <i class="bi bi-arrow-left"></i> <span>Back to Profile</span>
   </a>
 
   <div class="booking-grid">
@@ -613,7 +625,7 @@ $availJson = json_encode($availability);
         </p>
 
         <div class="form-nav">
-          <button class="btn-prev" onclick="goStep(2)"><i class="bi bi-arrow-left"></i> Back</button>
+          <button class="btn-prev" onclick="goStep(2)"><i class="bi bi-arrow-left"></i> <span>Back</span></button>
           <button class="btn-next" onclick="submitBooking()" id="submitBtn">
             <i class="bi bi-check2-circle"></i> Confirm Booking
           </button>
@@ -1368,12 +1380,19 @@ function checkStudentConflict(date, time) {
     });
 }
 </script>
-// Prefill from rebook
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
+</script>
+<script src="../js/nav.js"></script>
 <?php
 $prefillLang  = $_POST['prefill_lang']  ?? '';
 $prefillMode  = $_POST['prefill_mode']  ?? '';
 $prefillFocus = $_POST['prefill_focus'] ?? '';
 ?>
+<script>
 <?php if ($prefillLang): ?>
 document.querySelectorAll('#langChips .sel-chip').forEach(btn => {
   if (btn.dataset.val === '<?= e($prefillLang) ?>') btn.click();
@@ -1393,5 +1412,6 @@ document.querySelectorAll('.focus-chip input[type=checkbox]').forEach(cb => {
   }
 });
 <?php endif; ?>
+</script>
 </body>
 </html>

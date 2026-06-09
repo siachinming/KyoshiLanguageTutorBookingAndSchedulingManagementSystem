@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config.php';
+include 'check_login.php';
 $assetBase = '../assets/img';
 // AUTO-CANCEL UNPAID BOOKINGS (Run on every page load)
 // ============================================================
@@ -110,7 +111,7 @@ while ($booking = $cancelledBookings->fetch_assoc()) {
                 <p>has been <strong style='color: #dc2626;'>CANCELLED</strong> because payment was not received before the session time.</p>
                 <p>To avoid this in the future, please complete payment as soon as your tutor accepts the booking.</p>
                 <div style='text-align: center; margin-top: 25px;'>
-                    <a href='http://localhost/kyoshi/php/find_language.php' 
+                    <a href='http://kyoshitutor.site/php/find_language.php' 
                        style='display: inline-block; padding: 12px 30px; background: linear-gradient(135deg, #E75A9B, #F28AB2); 
                               color: white; text-decoration: none; border-radius: 30px; font-weight: bold;'>
                         Book a New Session
@@ -148,8 +149,11 @@ $user = $stmt->get_result()->fetch_assoc();
 if (!$user) { header("Location: login.php"); exit(); }
 
 $displayName = $user['fullname'];
-$profilePic  = !empty($user['profile_pic']) ? '../uploads/profiles/' . $user['profile_pic'] : $assetBase . '/profile-student.png';
-
+if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+} else {
+    $profilePic = $assetBase . '/profile.png';
+}
 $filterStatus  = $_GET['status'] ?? 'all';
 $filterDateFrom = isset($_GET['date_from']) && !empty($_GET['date_from']) ? $_GET['date_from'] : '';
 $filterDateTo   = isset($_GET['date_to']) && !empty($_GET['date_to']) ? $_GET['date_to'] : '';
@@ -324,8 +328,12 @@ function statusCfg($s) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Bookings · Kyoshi</title>
+  <link rel="stylesheet" href="../css/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
   <style>
     :root{
@@ -358,7 +366,7 @@ function statusCfg($s) {
     .profile img{width:34px;height:34px;object-fit:cover;border-radius:50%}
 
     .page-wrap{padding:28px 0 60px}
-    .back-link{display:inline-flex;align-items:center;gap:6px;color:var(--pink-dark);font-weight:900;font-size:13px;padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(46,42,59,.08);transition:.18s ease;margin-bottom:20px;}
+    .back-link{display:inline-flex;gap:6px;color:var(--pink-dark);font-weight:900;font-size:13px;padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(46,42,59,.08);transition:.18s ease;margin-bottom:20px;}
     .back-link:hover{transform:translateY(-1px)}
     .page-head{margin-bottom:20px}
     .page-head h1{margin:0 0 4px;font-size:28px;letter-spacing:-.6px}
@@ -485,6 +493,7 @@ function statusCfg($s) {
       .nav{grid-template-columns:1fr auto}
       .nav-links{grid-column:1/-1}
     }
+
     /* Checkboxes hidden by default, shown in select-mode */
 .card-checkbox { display: none; }
 .select-mode-reschedule .checkbox-reschedule,
@@ -549,6 +558,288 @@ function statusCfg($s) {
 .select-mode-rate .checkbox-rate{
     display:block;
 }
+
+/* ========== FIX FOR 900px AND BELOW - BOOKING STATUS ========== */
+@media (max-width: 900px) {
+    /* Fix filter bar - stack vertically */
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    
+    .filter-group {
+        width: 100%;
+        min-width: auto;
+    }
+    
+    .filter-right {
+        width: 100%;
+        margin-left: 0;
+        align-items: stretch;
+    }
+    
+    .sort-select {
+        width: 100%;
+    }
+    
+    .btn-reset {
+        width: 100%;
+        margin-top: 5px;
+    }
+    
+    /* Fix booking cards layout */
+    .booking-card {
+        padding: 16px;
+    }
+    
+    /* Fix card top section */
+    .card-top {
+        flex-wrap: wrap;
+    }
+    
+    .tutor-img {
+        width: 48px;
+        height: 48px;
+    }
+    
+    .card-top-info h4 {
+        font-size: 14px;
+    }
+    
+    .status-badge {
+        font-size: 10px;
+        padding: 5px 10px;
+    }
+    
+    /* Fix card tags */
+    .card-tags {
+        gap: 5px;
+    }
+    
+    .tag {
+        font-size: 9px;
+        padding: 3px 8px;
+    }
+    
+    /* Fix card bottom - stack vertically */
+    .card-bottom {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .card-meta {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .card-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    /* Fix action buttons */
+    .btn-action {
+        padding: 7px 14px;
+        font-size: 11px;
+    }
+    
+    /* Fix select mode buttons */
+    .select-mode-btn {
+        padding: 7px 14px;
+        font-size: 11px;
+        flex: 1;
+        text-align: center;
+        justify-content: center;
+    }
+    
+    div[style*="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"] {
+        flex-direction: column;
+    }
+    
+    /* Fix bulk bar */
+    #bulkBar {
+        flex-wrap: wrap;
+        text-align: center;
+        top: 70px;
+    }
+    
+    #bulkBar > div {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    /* Fix modal on mobile */
+    .modal-box {
+        width: calc(100% - 30px);
+        padding: 20px;
+        margin: 10px;
+    }
+    
+    .modal-actions {
+        flex-wrap: wrap;
+    }
+    
+    .modal-actions button,
+    .modal-actions a {
+        flex: 1;
+        text-align: center;
+        justify-content: center;
+    }
+    
+    /* Fix page head */
+    .page-head {
+        margin-top: 10px !important;
+    }
+    
+    .page-head h1 {
+        font-size: 24px;
+    }
+    
+    .back-link {
+        position: relative !important;
+        transform: none !important;
+        margin-bottom: 15px !important;
+        display: inline-flex;
+        width: fit-content;
+    }
+    
+    /* Fix radio buttons and textareas in modal */
+    #cancelModal .modal-box label {
+        font-size: 13px;
+    }
+    
+    #cancelModal .modal-box textarea {
+        font-size: 12px;
+    }
+    
+    /* Fix booking row layout */
+    .booking-row {
+        gap: 8px;
+    }
+    
+    .checkbox-slot {
+        padding-top: 16px;
+    }
+}
+
+/* Date Range Row - Same line on desktop */
+.date-range-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex: 1;
+}
+
+.date-range-row .filter-group {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+/* Mobile: Full width stacked */
+@media (max-width: 768px) {
+    .date-range-row {
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+    }
+    
+    .date-range-row .filter-group {
+        width: 100%;
+    }
+    
+    .date-range-row .filter-input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+}
+
+/* For tablet (between 769px and 1024px) - keep side by side but smaller */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .date-range-row {
+        gap: 8px;
+    }
+}
+
+
+
+
+/* ========== FOR 600px AND BELOW ========== */
+@media (max-width: 600px) {
+    .page-head h1 {
+        font-size: 20px;
+    }
+    
+    .back-link span {
+        display: none;
+    }
+    
+    .back-link {
+        padding: 6px 12px;
+    }
+    
+    .card-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .card-top-info {
+        width: 100%;
+    }
+    
+    .status-badge {
+        align-self: flex-start;
+    }
+    
+    .tutor-img {
+        width: 44px;
+        height: 44px;
+    }
+    
+    .btn-action {
+        padding: 6px 12px;
+        font-size: 10px;
+    }
+    
+    .select-mode-btn {
+        padding: 6px 12px;
+        font-size: 10px;
+    }
+    
+    .tag {
+        font-size: 8px;
+        padding: 2px 6px;
+    }
+    
+    .card-meta strong {
+        font-size: 12px;
+    }
+    
+    .filter-select, .filter-input {
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+    
+    .filter-group label {
+        font-size: 10px;
+    }
+}
+
+.back-link span {
+    display: inline;
+}
+
+@media (max-width: 600px) {
+    .back-link span {
+        display: none;
+    }
+    
+    .back-link {
+        padding: 8px 12px;
+    }
+}
+
   </style>
 </head>
 <body>
@@ -556,6 +847,9 @@ function statusCfg($s) {
 <header class="topbar">
   <div class="container">
     <nav class="nav">
+        <button class="hamburger-menu" id="hamburgerBtn">
+    <i class="bi bi-list"></i>
+</button>
         <a href="student_dashboard.php" class="brand">
           <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi logo">
           <div>
@@ -599,25 +893,27 @@ function statusCfg($s) {
       </nav>
   </div>
 </header>
-
+<div class="nav-overlay" id="navOverlay"></div>
 <div class="container">
 <?php if (isset($_GET['cancelled'])): ?>
 <script>window.addEventListener('DOMContentLoaded',()=>showToast('Booking cancelled successfully.'));</script>
 <?php endif; ?>
-<div class="page-head" style="position:relative;text-align:center;margin-top:20px;">
-  
-  <a href="student_dashboard.php" class="back-link" style="position:absolute; left:0; top:50%; transform:translateY(-50%); margin:0;">
-    <i class="bi bi-arrow-left"></i> Back
-  </a>
+<div class="page-head" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; position: relative;">
+    <!-- BACK BUTTON (LEFT) -->
+    <a href="student_dashboard.php" class="back-link" style="margin:0;">
+        <i class="bi bi-arrow-left"></i>
+        <span>Back</span>
+    </a>
 
-  <h1 style="margin:0;">My Bookings</h1>
+    <!-- TITLE (CENTER) -->
+    <div style="text-align: center; flex: 1;">
+        <h1 style="margin: 2px; ;">My Bookings</h1>
+        <p style="margin:5px 0 0;color:var(--muted);font-size:14px;">Track all your session requests and their status.</p>
+    </div>
 
-  <p style="margin:5px 0 0;color:var(--muted);font-size:14px;">
-    Track all your session requests and their status.
-  </p>
-
+    <!-- EMPTY RIGHT FOR BALANCE -->
+    <div style="width: 20px;"></div>
 </div>
-
     <!-- FILTER BAR -->
 <form method="GET" class="filter-bar">
     <div class="filter-group">
@@ -659,38 +955,38 @@ function statusCfg($s) {
             <?php endforeach; ?>
         </select>
     </div>
-    
-    <div class="filter-group">
-        <label><i class="bi bi-calendar3"></i> From</label>
-        <input type="date" name="date_from" class="filter-input" value="<?= e($_GET['date_from'] ?? '') ?>" onchange="this.form.submit()">
-    </div>
-    
-    <div class="filter-group">
-        <label><i class="bi bi-calendar3"></i> To</label>
-        <input type="date" name="date_to" class="filter-input" value="<?= e($_GET['date_to'] ?? '') ?>" onchange="this.form.submit()">
-    </div>
-    
-    <div class="filter-right">
+
+    <div class="date-range-row">
         <div class="filter-group">
-            <label><i class="bi bi-sort-down"></i> Sort By</label>
-            <select name="sort" class="filter-select" onchange="this.form.submit()">
-                <optgroup label="Booked On">
-                    <option value="booked_newest" <?= $sortBy==='booked_newest'?'selected':'' ?>>Newest Booking First</option>
-                    <option value="booked_oldest" <?= $sortBy==='booked_oldest'?'selected':'' ?>>Oldest Booking First</option>
-                </optgroup>
-                <optgroup label="Session Date">
-                    <option value="session_soonest" <?= $sortBy==='session_soonest'?'selected':'' ?>>Soonest Session First</option>
-                    <option value="session_latest"  <?= $sortBy==='session_latest'?'selected':'' ?>>Latest Session First</option>
-                </optgroup>
-                <optgroup label="Price">
-                    <option value="price_low"  <?= $sortBy==='price_low'?'selected':'' ?>>Lowest Price</option>
-                    <option value="price_high" <?= $sortBy==='price_high'?'selected':'' ?>>Highest Price</option>
-                </optgroup>
-                <optgroup label="Other">
-                    <option value="language" <?= $sortBy==='language'?'selected':'' ?>>Language A–Z</option>
-                </optgroup>
-            </select>
+            <label><i class="bi bi-calendar3"></i> From</label>
+            <input type="date" name="date_from" class="filter-input" value="<?= e($_GET['date_from'] ?? '') ?>" onchange="this.form.submit()">
         </div>
+        <div class="filter-group">
+            <label><i class="bi bi-calendar3"></i> To</label>
+            <input type="date" name="date_to" class="filter-input" value="<?= e($_GET['date_to'] ?? '') ?>" onchange="this.form.submit()">
+        </div>
+    </div>
+    
+    
+    <div class="filter-group">
+        <label><i class="bi bi-sort-down"></i> Sort By</label>
+        <select name="sort" class="filter-select" onchange="this.form.submit()">
+            <optgroup label="Booked On">
+                <option value="booked_newest" <?= $sortBy==='booked_newest'?'selected':'' ?>>Newest Booking First</option>
+                <option value="booked_oldest" <?= $sortBy==='booked_oldest'?'selected':'' ?>>Oldest Booking First</option>
+            </optgroup>
+            <optgroup label="Session Date">
+                <option value="session_soonest" <?= $sortBy==='session_soonest'?'selected':'' ?>>Soonest Session First</option>
+                <option value="session_latest"  <?= $sortBy==='session_latest'?'selected':'' ?>>Latest Session First</option>
+            </optgroup>
+            <optgroup label="Price">
+                <option value="price_low"  <?= $sortBy==='price_low'?'selected':'' ?>>Lowest Price</option>
+                <option value="price_high" <?= $sortBy==='price_high'?'selected':'' ?>>Highest Price</option>
+            </optgroup>
+            <optgroup label="Other">
+                <option value="language" <?= $sortBy==='language'?'selected':'' ?>>Language A–Z</option>
+            </optgroup>
+        </select>
     </div>
     
     <a href="booking_status.php" class="btn-reset">
@@ -1386,6 +1682,13 @@ function closeReportModal() {
     const modal = document.getElementById('reportModal');
     if (modal) modal.remove();
 }
+</script>
+<script src="../js/nav.js"></script>
+<script>
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function() {
+    window.location.href = 'login.php';
+});
 </script>
 </body>
 </html>
