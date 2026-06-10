@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 09, 2026 at 08:29 PM
+-- Generation Time: Jun 10, 2026 at 05:10 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -1379,7 +1379,17 @@ INSERT INTO `users` (`id`, `fullname`, `email`, `password`, `phone`, `role`, `pr
 (13, 'Kay Hueen', 'kayhueen5@gmail.com', '$2y$10$NF7ux3xADRav1RrK3YU55eI5hVwInHgD9B6v6jih3AME4D8.nJh5e', '0142739441', 'tutor', 'profile_1780386916_16b66aea.jpg', '2026-06-02 07:55:16', 'approved', '8ed7c5f08dd4a9fca9ebe01124b976dd3a98bcd5dc4808a74c125d429a4f0028', 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (14, 'Gg', 'gg@gmail.com', '$2y$10$VRtHuo26qNSdf2Yctf/2EOF9xeLXFtOlSFXmrfeQbQ/pkVMhYFci6', '1165048088', 'tutor', 'profile_1780532607_739d2454.jpg', '2026-06-04 00:23:27', 'approved', 'f53809178c3086abc4be064b3a15f445241a0649f0dfebfd1be6c7f6fb84be4c', 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (16, 'WAN DI', 'wandi@gmail.com', '$2y$10$4BFtp8i1kH0NIgaTCxCicuHaiiYOBaFEZNHqxLKYnpVxEFRBUy4A2', '', 'tutor', NULL, '2026-06-05 07:47:25', 'inactive', NULL, 0, 0, 0, '2026-06-05 17:38:34', NULL, 0, 1, NULL),
-(18, 'sa', 'sa@gmail.com', '$2y$10$XzX4uZhUGBOFCqcFeE9m2u3w612mmAB9k69MG/OrrqHU9xbjV.o4i', '123116887', 'student', 'default-student.png', '2026-06-08 15:20:29', 'approved', '157d54d2bf53903dfb093ec1504d03345e7e5f666db3f068439df4bffd9cfd4a', 0, 0, 0, NULL, NULL, 0, 1, NULL);
+(18, 'sa', 'sa@gmail.com', '$2y$10$XzX4uZhUGBOFCqcFeE9m2u3w612mmAB9k69MG/OrrqHU9xbjV.o4i', '123116887', 'student', 'default-student.png', '2026-06-08 15:20:29', 'approved', '157d54d2bf53903dfb093ec1504d03345e7e5f666db3f068439df4bffd9cfd4a', 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(19, 'Nur Aisyah Binti Abdullah', 'aisyah.abdullah@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456701', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(20, 'Lee Wei Chen', 'weichen.lee@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456702', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(21, 'Siti Nurhaliza Binti Mohd', 'siti.nurhaliza@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456703', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(22, 'Rajesh Kumar A/L Subramaniam', 'rajesh.kumar@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456704', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(23, 'Olivia Chen', 'olivia.chen@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456705', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(24, 'Muhammad Faiz Bin Rosli', 'faiz.rosli@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456706', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(25, 'Tan Hui Ling', 'huiling.tan@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456707', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(26, 'Kavitha A/P Rajendran', 'kavitha.rajendran@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456708', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(27, 'James Wong', 'james.wong@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456709', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(28, 'Nadiah Binti Kamaruddin', 'nadiah.kamaruddin@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456710', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL);
 
 -- --------------------------------------------------------
 
@@ -1828,7 +1838,7 @@ ALTER TABLE `tutor_teaching_modes`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
 
 --
 -- Constraints for dumped tables

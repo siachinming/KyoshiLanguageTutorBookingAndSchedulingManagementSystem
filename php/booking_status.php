@@ -1068,8 +1068,11 @@ elseif ($b['status'] === 'completed' && !$b['rated']) {
           <p class="sub">
             <i class="bi bi-calendar3"></i> <?= date('D, d M Y', strtotime($b['booking_date'])) ?>
             &nbsp;·&nbsp;
-            <i class="bi bi-clock"></i> <?= date('g:i A', strtotime($b['booking_time'])) ?>
+             <?= date('g:i A', strtotime($b['booking_time'])) ?>
           </p>
+          <p class="sub" style="margin-top: 5px; font-size: 11px; color: var(--muted);">
+            <i class="bi bi-clock-history"></i> Booked on <?= date('D, d M Y \a\t g:i A', strtotime($b['created_at'])) ?>
+        </p>
         </div>
         <span class="status-badge" style="background:<?= $cfg['bg'] ?>;color:<?= $cfg['color'] ?>;">
           <i class="bi <?= $cfg['icon'] ?>"></i> <?= $cfg['label'] ?>
