@@ -16,7 +16,7 @@ class GoogleCalendarHelper {
         
         // Set redirect URI
         $protocol = isset($_SERVER['HTTPS']) ? 'https://' : 'http://';
-        $redirectUri = $protocol . $_SERVER['HTTP_HOST'] . '/Kyoshi/php/google-calendar-callback.php';
+        $redirectUri = $protocol . $_SERVER['HTTP_HOST'] . '/php/google-calendar-callback.php';
         $this->client->setRedirectUri($redirectUri);
         
         // Store token per user

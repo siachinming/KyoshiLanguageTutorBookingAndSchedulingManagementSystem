@@ -24,8 +24,9 @@ if (!$user) {
 }
 
 $displayName = $user['fullname'];
+$cacheBuster = time(); // Add cache-busting parameter
 if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['profile_pic'])) {
-    $profilePic = '../uploads/profiles/' . $user['profile_pic'];
+    $profilePic = '../uploads/profiles/' . $user['profile_pic'] . '?v=' . $cacheBuster;
 } else {
     $profilePic = $assetBase . '/profile.png';
 }
@@ -101,16 +102,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    if ($action === 'update_profile') {
-    // Check if any changes were made
-    $hasChanges = false;
-    
+if ($action === 'update_profile') {
+    // Handle profile pic upload FIRST (before checking for changes)
     $fullname = trim($_POST['fullname'] ?? '');
     $email    = trim($_POST['email'] ?? '');
     $phone    = trim($_POST['phone'] ?? '');
     $newPic   = $user['profile_pic'];
+    $hasChanges = false;
     
-    // Check if personal info changed
+    // Check photo upload FIRST
+    if (!empty($_FILES['profile_pic']['name'])) {
+        $upload_dir = '../uploads/profiles/';
+        if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+        $ext = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
+        $allowed = ['jpg','jpeg','png','webp','gif'];
+        if (in_array($ext, $allowed)) {
+            $filename = 'student_' . $userID . '_' . time() . '.' . $ext;
+            if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $upload_dir . $filename)) {
+                $newPic = $filename;
+                $hasChanges = true;
+            }
+        } else {
+            $errorMsg = 'Invalid file type. Please use JPG, PNG, WebP, or GIF.';
+        }
+    }
+    
+    // Then check if personal info changed
     if ($fullname !== $user['fullname']) $hasChanges = true;
     if ($email !== $user['email']) $hasChanges = true;
     if ($phone !== ($user['phone'] ?? '')) $hasChanges = true;
@@ -129,91 +146,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $hasChanges = true;
     }
     
-    // Check if proficiency levels changed
+    // Check if proficiency levels changed - FIXED VERSION
     $newLevels = [];
     if (isset($_POST['language_levels'])) {
         foreach ($_POST['language_levels'] as $jsonData) {
             $data = json_decode($jsonData, true);
-            if ($data) {
+            if ($data && isset($data['language']) && isset($data['level'])) {
                 $newLevels[$data['language']] = $data['level'];
             }
         }
     }
-    if (count($newLevels) !== count($languageProficiency)) {
-        $hasChanges = true;
-    } else {
-        foreach ($languageProficiency as $lang => $level) {
-            if (($newLevels[$lang] ?? 'beginner') !== $level) {
-                $hasChanges = true;
-                break;
-            }
+    
+    // Compare proficiency levels properly
+    // Check if any language's proficiency level changed
+    foreach ($newLanguages as $lang) {
+        $oldLevel = $languageProficiency[$lang] ?? 'beginner';
+        $newLevel = $newLevels[$lang] ?? 'beginner';
+        if ($oldLevel !== $newLevel) {
+            $hasChanges = true;
+            break;
         }
     }
     
-    // Check if photo changed
-    if (!empty($_FILES['profile_pic']['name'])) {
-        $hasChanges = true;
+    // Also check if any languages were removed (proficiency data would be deleted)
+    foreach ($oldLanguages as $lang) {
+        if (!in_array($lang, $newLanguages)) {
+            $hasChanges = true;
+            break;
+        }
     }
     
-    if (!$hasChanges) {
+    if (!$hasChanges && empty($errorMsg)) {
         $errorMsg = 'No changes were made to your profile.';
-    } else {
-        // Handle profile pic upload
-        if (!empty($_FILES['profile_pic']['name'])) {
-            $upload_dir = '../uploads/profiles/';
-            if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
-            $ext = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
-            $allowed = ['jpg','jpeg','png','webp','gif'];
-            if (in_array($ext, $allowed)) {
-                $filename = 'student_' . $userID . '_' . time() . '.' . $ext;
-                if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $upload_dir . $filename)) {
-                    $newPic = $filename;
-                }
-            } else {
-                $errorMsg = 'Invalid file type. Please use JPG, PNG, or WebP.';
-            }
+    } elseif (empty($errorMsg)) {
+        // Update user table
+        $stmt = $conn->prepare("UPDATE users SET fullname=?, email=?, phone=?, profile_pic=? WHERE id=?");
+        $stmt->bind_param("ssssi", $fullname, $email, $phone, $newPic, $userID);
+        $stmt->execute();
+        
+        // Delete old preferences
+        $conn->query("DELETE FROM student_preferences WHERE user_id = $userID");
+        $conn->query("DELETE FROM student_learning_modes WHERE user_id = $userID");
+        
+        // Insert new languages
+        $langs = $_POST['languages'] ?? [];
+        foreach ($langs as $lang) {
+            $s = $conn->prepare("INSERT INTO student_preferences (user_id, language) VALUES (?, ?)");
+            $s->bind_param("is", $userID, $lang);
+            $s->execute();
         }
-
-        if (!$errorMsg) {
-            $stmt = $conn->prepare("UPDATE users SET fullname=?, email=?, phone=?, profile_pic=? WHERE id=?");
-            $stmt->bind_param("ssssi", $fullname, $email, $phone, $newPic, $userID);
-            $stmt->execute();
-
-            $conn->query("DELETE FROM student_preferences WHERE user_id = $userID");
-            $conn->query("DELETE FROM student_learning_modes WHERE user_id = $userID");
-
-            $langs = $_POST['languages'] ?? [];
-            foreach ($langs as $lang) {
-                $s = $conn->prepare("INSERT INTO student_preferences (user_id, language) VALUES (?, ?)");
-                $s->bind_param("is", $userID, $lang);
-                $s->execute();
-            }
-
-            $modes = $_POST['modes'] ?? [];
-            foreach ($modes as $mode) {
-                $s = $conn->prepare("INSERT INTO student_learning_modes (user_id, mode) VALUES (?, ?)");
-                $s->bind_param("is", $userID, $mode);
-                $s->execute();
-            }
-            
-            if (isset($_POST['language_levels'])) {
-                $conn->query("DELETE FROM student_language_proficiency WHERE student_id = $userID");
-                $profStmt = $conn->prepare("INSERT INTO student_language_proficiency (student_id, language, proficiency_level) VALUES (?, ?, ?)");
-                foreach ($_POST['language_levels'] as $jsonData) {
-                    $data = json_decode($jsonData, true);
-                    if ($data && isset($data['language']) && isset($data['level'])) {
-                        $profStmt->bind_param("iss", $userID, $data['language'], $data['level']);
-                        $profStmt->execute();
-                    }
-                }
-                $profStmt->close();
-            }
-
-            header("Location: student_profile.php?success=1");
-            exit();
+        
+        // Insert new modes
+        $modes = $_POST['modes'] ?? [];
+        foreach ($modes as $mode) {
+            $s = $conn->prepare("INSERT INTO student_learning_modes (user_id, mode) VALUES (?, ?)");
+            $s->bind_param("is", $userID, $mode);
+            $s->execute();
         }
+        
+        // Insert proficiency levels - FIXED: Save for ALL selected languages
+        $conn->query("DELETE FROM student_language_proficiency WHERE student_id = $userID");
+        $profStmt = $conn->prepare("INSERT INTO student_language_proficiency (student_id, language, proficiency_level) VALUES (?, ?, ?)");
+        
+        // Save proficiency for ALL selected languages (default to 'beginner' if not explicitly set)
+        foreach ($langs as $lang) {
+            $level = $newLevels[$lang] ?? 'beginner';
+            $profStmt->bind_param("iss", $userID, $lang, $level);
+            $profStmt->execute();
+        }
+        $profStmt->close();
+        
+        header("Location: student_profile.php?success=1&t=" . time());
+        exit();
     }
 }
+
 
     if ($action === 'change_password') {
     $current = $_POST['current_password'] ?? '';
@@ -941,31 +948,58 @@ $allModes = ['online', 'face_to_face'];
     }
 }
 
-  function addProficiencyRow(language) {
+function addProficiencyRow(language) {
     const container = document.getElementById('proficiencyContainer');
     // Check if row already exists
     if (container.querySelector(`.lang-proficiency-row[data-lang="${language}"]`)) return;
     
-    // Get existing proficiency level from PHP data
+    // Get existing proficiency level from PHP data or from existing hidden inputs
     let currentLevel = 'beginner';
+    
+    // Check PHP data
     <?php foreach ($languageProficiency as $lang => $level): ?>
-      if (language === '<?= e($lang) ?>') currentLevel = '<?= e($level) ?>';
+        if (language === '<?= e($lang) ?>') currentLevel = '<?= e($level) ?>';
     <?php endforeach; ?>
+    
+    // Check if we already have a proficiency selection for this language in the form
+    const existingProficiency = document.querySelector(`input[name="language_levels[]"][data-lang="${language}"]`);
+    if (existingProficiency) {
+        try {
+            const existingData = JSON.parse(existingProficiency.value);
+            if (existingData.level) currentLevel = existingData.level;
+        } catch(e) {}
+    }
     
     const row = document.createElement('div');
     row.className = 'lang-proficiency-row';
     row.setAttribute('data-lang', language);
     row.innerHTML = `
-      <div style="min-width:100px;font-weight:700;">${language}</div>
-      <div class="chip-group" style="flex:1;">
-        <button type="button" class="pref-chip level-chip ${currentLevel === 'beginner' ? 'active' : ''}" data-lang="${language}" data-level="beginner" onclick="selectLanguageLevel(this, '${language}', 'beginner')">Beginner</button>
-        <button type="button" class="pref-chip level-chip ${currentLevel === 'intermediate' ? 'active' : ''}" data-lang="${language}" data-level="intermediate" onclick="selectLanguageLevel(this, '${language}', 'intermediate')">Intermediate</button>
-        <button type="button" class="pref-chip level-chip ${currentLevel === 'advanced' ? 'active' : ''}" data-lang="${language}" data-level="advanced" onclick="selectLanguageLevel(this, '${language}', 'advanced')">Advanced</button>
-        <button type="button" class="pref-chip level-chip ${currentLevel === 'master' ? 'active' : ''}" data-lang="${language}" data-level="master" onclick="selectLanguageLevel(this, '${language}', 'master')">Master</button>
-      </div>
+        <div style="min-width:100px;font-weight:700;">${language}</div>
+        <div class="chip-group" style="flex:1;">
+            <button type="button" class="pref-chip level-chip ${currentLevel === 'beginner' ? 'active' : ''}" data-lang="${language}" data-level="beginner" onclick="selectLanguageLevel(this, '${language}', 'beginner')">Beginner</button>
+            <button type="button" class="pref-chip level-chip ${currentLevel === 'intermediate' ? 'active' : ''}" data-lang="${language}" data-level="intermediate" onclick="selectLanguageLevel(this, '${language}', 'intermediate')">Intermediate</button>
+            <button type="button" class="pref-chip level-chip ${currentLevel === 'advanced' ? 'active' : ''}" data-lang="${language}" data-level="advanced" onclick="selectLanguageLevel(this, '${language}', 'advanced')">Advanced</button>
+            <button type="button" class="pref-chip level-chip ${currentLevel === 'master' ? 'active' : ''}" data-lang="${language}" data-level="master" onclick="selectLanguageLevel(this, '${language}', 'master')">Master</button>
+        </div>
     `;
     container.appendChild(row);
-  }
+    
+    // Ensure the proficiency level is saved in the form
+    if (!existingProficiency) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'language_levels[]';
+        input.value = JSON.stringify({ language: language, level: currentLevel });
+        input.setAttribute('data-lang', language);
+        document.getElementById('languageProficiencyData').appendChild(input);
+    }
+}
+
+document.getElementById('profileForm').addEventListener('submit', function() {
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+});
 
   function selectLanguageLevel(btn, language, level) {
     const row = btn.closest('.lang-proficiency-row');
@@ -984,17 +1018,57 @@ $allModes = ['online', 'face_to_face'];
 
   function previewPhoto(input) {
     if (!input.files || !input.files[0]) return;
+    
+    const file = input.files[0];
     const reader = new FileReader();
-    reader.onload = e => document.getElementById('previewImg').src = e.target.result;
-    reader.readAsDataURL(input.files[0]);
+    
+    reader.onload = function(e) {
+        // Update the preview image immediately
+        document.getElementById('previewImg').src = e.target.result;
+        
+        // Also update the profile image in the navigation bar
+        const navProfileImg = document.querySelector('.profile-nav img');
+        if (navProfileImg) {
+            navProfileImg.src = e.target.result;
+        }
+    };
+    reader.readAsDataURL(file);
+    
+    // Upload to server
     const formData = new FormData();
-    formData.append('profile_pic', input.files[0]);
+    formData.append('profile_pic', file);
     formData.append('action', 'update_pic_only');
-    fetch('student_profile.php', { method: 'POST', body: formData }).then(r => r.json()).then(data => {
-      if (data.success) showToast('Profile photo updated!');
-      else showToast('Upload failed: ' + data.error);
+    
+    fetch('student_profile.php', { 
+        method: 'POST', 
+        body: formData 
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Profile photo updated successfully!');
+            
+            // Add timestamp to prevent caching
+            const timestamp = new Date().getTime();
+            const newSrc = '../uploads/profiles/' + data.filename + '?v=' + timestamp;
+            
+            // Update both images with the server filename to ensure persistence after refresh
+            document.getElementById('previewImg').src = newSrc;
+            const navProfileImg = document.querySelector('.profile-nav img');
+            if (navProfileImg) {
+                navProfileImg.src = newSrc;
+            }
+        } else {
+            showToast('Upload failed: ' + (data.error || 'Unknown error'));
+            // Revert to original image if upload failed
+            location.reload();
+        }
+    })
+    .catch(error => {
+        showToast('Upload failed: Network error');
+        console.error('Error:', error);
     });
-  }
+}
 
   function togglePwd(inputId, iconId) {
     const inp = document.getElementById(inputId);

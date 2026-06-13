@@ -1,4 +1,5 @@
 <?php
+session_start(); // Add this line
 header('Content-Type: application/json');
 include 'config.php';
 
@@ -39,7 +40,13 @@ if ($booking['status'] === 'completed') {
 $session_time = strtotime($booking['booking_date'] . ' ' . $booking['booking_time']);
 $current_time = time();
 
-if ($current_time > $session_time) {
+// Debug logging - check what's happening
+error_log("Session time: " . date('Y-m-d H:i:s', $session_time));
+error_log("Current time: " . date('Y-m-d H:i:s', $current_time));
+error_log("Current time >= Session time: " . (($current_time >= $session_time) ? 'true' : 'false'));
+
+// Use >= to allow confirmation at or after session time
+if ($current_time >= $session_time) {
     echo json_encode(['can_complete' => true, 'message' => 'Can complete session']);
 } else {
     $wait_minutes = ceil(($session_time - $current_time) / 60);

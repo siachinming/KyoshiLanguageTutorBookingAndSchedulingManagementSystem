@@ -20,6 +20,99 @@ $is_partial = false;
 $original_payment_id = 0;
 $partial_amount = 0;
 
+// ========== SECURE FIX: Calculate remaining amount from database ==========
+// Check if this is a remaining payment (from booking_detail.php)
+if (isset($_GET['booking_id']) && isset($_GET['type']) && $_GET['type'] === 'remaining') {
+    $booking_id = intval($_GET['booking_id']);
+    
+    // Get the booking and calculate remaining amount from database
+    $calcStmt = $conn->prepare("
+        SELECT 
+            b.id,
+            tp.rate as total_amount,
+            COALESCE((
+                SELECT SUM(
+                    CASE 
+                        WHEN p.status = 'rejected' AND p.actual_paid_amount IS NOT NULL AND p.actual_paid_amount > 0 
+                        THEN p.actual_paid_amount 
+                        WHEN p.status = 'rejected' THEN p.amount
+                        ELSE 0 
+                    END
+                ) FROM payments p 
+                WHERE p.booking_id = b.id AND p.status = 'rejected'
+            ), 0) as total_paid
+        FROM bookings b
+        JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
+        WHERE b.id = ? AND b.student_id = ?
+    ");
+    $calcStmt->bind_param("ii", $booking_id, $userID);
+    $calcStmt->execute();
+    $calcResult = $calcStmt->get_result()->fetch_assoc();
+    $calcStmt->close();
+    
+    if ($calcResult) {
+        $total_expected = $calcResult['total_amount'];
+        $total_paid = $calcResult['total_paid'];
+        $remaining_amount = $total_expected - $total_paid;
+        
+        if ($remaining_amount > 0) {
+            $booking_ids = [$booking_id];
+            $is_partial = true;
+            $partial_amount = $remaining_amount;
+            
+            error_log("SECURE REMAINING PAYMENT: Booking ID $booking_id, Expected: $total_expected, Paid: $total_paid, Remaining: $remaining_amount");
+            
+            // Get original payment ID for tracking
+            $origStmt = $conn->prepare("
+                SELECT id FROM payments 
+                WHERE booking_id = ? AND student_id = ? AND status = 'rejected' 
+                AND rejection_type IN ('wrong_amount', 'underpaid_bulk')
+                ORDER BY created_at DESC LIMIT 1
+            ");
+            $origStmt->bind_param("ii", $booking_id, $userID);
+            $origStmt->execute();
+            $origResult = $origStmt->get_result()->fetch_assoc();
+            if ($origResult) {
+                $original_payment_id = $origResult['id'];
+            }
+            $origStmt->close();
+        }
+    }
+}
+// ========== END SECURE FIX ==========
+
+// Check if this is a partial payment (pay remaining)
+if (isset($_GET['payment_id']) && isset($_GET['type']) && $_GET['type'] === 'partial') {
+    $original_payment_id = intval($_GET['payment_id']);
+    
+    // Get the original payment and its booking
+    $checkStmt = $conn->prepare("
+        SELECT p.booking_id, p.actual_paid_amount, p.amount as expected_amount,
+               b.tutor_id, b.booking_date, b.booking_time, b.language, tp.rate
+        FROM payments p
+        JOIN bookings b ON p.booking_id = b.id
+        JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
+        WHERE p.id = ? AND p.student_id = ?
+    ");
+    $checkStmt->bind_param("ii", $original_payment_id, $userID);
+    $checkStmt->execute();
+    $paymentInfo = $checkStmt->get_result()->fetch_assoc();
+    
+    if ($paymentInfo) {
+        $paid_amount = $paymentInfo['actual_paid_amount'] ?? $paymentInfo['expected_amount'];
+        $remaining = $paymentInfo['rate'] - $paid_amount;
+        
+        error_log("PARTIAL PAYMENT: Booking ID {$paymentInfo['booking_id']}, Paid: $paid_amount, Remaining: $remaining");
+        
+        // Force the booking_ids to be the original booking (NOT creating new)
+        $_GET['booking_id'] = $paymentInfo['booking_id'];
+        $_GET['amount'] = $remaining;
+        $is_partial = true;
+        $original_payment_id = $original_payment_id;
+        $partial_amount = $remaining;
+    }
+    $checkStmt->close();
+}
 
 // FIRST: Check if this is a partial payment with payment_id (from rejected payment)
 if (isset($_GET['payment_id']) && isset($_GET['type']) && $_GET['type'] === 'partial') {
@@ -166,8 +259,35 @@ if (empty($bookings)) {
     exit();
 }
 
+// ===== ADD THIS CODE HERE =====
+// For partial payments, ensure we only have ONE booking (prevent duplicates)
+if ($is_partial && isset($original_payment_id) && $original_payment_id > 0) {
+    // For partial payments, we should only have ONE booking
+    if (count($bookings) > 1) {
+        error_log("WARNING: Partial payment has multiple bookings, filtering to original only");
+        
+        // Get the original booking ID from the paymentInfo we already have
+        if (isset($paymentInfo) && $paymentInfo) {
+            $original_booking_id = $paymentInfo['booking_id'];
+            
+            // Filter to only the original booking
+            $filtered_bookings = array_filter($bookings, function($b) use ($original_booking_id) {
+                return $b['id'] == $original_booking_id;
+            });
+            
+            if (!empty($filtered_bookings)) {
+                $bookings = array_values($filtered_bookings);
+                $is_multi = false;
+                error_log("Filtered to booking ID: " . $bookings[0]['id']);
+            }
+        }
+    }
+}
+// ===== END OF ADDED CODE =====
+
 // Calculate total amount
 $total_amount = 0;
+
 foreach ($bookings as $booking) {
     if (isset($booking['total_amount']) && $booking['total_amount'] > 0) {
         $total_amount += $booking['total_amount'];
@@ -258,7 +378,7 @@ function sendAdminPaymentEmail($booking_ids, $method, $receiptNo, $total_amount,
                         <td style='padding:8px;border:1px solid #ddd;'>" . date('d M Y, g:i A', strtotime($booking['booking_date'] . ' ' . $booking['booking_time'])) . "</td></tr>";
     }
     
-    $adminLink = "http://kyoshitutor.site/php/admin/admin_payments.php";
+    $adminLink = "http://kyoshitutor.site/php/admin_payments.php";
     
     $mail = new PHPMailer(true);
     
@@ -732,6 +852,8 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     </div>
 </div>
 
+
+
 <!-- QR Code Expanded Modal -->
 <div id="qrModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;">
     <div style="position:relative;background:white;padding:20px;border-radius:20px;max-width:500px;width:90%;text-align:center;">
@@ -820,6 +942,13 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
               </p>
           <?php endif; ?>
       </div>
+
+      <div style=" padding: 12px; border-radius: 10px; margin: 15px 0; border: 1px solid #f59e0b;">
+            <p style="margin: 0; font-size: 12px; color: #92400e; font-weight: 500;">
+                <strong>Cancellation Policy:</strong> No refund for student cancellation after payment. <br>
+                Only refund if <strong>tutor doesn't show up</strong> <br>(Report within 48 hours).
+            </p>
+        </div>
         
         <button class="btn-primary" style="margin-top:16px;" onclick="submitPayment()">
           <i class="bi bi-lock-fill"></i> Confirm Payment
@@ -830,7 +959,21 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     </div>
   </div>
 </div>
+<!-- Loading Overlay -->
+<div id="paymentLoadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; backdrop-filter: blur(3px);">
+    <div style="background: white; padding: 30px 40px; border-radius: 30px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+        <div class="spinner-border" style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #E75A9B; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
+        <p style="font-size: 16px; font-weight: 700; color: #342635; margin: 0;">Processing your payment…</p>
+        <p style="font-size: 12px; color: #7B6178; margin-top: 8px;">Please do not refresh the page.</p>
+    </div>
+</div>
 
+<style>
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+</style>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -838,7 +981,6 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   let isMulti = <?= json_encode($is_multi) ?>;
   let totalAmount = <?= $total_amount ?>;
   let firstBookingId = <?= $first_booking['id'] ?>;
-
 function submitPayment() {
     if (!selectedMethod) {
         showToast('Please select a payment method');
@@ -850,22 +992,40 @@ function submitPayment() {
         return;
     }
 
+    // Show loading overlay
+    const overlay = document.getElementById('paymentLoadingOverlay');
+    if (overlay) overlay.style.display = 'flex';
+
+    // For Stripe – redirect after a tiny delay to show the overlay
     if (selectedMethod === 'stripe') {
-        submitStripe();
+        setTimeout(function() {
+            submitStripe();
+        }, 100);
         return;
     }
 
+    // For manual methods – validate proof file
     if ((selectedMethod === 'online_banking' || selectedMethod === 'duitnow')) {
-        const file = document.querySelector('input[name="proof_image"]').files[0];
+        const fileInput = document.querySelector('input[name="proof_image"]');
+        const file = fileInput ? fileInput.files[0] : null;
         if (!file) {
+            if (overlay) overlay.style.display = 'none';
             showToast('Please upload payment proof');
             return;
         }
     }
 
-    // For partial payment, add hidden fields to the form
+    // Add partial payment hidden fields if needed
     <?php if ($is_partial): ?>
     const form = document.getElementById('paymentForm');
+    // Remove existing hidden fields to avoid duplicates
+    const existingPartial = form.querySelector('input[name="is_partial"]');
+    if (existingPartial) existingPartial.remove();
+    const existingOriginal = form.querySelector('input[name="original_payment_id"]');
+    if (existingOriginal) existingOriginal.remove();
+    const existingRemaining = form.querySelector('input[name="remaining_amount"]');
+    if (existingRemaining) existingRemaining.remove();
+    
     const partialInput = document.createElement('input');
     partialInput.type = 'hidden';
     partialInput.name = 'is_partial';
@@ -885,9 +1045,9 @@ function submitPayment() {
     form.appendChild(remainingInput);
     <?php endif; ?>
     
+    // Submit the form – the overlay stays because the page will reload
     document.getElementById('paymentForm').submit();
 }
-
   function selectMethod(el, val) {
     document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
     el.classList.add('selected');
@@ -914,17 +1074,16 @@ function submitPayment() {
   }
 function submitStripe() {
     <?php if ($is_partial && $partial_amount > 0): ?>
-        // For partial payment, send the remaining amount to Stripe
+        // For partial payment, use the existing booking ID
+        var bookingId = firstBookingId;
         var amount = <?= $partial_amount ?>;
         var originalPayment = <?= $original_payment_id ?>;
-        var bookingId = firstBookingId;
+        // Pass the existing booking ID, NOT create a new one
         window.location.href = 'create_stripe_session.php?booking_id=' + bookingId + '&amount=' + amount + '&is_partial=1&original_payment=' + originalPayment;
     <?php elseif ($is_multi): ?>
-        // For multiple bookings, send all booking IDs to Stripe
         const bookingIds = <?= json_encode(array_column($bookings, 'id')) ?>;
         window.location.href = 'create_stripe_session.php?booking_ids=' + bookingIds.join(',');
     <?php else: ?>
-        // For regular single booking
         window.location.href = 'create_stripe_session.php?booking_id=' + firstBookingId;
     <?php endif; ?>
 }
@@ -978,6 +1137,11 @@ function expandQRCode() {
         console.log("Modal opened");
     }
 }
+
+window.addEventListener('pageshow', function() {
+    const overlay = document.getElementById('paymentLoadingOverlay');
+    if (overlay) overlay.style.display = 'none';
+});
 
 function closeQRModal() {
     const modal = document.getElementById('qrModal');

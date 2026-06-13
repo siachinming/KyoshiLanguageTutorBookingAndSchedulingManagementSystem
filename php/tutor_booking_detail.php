@@ -1068,18 +1068,19 @@ if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['
         
         if (!empty($logs)):
         ?>
-            <?php foreach ($logs as $log): ?>
-            <div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid #eef2f7;">
-                <i class="bi bi-person-circle"></i> <strong><?= ucfirst(e($log['participant_role'])) ?></strong>
-                joined: <?= date('d M Y, g:i A', strtotime($log['join_time'])) ?>
-                <?php if ($log['leave_time']): ?>
-                    - left: <?= date('g:i A', strtotime($log['leave_time'])) ?>
-                    <span style="color: #28a745;">(<?= $log['duration_minutes'] ?> min)</span>
-                <?php else: ?>
-                    <span style="color: #f59e0b;">(Active)</span>
-                <?php endif; ?>
-            </div>
-            <?php endforeach; ?>
+           <?php foreach ($logs as $log): ?>
+<div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid #eef2f7;">
+    <i class="bi bi-person-circle"></i> <strong><?= e($log['participant_name']) ?></strong>
+    <span style="font-size: 10px; color: #64748b;">(<?= ucfirst(e($log['participant_role'])) ?>)</span>
+    joined: <?= date('d M Y, g:i A', strtotime($log['join_time'])) ?>
+    <?php if ($log['leave_time']): ?>
+        - left: <?= date('g:i A', strtotime($log['leave_time'])) ?>
+        <span style="color: #28a745;">(<?= $log['duration_minutes'] ?> min)</span>
+    <?php else: ?>
+        <span style="color: #f59e0b;">(Active)</span>
+    <?php endif; ?>
+</div>
+<?php endforeach; ?>
         <?php else: ?>
             <p style="font-size: 12px; color: #64748b; margin: 0; text-align: center;">
                 <i class="bi bi-info-circle"></i> No meeting activity recorded yet.
@@ -1112,7 +1113,7 @@ if (!empty($user['profile_pic']) && file_exists('../uploads/profiles/' . $user['
         <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px;">
             <i class="bi bi-exclamation-triangle-fill" style="color: #856404;"></i>
             <span style="font-size: 11px; color: #856404;">
-                This session has ended. Please record your leave time.
+                Please record your leave time after session ended.
             </span>
         </div>
         <?php endif; ?>
@@ -1722,6 +1723,9 @@ function recordMeetingLeave(bookingId) {
             if (data.success) {
                 setTimeout(() => location.reload(), 1500);
             }
+        })
+        .catch(error => {
+            showToast('Error recording leave time', 'error');
         });
     }
 }

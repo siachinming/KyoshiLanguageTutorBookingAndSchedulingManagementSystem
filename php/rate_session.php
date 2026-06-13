@@ -130,7 +130,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     .brand img{width:44px;height:44px;object-fit:contain;border-radius:14px}
     .brand strong{display:block;font-size:18px;line-height:1.05}
     .brand span{display:block;margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap}
-    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.58);border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
+    .nav-links{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(242,138,178,.18);border-radius:999px;padding:7px;overflow:auto;scrollbar-width:none;}
     .nav-links::-webkit-scrollbar{display:none}
     .nav-links a{flex:0 0 auto;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:900;color:#6D4964;white-space:nowrap;transition:.18s ease}
     .nav-links a.active,.nav-links a:hover{background:linear-gradient(135deg,var(--hot-pink),var(--pink));color:#fff}
@@ -248,14 +248,14 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
         <img src="<?= e($assetBase) ?>/logo.png" alt="Kyoshi">
         <div><strong>Kyoshi</strong><span>Student Learning Space</span></div>
       </a>
-      <div class="nav-links">
-        <a href="student_dashboard.php">Home</a>
-        <a href="student_dashboard.php#preferences">Learning Goals</a>
-        <a href="find_language.php">Find Language</a>
-        <a href="booking_status.php" class="active">Bookings</a>
-        <a href="student_dashboard.php#progress">Progress</a>
-        <a href="student_dashboard.php#payments">Payments</a>
-      </div>
+        <div class="nav-links">
+          <a href="student_dashboard.php">Home</a>
+          <a  href="find_language.php">Find Language</a>
+          <a href="booking_status.php">My Bookings</a>
+          <a class="active" href="my_payments.php">My Payments</a>
+          <a href="my_materials.php">My Materials</a>
+          <a href="my_assignments.php">My Assignments</a>
+        </div>
       <div class="nav-actions">
         <div style="position:relative;">
           <button class="profile" onclick="toggleDropdown()" id="profileBtn">

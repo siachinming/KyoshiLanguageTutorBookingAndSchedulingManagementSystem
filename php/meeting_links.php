@@ -7,6 +7,132 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'tutor') {
     exit();
 }
 
+// Add this after the existing requires
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+require '../vendor/autoload.php';
+
+// Add this email function
+function sendMeetingLinkEmail($conn, $booking_id, $meeting_link, $action_type = 'update') {
+    // Get booking details with student and tutor info
+    $stmt = $conn->prepare("
+        SELECT b.*, 
+               s.fullname as student_name, s.email as student_email,
+               t.fullname as tutor_name
+        FROM bookings b
+        LEFT JOIN users s ON b.student_id = s.id
+        LEFT JOIN users t ON b.tutor_id = t.id
+        WHERE b.id = ?
+    ");
+    $stmt->bind_param("i", $booking_id);
+    $stmt->execute();
+    $booking = $stmt->get_result()->fetch_assoc();
+    
+    if (!$booking || empty($booking['student_email'])) {
+        error_log("No student email found for booking ID: $booking_id");
+        return false;
+    }
+    
+    $mail = new PHPMailer(true);
+    
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER; 
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($booking['student_email'], $booking['student_name']);
+        
+        $mail->isHTML(true);
+        
+        if ($action_type == 'first_time') {
+            $mail->Subject = 'Your Online Session Meeting Link - Kyoshi';
+            $mail->Body = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
+                <div style='text-align:center;margin-bottom:24px;'>
+                    <div style='background:#E75A9B;width:60px;height:60px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;'>
+                        <span style='font-size:32px;color:white;'>🎥</span>
+                    </div>
+                    <h2 style='color:#E75A9B;margin:0;'>Meeting Link Ready!</h2>
+                </div>
+                
+                <p>Dear <strong>" . htmlspecialchars($booking['student_name']) . "</strong>,</p>
+                
+                <p>Your tutor <strong>" . htmlspecialchars($booking['tutor_name']) . "</strong> has provided the meeting link for your upcoming session.</p>
+                
+                <div style='background:#f0fdf4;padding:16px;border-radius:12px;margin:16px 0;border:1px solid #86efac;'>
+                    <p style='margin:0 0 8px 0;'><strong>Session Details:</strong></p>
+                    <p style='margin:4px 0;'><strong>Language:</strong> " . htmlspecialchars($booking['language']) . "</p>
+                    <p style='margin:4px 0;'><strong>Date:</strong> " . date('d M Y', strtotime($booking['booking_date'])) . "</p>
+                    <p style='margin:4px 0;'><strong>Time:</strong> " . date('h:i A', strtotime($booking['booking_time'])) . "</p>
+                </div>
+                
+                <div style='background:#e0f2fe;padding:16px;border-radius:12px;margin:16px 0;text-align:center;'>
+                    <p style='margin:0 0 12px 0;'><strong>🔗 Join your session here:</strong></p>
+                    <a href='" . htmlspecialchars($meeting_link) . "' 
+                       style='display:inline-block;padding:12px 24px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
+                        Click to Join Meeting
+                    </a>
+                    <p style='margin:12px 0 0 0;font-size:12px;color:#64748b;'>The link will also be available in your My Bookings page.</p>
+                </div>
+                
+                <hr style='margin:24px 0 16px;'>
+                <p style='font-size:12px;color:#666;text-align:center;'>This is an automated message from Kyoshi.</p>
+            </div>
+            ";
+        } else {
+            $mail->Subject = 'Meeting Link Updated - Kyoshi';
+            $mail->Body = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
+                <div style='text-align:center;margin-bottom:24px;'>
+                    <div style='background:#f59e0b;width:60px;height:60px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;'>
+                        <span style='font-size:32px;color:white;'>🔄</span>
+                    </div>
+                    <h2 style='color:#f59e0b;margin:0;'>Meeting Link Updated</h2>
+                </div>
+                
+                <p>Dear <strong>" . htmlspecialchars($booking['student_name']) . "</strong>,</p>
+                
+                <p>Your tutor <strong>" . htmlspecialchars($booking['tutor_name']) . "</strong> has updated the meeting link for your upcoming session.</p>
+                
+                <div style='background:#f0fdf4;padding:16px;border-radius:12px;margin:16px 0;border:1px solid #86efac;'>
+                    <p style='margin:0 0 8px 0;'><strong>Session Details:</strong></p>
+                    <p style='margin:4px 0;'><strong>Language:</strong> " . htmlspecialchars($booking['language']) . "</p>
+                    <p style='margin:4px 0;'><strong>Date:</strong> " . date('d M Y', strtotime($booking['booking_date'])) . "</p>
+                    <p style='margin:4px 0;'><strong>Time:</strong> " . date('h:i A', strtotime($booking['booking_time'])) . "</p>
+                </div>
+                
+                <div style='background:#e0f2fe;padding:16px;border-radius:12px;margin:16px 0;text-align:center;'>
+                    <p style='margin:0 0 12px 0;'><strong>🔗 New Meeting Link:</strong></p>
+                    <a href='" . htmlspecialchars($meeting_link) . "' 
+                       style='display:inline-block;padding:12px 24px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
+                        Click to Join Meeting
+                    </a>
+                </div>
+                
+                <div style='background:#fef3c7;padding:12px;border-radius:8px;margin:16px 0;'>
+                    <p style='margin:0;font-size:12px;'><i class='bi bi-info-circle'></i> Please use this new link for your session. The previous link is no longer valid.</p>
+                </div>
+                
+                <hr style='margin:24px 0 16px;'>
+                <p style='font-size:12px;color:#666;text-align:center;'>This is an automated message from Kyoshi.</p>
+            </div>
+            ";
+        }
+        
+        $mail->send();
+        error_log("Meeting link email sent to: " . $booking['student_email'] . " for booking: $booking_id");
+        return true;
+        
+    } catch (Exception $e) {
+        error_log("Meeting link email failed for booking $booking_id: " . $mail->ErrorInfo);
+        return false;
+    }
+}
+
 $userID = $_SESSION['user_id'];
 $assetBase = '../assets/img';
 
@@ -36,7 +162,6 @@ $bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 $success_msg = '';
 $error_msg = '';
-
 // Handle single update via AJAX (for the modal) - DIRECT DATABASE UPDATE
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['HTTP_CONTENT_TYPE']) && strpos($_SERVER['HTTP_CONTENT_TYPE'], 'application/json') !== false) {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -55,27 +180,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['HTTP_CONTENT_TYPE']
         }
         
         // Verify booking belongs to this tutor
-        $checkStmt = $conn->prepare("SELECT id FROM bookings WHERE id = ? AND tutor_id = ?");
+        $checkStmt = $conn->prepare("SELECT meeting_link FROM bookings WHERE id = ? AND tutor_id = ?");
         $checkStmt->bind_param("ii", $booking_id, $userID);
         $checkStmt->execute();
-        if ($checkStmt->get_result()->num_rows === 0) {
+        $result = $checkStmt->get_result();
+        if ($result->num_rows === 0) {
             echo json_encode(['success' => false, 'message' => 'Booking not found']);
             exit();
         }
+        $existing = $result->fetch_assoc();
+        $had_link_before = !empty($existing['meeting_link']);
         
         // Update the meeting link directly
         $updateStmt = $conn->prepare("UPDATE bookings SET meeting_link = ?, link_provided_at = NOW() WHERE id = ?");
         $updateStmt->bind_param("si", $meeting_link, $booking_id);
         
         if ($updateStmt->execute()) {
-            echo json_encode(['success' => true, 'message' => 'Meeting link updated']);
+            // Send email notification to student
+            $email_sent = sendMeetingLinkEmail($conn, $booking_id, $meeting_link, $had_link_before ? 'update' : 'first_time');
+            
+            echo json_encode([
+                'success' => true, 
+                'message' => 'Meeting link updated' . ($email_sent ? ' and email sent to student!' : ' (email failed)'),
+                'email_sent' => $email_sent
+            ]);
         } else {
             echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
         }
         exit();
     }
 }
-// Handle bulk update - Overwrite All (DIRECT DATABASE UPDATE - NO CURL)
+// Handle bulk update - Overwrite All
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_overwrite'])) {
     $bulk_link = trim($_POST['bulk_link']);
     if (empty($bulk_link)) {
@@ -85,37 +220,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_overwrite
     } else {
         $updated_count = 0;
         $failed_count = 0;
+        $email_sent_count = 0;
         foreach ($bookings as $booking) {
+            $had_link_before = !empty($booking['meeting_link']);
             $updateStmt = $conn->prepare("UPDATE bookings SET meeting_link = ?, link_provided_at = NOW() WHERE id = ? AND tutor_id = ?");
             $updateStmt->bind_param("sii", $bulk_link, $booking['id'], $userID);
             $updateStmt->execute();
             
-            // Check if any row was actually affected
             if ($updateStmt->affected_rows > 0) {
                 $updated_count++;
+                // Send email notification to student
+                if (sendMeetingLinkEmail($conn, $booking['id'], $bulk_link, $had_link_before ? 'update' : 'first_time')) {
+                    $email_sent_count++;
+                }
             } else {
                 $failed_count++;
             }
             $updateStmt->close();
         }
         
-        // Refresh the bookings data after update
-        $stmt = $conn->prepare("
-            SELECT b.id, b.booking_date, b.booking_time, b.language, b.meeting_link, b.learning_mode,
-                   u.fullname as student_name, u.id as student_id
-            FROM bookings b
-            JOIN users u ON b.student_id = u.id
-            WHERE b.tutor_id = ? 
-            AND b.status = 'confirmed' 
-            AND b.learning_mode = 'online'
-            AND b.booking_date >= CURDATE()
-            ORDER BY b.booking_date ASC, b.booking_time ASC
-        ");
-        $stmt->bind_param("i", $userID);
-        $stmt->execute();
-        $bookings = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        
-        $success_msg = "$updated_count meetings updated successfully" . ($failed_count > 0 ? " ($failed_count failed)" : "");
+        $success_msg = "$updated_count meetings updated successfully (emails sent: $email_sent_count)" . ($failed_count > 0 ? " ($failed_count failed)" : "");
         header("Location: meeting_links.php?success=" . urlencode($success_msg));
         exit();
     }
@@ -132,6 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_skip'])) 
         $updated_count = 0;
         $skipped_count = 0;
         $failed_count = 0;
+        $email_sent_count = 0;
         foreach ($bookings as $booking) {
             // Only update if no meeting link exists
             if (empty($booking['meeting_link']) || $booking['meeting_link'] === null) {
@@ -141,6 +266,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_skip'])) 
                 
                 if ($updateStmt->affected_rows > 0) {
                     $updated_count++;
+                    // Send email notification (first time only)
+                    if (sendMeetingLinkEmail($conn, $booking['id'], $bulk_link, 'first_time')) {
+                        $email_sent_count++;
+                    }
                 } else {
                     $failed_count++;
                 }
@@ -149,7 +278,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_update_skip'])) 
                 $skipped_count++;
             }
         }
-        
+                
         // Refresh the bookings data after update
         $stmt = $conn->prepare("
             SELECT b.id, b.booking_date, b.booking_time, b.language, b.meeting_link, b.learning_mode,

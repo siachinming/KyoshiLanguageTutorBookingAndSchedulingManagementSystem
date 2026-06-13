@@ -47,7 +47,7 @@ $stmt2 = $conn->prepare("INSERT INTO password_resets (email, token, created_at) 
 $stmt2->bind_param("sss", $email, $token, $token);
 $stmt2->execute();
 
-$resetLink = "http://" . $_SERVER['HTTP_HOST'] . "/kyoshi/php/reset_password.php?token=$token";
+$resetLink = "http://kyoshitutor.site/php/reset_password.php?token=$token";
 
 $mail = new PHPMailer(true);
 

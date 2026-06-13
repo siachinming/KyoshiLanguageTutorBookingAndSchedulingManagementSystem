@@ -21,7 +21,7 @@ $status   = ($role === 'tutor') ? 'pending' : 'approved';
 
 // ── Validate role ────────────────────────────────────────────────
 if (!in_array($role, ['student', 'tutor'])) {
-    $_SESSION['error'] = "Invalid role selected.Please select a role";
+    $_SESSION['error'] = "Invalid role selected. Please select a role";
     header("Location: signup.php");
     exit();
 }
@@ -33,16 +33,23 @@ if (empty($fullname) || empty($email) || empty($password) || empty($confirm)) {
     exit();
 }
 
+// ── Phone number required for ALL roles ──────────────────────────
+if (empty($phone)) {
+    $_SESSION['error'] = "Phone number is required. Please enter your phone number.";
+    header("Location: signup.php");
+    exit();
+}
+
 // ── Valid email ──────────────────────────────────────────────────
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    $_SESSION['error'] = "Please enter a valid email address.Try again";
+    $_SESSION['error'] = "Please enter a valid email address. Try again";
     header("Location: signup.php");
     exit();
 }
 
 // ── Password match ───────────────────────────────────────────────
 if ($password !== $confirm) {
-    $_SESSION['error'] = "Passwords do not match.Try again";
+    $_SESSION['error'] = "Passwords do not match. Try again";
     header("Location: signup.php");
     exit();
 }
@@ -66,18 +73,17 @@ if ($check->num_rows > 0) {
 }
 $check->close();
 
-// ── Profile picture required for tutor ───────────────────────────
+// ── Profile picture required for tutor only ──────────────────────
+$profile_pic = null; // Default NULL for students
+
 if ($role === 'tutor') {
     if (empty($_FILES['profile_pic']['name'])) {
         $_SESSION['error'] = "Tutors must upload a profile photo. Students need to see who they are booking with. Please try again.";
         header("Location: signup.php");
-    exit();
+        exit();
     }
-}
-
-// ── Profile picture upload (all roles) ───────────────────────────
-$profile_pic = '';
-if (!empty($_FILES['profile_pic']['name'])) {
+    
+    // Upload profile picture for tutor
     $uploadDir = '../uploads/profiles/';
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
 
@@ -99,15 +105,10 @@ if (!empty($_FILES['profile_pic']['name'])) {
     $filename = 'profile_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
     if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $uploadDir . $filename)) {
         $profile_pic = $filename;
-    }
-}
-
-// If no profile picture uploaded, set default based on role
-if (empty($profile_pic)) {
-    if ($role === 'tutor') {
-        $profile_pic = 'default-tutor.png';
     } else {
-        $profile_pic = 'default-student.png';
+        $_SESSION['error'] = "Failed to upload profile picture. Please try again.";
+        header("Location: signup.php");
+        exit();
     }
 }
 
@@ -116,11 +117,23 @@ $hashed = password_hash($password, PASSWORD_DEFAULT);
 $verify_token = bin2hex(random_bytes(32));
 $is_verified = 0;
 
-$stmt = $conn->prepare("
-    INSERT INTO users (fullname, email, password, phone, role, profile_pic, status, verification_token, is_verified)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-");
-$stmt->bind_param("ssssssssi", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status, $verify_token, $is_verified);
+// ── INSERT into users with proper NULL handling ──────────────────
+if ($role === 'student') {
+    // Student: phone required, profile_pic = NULL
+    $stmt = $conn->prepare("
+        INSERT INTO users (fullname, email, password, phone, role, profile_pic, status, verification_token, is_verified)
+        VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+    ");
+    $stmt->bind_param("sssssssi", $fullname, $email, $hashed, $phone, $role, $status, $verify_token, $is_verified);
+} else {
+    // Tutor: phone required, profile_pic has value
+    $stmt = $conn->prepare("
+        INSERT INTO users (fullname, email, password, phone, role, profile_pic, status, verification_token, is_verified)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->bind_param("ssssssssi", $fullname, $email, $hashed, $phone, $role, $profile_pic, $status, $verify_token, $is_verified);
+}
+
 if (!$stmt->execute()) {
     $_SESSION['error'] = "Something went wrong creating your account. Please try again.";
     header("Location: signup.php");
@@ -136,7 +149,7 @@ if ($role === 'tutor') {
     $rate       = trim($_POST['rate']         ?? '');
     $bio        = trim($_POST['bio']          ?? '');
     
-    // ========== INSERT INTO TUTOR_PROFILES (NO qualification column) ==========
+    // ========== INSERT INTO TUTOR_PROFILES ==========
     $stmt2 = $conn->prepare("
         INSERT INTO tutor_profiles (user_id, experience, rate, bio)
         VALUES (?, ?, ?, ?)
@@ -350,5 +363,4 @@ if ($emailSent) {
 
 header("Location: login.php");
 exit();
-
 ?>

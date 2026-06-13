@@ -7,6 +7,7 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require '../vendor/autoload.php';
 
+
 // Email sending function
 function sendPaymentStatusEmail($conn, $payment_id, $status, $reason = '') {
     // Get payment details with student and booking info
@@ -161,6 +162,79 @@ function sendOverpaymentEmail($conn, $payment_id, $actual_paid, $expected, $over
     }
 }
 
+// Send underpaid email to student
+function sendUnderpaidEmail($conn, $payment_id, $actual_paid, $expected, $remaining) {
+    $stmt = $conn->prepare("
+        SELECT p.*, 
+               b.booking_date, b.booking_time,
+               s.fullname as student_name, s.email as student_email,
+               t.fullname as tutor_name
+        FROM payments p
+        LEFT JOIN bookings b ON p.booking_id = b.id
+        LEFT JOIN users s ON p.student_id = s.id
+        LEFT JOIN users t ON p.tutor_id = t.id
+        WHERE p.id = ?
+    ");
+    $stmt->bind_param("i", $payment_id);
+    $stmt->execute();
+    $payment = $stmt->get_result()->fetch_assoc();
+    
+    if (!$payment || empty($payment['student_email'])) {
+        return false;
+    }
+    
+    $mail = new PHPMailer(true);
+    
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER; 
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port       = 587;
+        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+        $mail->addAddress($payment['student_email'], $payment['student_name']);
+        
+        $mail->isHTML(true);
+        $mail->Subject = 'Partial Payment Received - Kyoshi';
+        $mail->Body = "
+            <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;'>
+                <div style='text-align:center;margin-bottom:24px;'>
+                    <h2 style='color:#f59e0b;margin-top:8px;'>Partial Payment Received</h2>
+                </div>
+                <p>Dear <strong>" . htmlspecialchars($payment['student_name']) . "</strong>,</p>
+                <p>We have received your payment, but the amount is less than expected.</p>
+                <div style='background:#fef3c7;padding:16px;border-radius:12px;margin:16px 0;'>
+                    <p><strong>You paid:</strong> RM " . number_format($actual_paid, 2) . "</p>
+                    <p><strong>Expected amount:</strong> RM " . number_format($expected, 2) . "</p>
+                    <p><strong>Remaining to pay:</strong> <span style='color:#dc2626;'>RM " . number_format($remaining, 2) . "</span></p>
+                    <p><strong>Booking Date:</strong> " . date('d M Y', strtotime($payment['booking_date'])) . "</p>
+                    <p><strong>Tutor:</strong> " . htmlspecialchars($payment['tutor_name']) . "</p>
+                </div>
+                <div style='background:#e0f2fe;padding:16px;border-radius:12px;margin:16px 0;'>
+                    <p><strong>What happens next?</strong></p>
+                    <p>Please pay the remaining <strong>RM " . number_format($remaining, 2) . "</strong> to confirm your booking.</p>
+                    <p style='margin-top:10px;'>
+                        <a href='http://kyoshitutor.site/php/booking_detail.php?id={$payment['booking_id']}' 
+                           style='display:inline-block;padding:10px 20px;background:#f59e0b;color:white;border-radius:30px;text-decoration:none;font-weight:bold;'>
+                            Pay Remaining Amount →
+                        </a>
+                    </p>
+                </div>
+                <hr>
+                <p style='font-size:12px;color:#666;'>This is an automated message from Kyoshi.</p>
+            </div>
+        ";
+        $mail->send();
+        return true;
+        
+    } catch (Exception $e) {
+        error_log("Underpaid email failed: " . $mail->ErrorInfo);
+        return false;
+    }
+}
+
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header("Location: login.php");
@@ -225,7 +299,12 @@ if (isset($_POST['reject_payment'])) {
     $payment_id = intval($_POST['payment_id']);
     $rejection_reason = $conn->real_escape_string($_POST['rejection_reason'] ?? '');
     $rejection_type = $conn->real_escape_string($_POST['rejection_type'] ?? 'other');
-    $actual_paid_amount = isset($_POST['actual_paid_amount']) ? floatval($_POST['actual_paid_amount']) : null;
+    $actual_paid_amount = null;
+    if (isset($_POST['actual_paid_amount']) && $_POST['actual_paid_amount'] !== '') {
+        $actual_paid_amount = floatval($_POST['actual_paid_amount']);
+    }
+    // Log for debugging
+    error_log("Rejection Debug - Type: $rejection_type, Actual Paid: " . ($actual_paid_amount ?? 'NULL'));
     
     if (empty($rejection_reason)) {
         $_SESSION['error_message'] = "Please provide a rejection reason.";
@@ -289,20 +368,22 @@ if (isset($_POST['reject_payment'])) {
                         WHERE id = $payment_id";
         $conn->query($update_query);
         
-        // Change status to 'accepted' instead of 'cancelled'
-        $conn->query("UPDATE bookings SET status = 'accepted' WHERE id = $booking_id");
+        $conn->query("UPDATE bookings SET status = 'cancelled' WHERE id = $booking_id");
         
         $_SESSION['error_message'] = "Payment rejected: $rejection_reason";
     }
         
         $conn->commit();
         
-        // Send email based on status
-        if ($rejection_type == 'overpaid') {
-            // Email already sent
-        } else if ($rejection_type != 'wrong_amount') {
-            sendPaymentStatusEmail($conn, $payment_id, 'rejected', $rejection_reason);
-        }
+       // Send email based on status
+    if ($rejection_type == 'overpaid') {
+        // Email already sent from the overpaid block
+    } else if ($rejection_type == 'wrong_amount') {
+        // Send a custom email for underpaid (partial payment)
+        sendUnderpaidEmail($conn, $payment_id, $actual_paid_amount, $expected_amount, $total_remaining);
+    } else {
+        sendPaymentStatusEmail($conn, $payment_id, 'rejected', $rejection_reason);
+    }
         
         header("Location: admin_payments.php");
         exit();
@@ -336,70 +417,67 @@ if (isset($_POST['reject_bulk_payment'])) {
             $payment_records[] = $row;
         }
         
-        if ($rejection_type == 'overpaid' && $actual_paid_amount) {
-            // OVERPAID - Verify all payments in this bulk group
+        // Calculate total expected amount
+        $total_expected = 0;
+        foreach ($payment_records as $payment) {
+            $total_expected += $payment['amount'];
+        }
+        
+        // Determine if it's overpaid or underpaid based on actual vs expected
+        $is_overpaid = ($actual_paid_amount > $total_expected);
+        $is_underpaid = ($actual_paid_amount < $total_expected);
+        
+        if ($rejection_type == 'overpaid' && $is_overpaid) {
+            // OVERPAID - Split proportionally
             foreach ($payment_records as $payment) {
                 $expected_amount = $payment['amount'];
-                $overpaid_amount = $actual_paid_amount - $expected_amount;
+                $proportion = $expected_amount / $total_expected;
+                $paid_for_this = round($actual_paid_amount * $proportion, 2);
+                $overpaid_amount = $paid_for_this - $expected_amount;
                 
                 $conn->query("UPDATE payments 
                               SET status = 'verified', 
                                   refund_status = 'pending',
-                                  actual_paid_amount = $actual_paid_amount,
+                                  actual_paid_amount = $paid_for_this,
                                   notes = CONCAT(IFNULL(notes, ''), ' [OVERPAID: RM " . number_format($overpaid_amount, 2) . "]'),
                                   verified_at = NOW()
                               WHERE id = {$payment['id']}");
                 
-                // Confirm booking
                 $conn->query("UPDATE bookings SET status = 'confirmed' WHERE id = {$payment['booking_id']}");
-                
-                // Send overpayment email for each payment
-                sendOverpaymentEmail($conn, $payment['id'], $actual_paid_amount, $expected_amount, $overpaid_amount);
+                sendOverpaymentEmail($conn, $payment['id'], $paid_for_this, $expected_amount, $overpaid_amount);
             }
             
             $_SESSION['success_message'] = "Bulk payments verified! Students overpaid. Please process refunds separately.";
             
-        } else if ($rejection_type == 'wrong_amount' && $actual_paid_amount) {
-    // UNDERPAID - Split payment proportionally by booking amount
-    $total_expected = 0;
-    $booking_ids = [];
-    $student_id = 0;
-    $total_paid = $actual_paid_amount;
-    $booking_amounts = [];  // Store each booking's amount
-    
-    // Calculate total expected amount from all bookings
-    foreach ($payment_records as $payment) {
-        $total_expected += $payment['amount'];
-        $booking_ids[] = $payment['booking_id'];
-        $booking_amounts[$payment['id']] = $payment['amount'];
-        if ($student_id == 0) {
-            $pay_query = $conn->query("SELECT student_id FROM payments WHERE id = {$payment['id']}");
-            $pay_data = $pay_query->fetch_assoc();
-            $student_id = $pay_data['student_id'];
-        }
-    }
-    
-    $total_remaining = $total_expected - $total_paid;
-    $booking_ids_str = implode(',', $booking_ids);
-    
-    // Update each payment with its proportional paid amount
-    foreach ($payment_records as $payment) {
-        // Calculate proportion for this specific booking
-        $proportion = $payment['amount'] / $total_expected;
-        $paid_for_this = round($total_paid * $proportion, 2);
-        $remaining_for_this = round($payment['amount'] - $paid_for_this, 2);
-        
-       $conn->query("UPDATE payments 
-              SET status = 'rejected', 
-                  rejection_type = 'underpaid_bulk',
-                  actual_paid_amount = $paid_for_this,
-                  notes = 'Part of bulk payment...'
-              WHERE id = {$payment['id']}");
-        
-        $conn->query("UPDATE bookings SET status = 'accepted' WHERE id = {$payment['booking_id']}");
-    }
-    
-    }else {
+        } else if ($rejection_type == 'wrong_amount' && $is_underpaid) {
+            // UNDERPAID - Split proportionally
+            $total_paid = $actual_paid_amount;
+            $total_remaining = $total_expected - $total_paid;
+            
+            foreach ($payment_records as $payment) {
+                $proportion = $payment['amount'] / $total_expected;
+                $paid_for_this = round($total_paid * $proportion, 2);
+                $remaining_for_this = round($payment['amount'] - $paid_for_this, 2);
+                
+                // FIX: Set status to 'partial_paid' NOT 'rejected'
+                $conn->query("UPDATE payments 
+                              SET status = 'rejected', 
+                                  rejection_type = 'underpaid_bulk',
+                                  actual_paid_amount = $paid_for_this,
+                                  notes = CONCAT(IFNULL(notes, ''), ' [UNDERPAID: Paid RM $paid_for_this, Remaining: RM $remaining_for_this]')
+                              WHERE id = {$payment['id']}");
+                
+                // FIX: Set booking status to 'pending' NOT 'accepted'
+                $conn->query("UPDATE bookings SET status = 'accepted', 
+                              notes = CONCAT(IFNULL(notes, ''), ' Partial payment received. Remaining balance: RM $remaining_for_this')
+                              WHERE id = {$payment['booking_id']}");
+                
+                sendUnderpaidEmail($conn, $payment['id'], $paid_for_this, $payment['amount'], $remaining_for_this);
+            }
+            
+            $_SESSION['success_message'] = "Bulk payment processed as partial payment. Student needs to pay remaining RM " . number_format($total_remaining, 2);
+            
+        } else {
             // OTHER REJECTIONS - Reject and cancel bookings
             foreach ($payment_records as $payment) {
                 $conn->query("UPDATE payments 
@@ -415,7 +493,6 @@ if (isset($_POST['reject_bulk_payment'])) {
         }
         
         $conn->commit();
-        
         header("Location: admin_payments.php");
         exit();
         
@@ -426,7 +503,6 @@ if (isset($_POST['reject_bulk_payment'])) {
         exit();
     }
 }
-
 // Handle bulk verify urgent payments
 if (isset($_POST['bulk_verify_urgent'])) {
     $conn->query("
@@ -449,6 +525,55 @@ if (isset($_POST['bulk_verify_urgent'])) {
     $_SESSION['success_message'] = "All urgent payments have been verified!";
     header("Location: admin_payments.php");
     exit();
+}
+
+// Handle bulk verify payment (for normal bulk)
+if (isset($_POST['verify_bulk_payment'])) {
+    $receipt_number = $conn->real_escape_string($_POST['receipt_number']);
+    
+    $conn->begin_transaction();
+    
+    try {
+        $payments_query = $conn->query("
+            SELECT id, booking_id, amount, student_id 
+            FROM payments 
+            WHERE receipt_number = '$receipt_number' AND status = 'pending'
+        ");
+        
+        $verified_count = 0;
+        
+        while ($payment = $payments_query->fetch_assoc()) {
+            $receipt_num = 'RCP-' . date('Ymd') . '-' . str_pad($payment['id'], 6, '0', STR_PAD_LEFT);
+            
+            $conn->query("
+                UPDATE payments 
+                SET status = 'verified', 
+                    receipt_number = '$receipt_num', 
+                    verified_at = NOW() 
+                WHERE id = {$payment['id']}
+            ");
+            
+            $conn->query("
+                UPDATE bookings 
+                SET status = 'confirmed' 
+                WHERE id = {$payment['booking_id']}
+            ");
+            
+            sendPaymentStatusEmail($conn, $payment['id'], 'verified');
+            $verified_count++;
+        }
+        
+        $conn->commit();
+        $_SESSION['success_message'] = "$verified_count payment(s) verified successfully!";
+        header("Location: admin_payments.php");
+        exit();
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['error_message'] = "Error processing bulk verification: " . $e->getMessage();
+        header("Location: admin_payments.php");
+        exit();
+    }
 }
 
 // Get filter
@@ -1618,6 +1743,56 @@ td:has(.proof-image) {
         font-size: 12px !important;
     }
 }
+
+/* Rejection Reasons Popup Styling */
+.rejection-reasons-popup {
+    border-radius: 16px !important;
+    padding: 0 !important;
+}
+
+.swal2-popup {
+    font-size: 13px !important;
+}
+
+.swal2-close {
+    color: #dc2626 !important;
+    font-size: 28px !important;
+    transition: all 0.2s ease !important;
+}
+
+.swal2-close:hover {
+    transform: scale(1.1) !important;
+    background: #fee2e2 !important;
+}
+
+/* Custom scrollbar for reasons box */
+.rejection-reasons-popup .swal2-html-container::-webkit-scrollbar {
+    width: 4px;
+}
+
+.rejection-reasons-popup .swal2-html-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.rejection-reasons-popup .swal2-html-container::-webkit-scrollbar-thumb {
+    background: #E75A9B;
+    border-radius: 4px;
+}
+
+/* Fix Swal z-index to appear above modals */
+.swal2-container {
+    z-index: 10000 !important;
+}
+
+.swal2-popup {
+    z-index: 10001 !important;
+}
+
+/* Ensure Swal backdrop covers everything */
+.swal2-backdrop-show {
+    z-index: 9999 !important;
+}
     </style>
 </head>
 <body>
@@ -2003,33 +2178,69 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
                         <td><strong>RM <?= number_format($total_amount, 2) ?></strong></td>
                         <td><span class="method-badge <?= $methodClass ?>"><?= $methodDisplay ?></span></td>
                         <td class="action-cell" style="justify-content:center;">
-                            <?php 
-                            // Check the status of the first payment to determine bulk status
-                            $first_status = $bulk_items[0]['status'];
-                            ?>
-                            <?php if ($first_status == 'pending'): ?>
-                                <span class="status-badge status-pending">Pending</span>
-                            <?php elseif ($first_status == 'rejected'): ?>
-                                <span class="status-badge status-rejected">Rejected</span>
-                            <?php elseif ($first_status == 'verified'): ?>
-                                <span class="status-badge status-verified">Verified</span>
-                            <?php else: ?>
-                                <span class="status-badge status-partial">Partially Verified</span>
-                            <?php endif; ?>
-                        </td>
+                                <?php 
+                        // Determine bulk status from ALL items
+                        $bulk_status = '';
+                        $all_verified = true;
+                        $all_rejected = true;
+                        $any_pending = false;
+
+                        if (!empty($bulk_items)) {
+                            foreach ($bulk_items as $item) {
+                                $stat = $item['status'] ?? '';
+                                if ($stat != 'verified') $all_verified = false;
+                                if ($stat != 'rejected') $all_rejected = false;
+                                if ($stat == 'pending') $any_pending = true;
+                            }
+                            
+                            if ($all_verified) {
+                                $bulk_status = 'verified';
+                            } elseif ($all_rejected) {
+                                $bulk_status = 'rejected';
+                            } elseif ($any_pending) {
+                                $bulk_status = 'pending';
+                            } else {
+                                $bulk_status = 'mixed';
+                            }
+                        }
+?>
+    <?php if ($bulk_status == 'verified'): ?>
+        <span class="status-badge status-verified">Verified</span>
+    <?php elseif ($bulk_status == 'rejected'): ?>
+        <span class="status-badge status-rejected">Rejected</span>
+    <?php elseif ($bulk_status == 'mixed'): ?>
+        <span class="status-badge status-pending">Mixed Status</span>
+    <?php else: ?>
+        <span class="status-badge status-pending">Pending</span>
+    <?php endif; ?>
+                            </td>
+
                         <td class="date-cell">
                             <?php 
-                            $dates = [];
-                            foreach ($bulk_items as $item) {
-                                $dates[] = date('d M Y', strtotime($item['booking_date']));
-                            }
-                            $unique_dates = array_unique($dates);
-                            if (count($unique_dates) == 1) {
-                                echo '<strong>' . $unique_dates[0] . '</strong><br>';
-                                echo date('h:i A', strtotime($bulk_items[0]['booking_time']));
+                            if (!empty($bulk_items)) {
+                                $dates = [];
+                                $times = [];
+                                foreach ($bulk_items as $item) {
+                                    $dates[] = date('d M Y', strtotime($item['booking_date']));
+                                    $times[] = date('g:i A', strtotime($item['booking_time']));
+                                }
+                                $unique_dates = array_unique($dates);
+                                if (count($unique_dates) == 1) {
+                                    // Same date – show date and time range
+                                    $min_time = min($times);
+                                    $max_time = max($times);
+                                    if ($min_time == $max_time) {
+                                        echo '<strong>' . $unique_dates[0] . '</strong><br>' . $min_time;
+                                    } else {
+                                        echo '<strong>' . $unique_dates[0] . '</strong><br>' . $min_time . ' - ' . $max_time;
+                                    }
+                                } else {
+                                    // Different dates – show date range
+                                    echo '<strong>' . min($unique_dates) . ' - ' . max($unique_dates) . '</strong><br>';
+                                    echo '<small>Multiple dates</small>';
+                                }
                             } else {
-                                echo '<strong>' . min($unique_dates) . ' - ' . max($unique_dates) . '</strong><br>';
-                                echo '<small>Multiple dates</small>';
+                                echo '<span style="color:#999;">No booking data</span>';
                             }
                             ?>
                          </td>
@@ -2068,16 +2279,59 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
                             <?php endif; ?>
                         </td>
                         <td class="action-cell" style="width:100px;">
-                            <?php if ($all_pending): ?>
-                                <button class="btn-verify" onclick="event.stopPropagation(); verifyBulkPayment('<?= $bulk_receipt ?>')">Verify All</button>
-                                <button class="btn-reject" onclick="event.stopPropagation(); openRejectBulkModal('<?= $bulk_receipt ?>')">Reject All</button>
-                            <?php endif; ?>
-                            <?php if ($has_bulk_notes): ?>
-                                <button class="btn-view" onclick="event.stopPropagation(); showNotes('<?= addslashes($bulk_notes_js_string) ?>')" style="padding: 3px 8px; font-size: 11px;">
-                                    Notes
-                                </button>
-                            <?php endif; ?>
-                         </td>
+    <?php if ($all_pending): ?>
+        <button class="btn-verify" onclick="event.stopPropagation(); verifyBulkPayment('<?= $bulk_receipt ?>')">Verify All</button>
+        <button class="btn-reject" onclick="event.stopPropagation(); openRejectBulkModal('<?= $bulk_receipt ?>')">Reject All</button>
+    <?php endif; ?>
+    
+    <?php if ($has_bulk_notes): ?>
+        <button class="btn-view" onclick="event.stopPropagation(); showNotes('<?= addslashes($bulk_notes_js_string) ?>')" style="padding: 3px 8px; font-size: 11px;">
+            Notes
+        </button>
+    <?php endif; ?>
+    
+    <?php if ($bulk_status == 'rejected'): ?>
+        <?php 
+        $bulk_items_json = json_encode(array_values($bulk_items));
+        $bulk_items_json = htmlspecialchars($bulk_items_json, ENT_QUOTES, 'UTF-8');
+        ?>
+        <button class="btn-view" 
+                onclick="event.stopPropagation(); showBulkRejectionReasons(JSON.parse('<?= $bulk_items_json ?>'))" 
+                style="padding: 4px 10px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 20px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <i class="bi bi-info-circle"></i> View Reasons
+        </button>
+    <?php endif; ?>
+    
+    <?php if ($bulk_status == 'verified'): 
+        // Calculate total overpaid amount for this bulk group
+        $total_overpaid = 0;
+        $has_refunded = false;
+        foreach ($bulk_items as $item) {
+            $overpaid = ($item['actual_paid_amount'] ?? 0) - $item['amount'];
+            if ($overpaid > 0) {
+                if (isset($item['refund_status']) && $item['refund_status'] == 'completed') {
+                    $has_refunded = true;
+                } elseif (!isset($item['refund_status']) || $item['refund_status'] == 'pending') {
+                    $total_overpaid += $overpaid;
+                }
+            }
+        }
+    ?>
+        <?php if ($total_overpaid > 0): ?>
+            <button class="btn-refund" 
+                    onclick="event.stopPropagation(); markBulkAsRefunded(<?= htmlspecialchars(json_encode($bulk_items)) ?>, <?= $total_overpaid ?>)" 
+                    style="background: #f59e0b; color: white; border: none; padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+                <i class="bi bi-cash-stack"></i> Refund RM <?= number_format($total_overpaid, 2) ?>
+            </button>
+        <?php elseif ($has_refunded): ?>
+            <span style="color: #059669; display: inline-flex; align-items: center; gap: 5px;">
+                <i class="bi bi-check-circle"></i> Refunded
+            </span>
+        <?php else: ?>
+            <span style="color: #059669;">Verified</span>
+        <?php endif; ?>
+    <?php endif; ?>
+</td>
                      </tr>
  <!-- Bulk Detail Row -->
 <tr class="bulk-detail-row" id="bulk_<?= $bulk_receipt ?>" style="display: none;">
@@ -2091,7 +2345,6 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
                         <th style="padding: 10px; text-align: left; width: 15%;">Amount</th>
                         <th style="padding: 10px; text-align: left; width: 10%;">Pay At</th>
                         <th style="padding: 10px; text-align: left; width: 10%;">Status</th>
-                        <th style="padding: 10px; text-align: left; width: 20%;">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2121,34 +2374,6 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
         <?= ucfirst($item['status']) ?>
     </span>
 </td>
-<td style="vertical-align: middle;">
-    <?php if ($item['status'] == 'pending'): ?>
-        <button class="btn-verify" onclick="openVerifyModal(<?= $item['id'] ?>); event.stopPropagation();" style="padding: 3px 8px; font-size: 11px;">
-            Verify
-        </button>
-        <button class="btn-reject" onclick="openRejectModal(<?= $item['id'] ?>); event.stopPropagation();" style="padding: 3px 8px; font-size: 11px;">
-            Reject
-        </button>
-    <?php elseif ($item['status'] == 'verified'): ?>
-        <?php
-        $item_overpaid = ($item['actual_paid_amount'] ?? 0) - $item['amount'];
-        ?>
-        <?php if ($item_overpaid > 0 && ($item['refund_status'] ?? '') == 'pending'): ?>
-            <button class="btn-refund" onclick="markAsRefunded(<?= $item['id'] ?>, <?= $item_overpaid ?>); event.stopPropagation();"
-                    style="background: #f59e0b; color: white; border: none; padding: 5px 10px; border-radius: 20px; cursor: pointer; font-size: 0.65rem; font-weight: 600;">
-                <i class="bi bi-cash-stack"></i> Refund RM <?= number_format($item_overpaid, 2) ?>
-            </button>
-        <?php elseif ($item_overpaid > 0 && ($item['refund_status'] ?? '') == 'completed'): ?>
-            <span style="color: #059669; font-size: 11px;">
-                <i class="bi bi-check-circle"></i> Refunded
-            </span>
-        <?php else: ?>
-            <span style="color: #059669; font-size: 11px;">
-                <i class="bi bi-check-circle"></i> Verified
-            </span>
-        <?php endif; ?>
-    <?php endif; ?>
-</td>
                         </tr>
                     <?php endforeach; unset($item); ?>
                 </tbody>
@@ -2159,7 +2384,7 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
 <?php else: ?>
 
                     <tr style="<?= $classSoon ? 'background: #fff3cd;' : '' ?>">
-                        <td></td>
+                        <td style="text-align: center;"></td>
                         <td><strong><?= e($payment['student_name']) ?></strong></td>
                         <td><strong><?= e($payment['tutor_name']) ?></strong></td>
                         <td>RM <?= number_format($payment['amount'], 2) ?></td>
@@ -2169,15 +2394,15 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
                             <?php if ($classSoon): ?>
                                 <div class="hours-warning">⚠️ Class in <?= round($hoursToClass) ?>h</div>
                             <?php endif; ?>
-                          </td>
+                        </td>
                         <td class="date-cell">
                             <strong><?= date('d M Y', strtotime($payment['booking_date'])) ?></strong><br>
                             <?= date('h:i A', strtotime($payment['booking_time'])) ?>
-                         </td>
+                        </td>
                         <td class="date-cell">
                             <strong><?= date('d M Y', strtotime($payment['created_at'])) ?></strong><br>
                             <?= date('h:i A', strtotime($payment['created_at'])) ?>
-                         </td>
+                        </td>
                         <td>
                             <?php if (!empty($payment['proof_image'])): 
                                 $proof_file = '../uploads/payment_proofs/' . $payment['proof_image'];
@@ -2221,35 +2446,42 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
                                     View Dispute
                                 </button>
                             <?php elseif ($payment['status'] == 'verified'): ?>
-    <?php 
-    // Calculate overpaid amount
-    $overpaid = ($payment['actual_paid_amount'] ?? 0) - $payment['amount'];
-    if ($overpaid > 0 && isset($payment['refund_status']) && $payment['refund_status'] == 'pending'): 
-    ?>
-        <div style="margin-bottom: 8px; padding: 6px; background: #fef3c7; border-radius: 8px;">
-            <small style="color: #d97706;">
-                <i class="bi bi-cash"></i> 
-                Refund: <strong>RM <?= number_format($overpaid, 2) ?></strong>
-            </small>
-        </div>
-        <button class="btn-refund" onclick="markAsRefunded(<?= $payment['id'] ?>, <?= $overpaid ?>)" 
-                style="background: #f59e0b; color: white; border: none; padding: 8px 12px; border-radius: 20px; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
-            <i class="bi bi-cash-stack"></i> Refund RM <?= number_format($overpaid, 2) ?>
-        </button>
-            <?php elseif ($overpaid > 0 && isset($payment['refund_status']) && $payment['refund_status'] == 'completed'): ?>
-                <span style="color: #059669;">
-                    <i class="bi bi-check-circle"></i> Refunded
-                    <?php if ($payment['refund_receipt_number']): ?>
-                        <br><small>Ref: <?= e($payment['refund_receipt_number']) ?></small>
-                    <?php endif; ?>
-                </span>
-            <?php else: ?>
-                <span style="color: #059669;">Verified</span>
-            <?php endif; ?>
-        <?php endif; ?>
+                                <?php 
+                                $overpaid = ($payment['actual_paid_amount'] ?? 0) - $payment['amount'];
+                                if ($overpaid > 0 && isset($payment['refund_status']) && $payment['refund_status'] == 'pending'): 
+                                ?>
+                                    <div style="margin-bottom: 8px; padding: 6px; background: #fef3c7; border-radius: 8px;">
+                                        <small style="color: #d97706;">
+                                            <i class="bi bi-cash"></i> 
+                                            Refund: <strong>RM <?= number_format($overpaid, 2) ?></strong>
+                                        </small>
+                                    </div>
+                                    <button class="btn-refund" onclick="markAsRefunded(<?= $payment['id'] ?>, <?= $overpaid ?>)" 
+                                            style="background: #f59e0b; color: white; border: none; padding: 8px 12px; border-radius: 20px; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+                                        <i class="bi bi-cash-stack"></i> Refund RM <?= number_format($overpaid, 2) ?>
+                                    </button>
+                                <?php elseif ($overpaid > 0 && isset($payment['refund_status']) && $payment['refund_status'] == 'completed'): ?>
+                                    <span style="color: #059669;">
+                                        <i class="bi bi-check-circle"></i> Refunded
+                                        <?php if ($payment['refund_receipt_number']): ?>
+                                            <br><small>Ref: <?= e($payment['refund_receipt_number']) ?></small>
+                                        <?php endif; ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span style="color: #059669;">Verified</span>
+                                <?php endif; ?>
+                            <?php elseif ($payment['status'] == 'rejected'): ?>
+                                <?php if (!empty($payment['notes'])): ?>
+                                    <button class="btn-view" 
+                                            onclick="Swal.fire({title:'Rejection Reason', text:'<?= addslashes($payment['notes']) ?>', icon:'info'})"
+                                            style="padding:2px 8px; font-size:10px; margin-left:5px; background: #dc2626; color: white; border: none; border-radius: 20px; cursor: pointer;">
+                                        <i class="bi bi-info-circle"></i> Reason
+                                    </button>
+                                <?php endif; ?>
                             <?php endif; ?>
-                         </td>
-                            </tr>
+                        </td>
+                    </tr>
+                <?php endif; ?>
                 <?php endforeach; ?>
                 <?php endforeach; ?>
                 
@@ -2287,13 +2519,14 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
             </div>
         </form>
     </div>
-</div><div id="rejectModal" class="modal-overlay">
+</div>
+<div id="rejectModal" class="modal-overlay">
     <div class="modal-container">
         <div class="modal-header">
             <h3>Reject Payment</h3>
             <button class="close-modal" onclick="closeRejectModal()">&times;</button>
         </div>
-        <form method="POST">
+        <form method="POST" id="rejectForm" onsubmit="return validateAndSubmitRejection();">
             <input type="hidden" name="payment_id" id="rejectPaymentId">
             <div class="modal-body">
                 <div class="form-group">
@@ -2327,25 +2560,25 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
             </div>
         </form>
     </div>
-</div><div id="rejectBulkModal" class="modal-overlay">
+</div>
+<div id="rejectBulkModal" class="modal-overlay">
     <div class="modal-container">
         <div class="modal-header">
             <h3>Reject Bulk Payment</h3>
             <button class="close-modal" onclick="closeRejectBulkModal()">&times;</button>
         </div>
-        <form method="POST">
+        <form method="POST" id="rejectBulkForm" onsubmit="return validateAndSubmitBulkRejection();">
             <input type="hidden" name="receipt_number" id="rejectBulkReceipt">
             <input type="hidden" name="reject_bulk_payment" value="1">
             <div class="modal-body">
                 <div class="form-group">
                     <label>Rejection Type <span style="color: red;">*</span></label>
                     <select name="rejection_type" id="bulkRejectionType" required onchange="toggleBulkActualAmount()">
-                    <option value="">Select reason...</option>
+                        <option value="">Select reason...</option>
                         <option value="wrong_amount">Wrong Amount Paid (Underpaid)</option>
                         <option value="overpaid">Overpaid Amount</option>
                         <option value="invalid_proof">Invalid/Unclear Payment Proof</option>
                         <option value="unrelated_proof">Unrelated/Screenshot not from this payment</option>
-                        <option value="other">Other Reason</option>
                     </select>
                 </div>
 
@@ -2468,7 +2701,193 @@ function closeVerifyModal() {
 
 function openRejectModal(paymentId) {
     document.getElementById('rejectPaymentId').value = paymentId;
+    document.getElementById('rejectionReason').value = '';
+    document.getElementById('rejectionType').value = '';
+    document.getElementById('actualAmountDiv').style.display = 'none';
     document.getElementById('rejectModal').style.display = 'flex';
+    
+    // Store payment ID for validation
+    window.currentRejectPaymentId = paymentId;
+}
+
+// Add this new function for single reject validation
+function validateAndSubmitRejection() {
+    const paymentId = document.getElementById('rejectPaymentId').value;
+    const rejectionType = document.getElementById('rejectionType').value;
+    const reason = document.getElementById('rejectionReason').value;
+    let actualAmount = null;
+    
+    // Get actual amount if showing
+    const actualAmountDiv = document.getElementById('actualAmountDiv');
+    if (actualAmountDiv.style.display === 'block') {
+        actualAmount = parseFloat(document.getElementById('actualPaidAmount').value);
+        if (isNaN(actualAmount) || actualAmount <= 0) {
+            Swal.fire({
+                title: 'Error',
+                text: 'Please enter the actual amount paid',
+                icon: 'error',
+                confirmButtonColor: '#dc2626'
+            });
+            return false;
+        }
+    }
+    
+    if (!rejectionType) {
+        Swal.fire({
+            title: 'Error',
+            text: 'Please select a rejection type',
+            icon: 'error',
+            confirmButtonColor: '#dc2626'
+        });
+        return false;
+    }
+    
+    if (!reason) {
+        Swal.fire({
+            title: 'Error',
+            text: 'Please provide a rejection reason',
+            icon: 'error',
+            confirmButtonColor: '#dc2626'
+        });
+        return false;
+    }
+    
+    // Close the modal first
+    closeRejectModal();
+    
+    // Show loading indicator
+    Swal.fire({
+        title: 'Validating...',
+        text: 'Please wait',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+    
+    // Fetch payment details for validation
+    fetch(`get_payment_details.php?payment_id=${paymentId}`)
+        .then(response => response.json())
+        .then(data => {
+            Swal.close(); // Close loading
+            if (data.success) {
+                const expectedAmount = data.amount;
+                const isOverpaid = (actualAmount && actualAmount > expectedAmount);
+                const isUnderpaid = (actualAmount && actualAmount < expectedAmount);
+                const difference = actualAmount ? actualAmount - expectedAmount : 0;
+                
+                // Check if rejection type matches actual situation
+                let mismatchWarning = '';
+                if (rejectionType === 'overpaid' && isUnderpaid) {
+                    mismatchWarning = `
+                        <div style="background: #fee2e2; padding: 12px; border-radius: 8px; margin: 10px 0;">
+                            <p style="color: #dc2626; margin: 0;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> 
+                                <strong>WARNING:</strong> You selected "Overpaid Amount" but the actual amount (RM ${actualAmount.toFixed(2)}) is 
+                                <strong>LESS THAN</strong> the expected amount (RM ${expectedAmount.toFixed(2)}).
+                            </p>
+                            <p style="color: #dc2626; margin: 5px 0 0 0; font-size: 12px;">
+                                This should be treated as UNDERPAID, not OVERPAID.
+                            </p>
+                        </div>
+                    `;
+                } else if (rejectionType === 'wrong_amount' && isOverpaid) {
+                    mismatchWarning = `
+                        <div style="background: #fee2e2; padding: 12px; border-radius: 8px; margin: 10px 0;">
+                            <p style="color: #dc2626; margin: 0;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> 
+                                <strong>WARNING:</strong> You selected "Wrong Amount Paid (Underpaid)" but the actual amount (RM ${actualAmount.toFixed(2)}) is 
+                                <strong>GREATER THAN</strong> the expected amount (RM ${expectedAmount.toFixed(2)}).
+                            </p>
+                            <p style="color: #dc2626; margin: 5px 0 0 0; font-size: 12px;">
+                                This should be treated as OVERPAID, not UNDERPAID.
+                            </p>
+                        </div>
+                    `;
+                }
+                
+                let statusMessage = '';
+                let statusColor = '';
+                if (isOverpaid) {
+                    statusMessage = `OVERPAID by RM ${difference.toFixed(2)}`;
+                    statusColor = '#f59e0b';
+                } else if (isUnderpaid) {
+                    statusMessage = `UNDERPAID by RM ${Math.abs(difference).toFixed(2)}`;
+                    statusColor = '#dc2626';
+                } else if (actualAmount && actualAmount === expectedAmount) {
+                    statusMessage = `EXACT AMOUNT`;
+                    statusColor = '#059669';
+                } else {
+                    statusMessage = `No amount validation needed`;
+                    statusColor = '#64748b';
+                }
+                
+                // Build the confirmation HTML
+                let confirmationHtml = `
+                    <div style="text-align: left;">
+                        <p><strong>Payment ID:</strong> ${paymentId}</p>
+                        <p><strong>Expected Amount:</strong> RM ${expectedAmount.toFixed(2)}</p>
+                `;
+                
+                if (actualAmount) {
+                    confirmationHtml += `<p><strong>Actual Paid:</strong> RM ${actualAmount.toFixed(2)}</p>`;
+                    confirmationHtml += `<p><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusMessage}</span></p>`;
+                }
+                
+                confirmationHtml += `
+                        <p><strong>Selected Type:</strong> ${rejectionType === 'overpaid' ? 'Overpaid Amount' : rejectionType === 'wrong_amount' ? 'Wrong Amount (Underpaid)' : rejectionType}</p>
+                        ${mismatchWarning}
+                        <hr>
+                        <p><strong>Reason:</strong> ${reason}</p>
+                        <p style="margin-top: 15px;">Are you sure you want to proceed?</p>
+                    </div>
+                `;
+                
+                // Show confirmation modal
+                Swal.fire({
+                    title: 'Confirm Payment Rejection',
+                    html: confirmationHtml,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc2626',
+                    confirmButtonText: 'Yes, Reject Payment',
+                    cancelButtonText: 'Cancel',
+                    width: '550px',
+                    allowOutsideClick: false
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Submit the form
+                        const form = document.getElementById('rejectForm');
+                        form.submit();
+                    } else {
+                        // Re-open the modal if user cancels
+                        document.getElementById('rejectModal').style.display = 'flex';
+                    }
+                });
+            } else {
+                Swal.fire({
+                    title: 'Error',
+                    text: 'Could not fetch payment details',
+                    icon: 'error',
+                    confirmButtonColor: '#dc2626'
+                }).then(() => {
+                    document.getElementById('rejectModal').style.display = 'flex';
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            Swal.fire({
+                title: 'Error',
+                text: 'An error occurred',
+                icon: 'error',
+                confirmButtonColor: '#dc2626'
+            }).then(() => {
+                document.getElementById('rejectModal').style.display = 'flex';
+            });
+        });
+    
+    return false;
 }
 
 function closeRejectModal() {
@@ -2479,6 +2898,172 @@ function openRejectBulkModal(receiptNumber) {
     document.getElementById('rejectBulkReceipt').value = receiptNumber;
     document.getElementById('rejectBulkReason').value = '';
     document.getElementById('rejectBulkModal').style.display = 'flex';
+    
+    // Also store the receipt number for validation
+    window.currentBulkReceipt = receiptNumber;
+}
+function validateAndSubmitBulkRejection() {
+    const receiptNumber = document.getElementById('rejectBulkReceipt').value;
+    const rejectionType = document.getElementById('bulkRejectionType').value;
+    const actualAmount = parseFloat(document.getElementById('bulkActualPaidAmount').value);
+    const reason = document.getElementById('rejectBulkReason').value;
+    
+    if (!rejectionType) {
+        Swal.fire({
+            title: 'Error',
+            text: 'Please select a rejection type',
+            icon: 'error',
+            confirmButtonColor: '#dc2626'
+        });
+        return false;
+    }
+    
+    if (isNaN(actualAmount) || actualAmount <= 0) {
+        Swal.fire({
+            title: 'Error',
+            text: 'Please enter the actual amount paid',
+            icon: 'error',
+            confirmButtonColor: '#dc2626'
+        });
+        return false;
+    }
+    
+    if (!reason) {
+        Swal.fire({
+            title: 'Error',
+            text: 'Please provide a rejection reason',
+            icon: 'error',
+            confirmButtonColor: '#dc2626'
+        });
+        return false;
+    }
+    
+    // Close the bulk modal first
+    closeRejectBulkModal();
+    
+    // Show loading indicator
+    Swal.fire({
+        title: 'Validating...',
+        text: 'Please wait',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+    
+    // Fetch the total expected amount for validation
+    fetch(`get_bulk_payment_total.php?receipt_number=${receiptNumber}`)
+        .then(response => response.json())
+        .then(data => {
+            Swal.close(); // Close loading
+            if (data.success) {
+                const totalExpected = data.total_expected;
+                const difference = actualAmount - totalExpected;
+                const isOverpaid = (actualAmount > totalExpected);
+                const isUnderpaid = (actualAmount < totalExpected);
+                
+                // Check if the rejection type matches the actual situation
+                let mismatchWarning = '';
+                if (rejectionType === 'overpaid' && isUnderpaid) {
+                    mismatchWarning = `
+                        <div style="background: #fee2e2; padding: 12px; border-radius: 8px; margin: 10px 0;">
+                            <p style="color: #dc2626; margin: 0;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> 
+                                <strong>WARNING:</strong> You selected "Overpaid Amount" but the actual amount (RM ${actualAmount.toFixed(2)}) is 
+                                <strong>LESS THAN</strong> the expected amount (RM ${totalExpected.toFixed(2)}).
+                            </p>
+                            <p style="color: #dc2626; margin: 5px 0 0 0; font-size: 12px;">
+                                This should be treated as UNDERPAID, not OVERPAID.
+                            </p>
+                        </div>
+                    `;
+                } else if (rejectionType === 'wrong_amount' && isOverpaid) {
+                    mismatchWarning = `
+                        <div style="background: #fee2e2; padding: 12px; border-radius: 8px; margin: 10px 0;">
+                            <p style="color: #dc2626; margin: 0;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> 
+                                <strong>WARNING:</strong> You selected "Wrong Amount Paid (Underpaid)" but the actual amount (RM ${actualAmount.toFixed(2)}) is 
+                                <strong>GREATER THAN</strong> the expected amount (RM ${totalExpected.toFixed(2)}).
+                            </p>
+                            <p style="color: #dc2626; margin: 5px 0 0 0; font-size: 12px;">
+                                This should be treated as OVERPAID, not UNDERPAID.
+                            </p>
+                        </div>
+                    `;
+                }
+                
+                let statusMessage = '';
+                let statusColor = '';
+                if (isOverpaid) {
+                    statusMessage = `OVERPAID by RM ${difference.toFixed(2)}`;
+                    statusColor = '#f59e0b';
+                } else if (isUnderpaid) {
+                    statusMessage = `UNDERPAID by RM ${Math.abs(difference).toFixed(2)}`;
+                    statusColor = '#dc2626';
+                } else {
+                    statusMessage = `EXACT AMOUNT`;
+                    statusColor = '#059669';
+                }
+                
+                // Show confirmation modal
+                Swal.fire({
+                    title: 'Confirm Payment Processing',
+                    html: `
+                        <div style="text-align: left;">
+                            <p><strong>Receipt:</strong> ${receiptNumber}</p>
+                            <p><strong>Total Expected:</strong> RM ${totalExpected.toFixed(2)}</p>
+                            <p><strong>Actual Paid:</strong> RM ${actualAmount.toFixed(2)}</p>
+                            <p><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusMessage}</span></p>
+                            <p><strong>Selected Type:</strong> ${rejectionType === 'overpaid' ? 'Overpaid Amount' : 'Wrong Amount (Underpaid)'}</p>
+                            ${mismatchWarning}
+                            <hr>
+                            <p><strong>Reason:</strong> ${reason}</p>
+                            <p style="margin-top: 15px;">Are you sure you want to proceed?</p>
+                        </div>
+                    `,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#f59e0b',
+                    confirmButtonText: 'Yes, Process',
+                    cancelButtonText: 'Cancel',
+                    width: '550px',
+                    allowOutsideClick: false
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Submit the form
+                        const form = document.getElementById('rejectBulkForm');
+                        form.submit();
+                    } else {
+                        // Re-open the bulk modal if user cancels
+                        document.getElementById('rejectBulkModal').style.display = 'flex';
+                    }
+                });
+            } else {
+                Swal.fire({
+                    title: 'Error',
+                    text: 'Could not fetch payment details',
+                    icon: 'error',
+                    confirmButtonColor: '#dc2626'
+                }).then(() => {
+                    // Re-open the bulk modal
+                    document.getElementById('rejectBulkModal').style.display = 'flex';
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            Swal.fire({
+                title: 'Error',
+                text: 'An error occurred',
+                icon: 'error',
+                confirmButtonColor: '#dc2626'
+            }).then(() => {
+                // Re-open the bulk modal
+                document.getElementById('rejectBulkModal').style.display = 'flex';
+            });
+        });
+    
+    return false;
 }
 
 function closeRejectBulkModal() {
@@ -2553,24 +3138,166 @@ function openDisputeModal(paymentId, notes) {
 }
 function closeDisputeModal() {
     document.getElementById('disputeModal').style.display = 'none';
+}function showBulkRejectionReasons(items) {
+    let reasonsHtml = '<div style="max-height: 350px; overflow-y: auto; padding-right: 5px;">';
+    
+    items.forEach(function(item, index) {
+        if (item.status === 'rejected') {
+            let rejectionType = item.rejection_type || 'other';
+            let rejectionNote = item.notes || 'No reason provided';
+            
+            // Format rejection type nicely
+            let typeLabel = '';
+            let typeIcon = '';
+            switch(rejectionType) {
+                case 'wrong_amount':
+                    typeLabel = 'Wrong Amount Paid (Underpaid)';
+                    typeIcon = '💰';
+                    break;
+                case 'overpaid':
+                    typeLabel = 'Overpaid Amount';
+                    typeIcon = '💸';
+                    break;
+                case 'invalid_proof':
+                    typeLabel = 'Invalid/Unclear Payment Proof';
+                    typeIcon = '📷';
+                    break;
+                case 'unrelated_proof':
+                    typeLabel = 'Unrelated Screenshot';
+                    typeIcon = '🖼️';
+                    break;
+                case 'underpaid_bulk':
+                    typeLabel = 'Underpaid (Bulk Payment)';
+                    typeIcon = '⚠️';
+                    break;
+                default:
+                    typeLabel = 'Other Reason';
+                    typeIcon = '❓';
+            }
+            
+            reasonsHtml += `
+                <div style="border-left: 3px solid #dc2626; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: #fef2f2;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="color: #991b1b; font-size: 13px;">${typeIcon} Booking #${item.booking_id}</strong>
+                        <span style="font-size: 10px; color: #666;">${item.booking_date} ${item.booking_time}</span>
+                    </div>
+                    <div style="margin-bottom: 4px; font-size: 12px;">
+                        <span style="font-weight: 600;">Amount:</span> RM ${parseFloat(item.amount).toFixed(2)}
+                    </div>
+                    <div style="margin-bottom: 4px; font-size: 12px;">
+                        <span style="font-weight: 600;">Type:</span> ${typeLabel}
+                    </div>
+                    <div style="margin-top: 6px;">
+                        <div style="background: white; padding: 6px 8px; border-radius: 6px; font-size: 11px; color: #991b1b; max-height: 60px; overflow-y: auto;">
+                            ${rejectionNote.replace(/\n/g, '<br>')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+    
+    reasonsHtml += '</div>';
+    
+    Swal.fire({
+        title: 'Rejection Reasons',
+        html: reasonsHtml,
+        icon: 'info',
+        showCloseButton: true,
+        showConfirmButton: false,
+        confirmButtonColor: '#E75A9B',
+        width: '500px',
+        customClass: {
+            popup: 'rejection-reasons-popup'
+        }
+    });
 }
 
+function showSingleRejectionReason(note, rejectionType, amount, bookingDate, bookingTime) {
+    let typeLabel = '';
+    let typeIcon = '';
+    switch(rejectionType) {
+        case 'wrong_amount':
+            typeLabel = 'Wrong Amount Paid (Underpaid)';
+            typeIcon = '💰';
+            break;
+        case 'overpaid':
+            typeLabel = 'Overpaid Amount';
+            typeIcon = '💸';
+            break;
+        case 'invalid_proof':
+            typeLabel = 'Invalid/Unclear Payment Proof';
+            typeIcon = '📷';
+            break;
+        case 'unrelated_proof':
+            typeLabel = 'Unrelated Screenshot';
+            typeIcon = '🖼️';
+            break;
+        case 'underpaid_bulk':
+            typeLabel = 'Underpaid (Bulk Payment)';
+            typeIcon = '⚠️';
+            break;
+        default:
+            typeLabel = 'Other Reason';
+            typeIcon = '❓';
+    }
+    
+    Swal.fire({
+        title: 'Rejection Reason',
+        html: `
+            <div style="text-align: left;">
+                <div style="background: #fef2f2; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                    <div style="margin-bottom: 8px;">
+                        <span style="font-weight: 600;">📅 Booking:</span>
+                        <span style="font-size: 13px;">${bookingDate || ''} ${bookingTime || ''}</span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <span style="font-weight: 600;">${typeIcon} Type:</span>
+                        <span style="font-size: 13px;">${typeLabel}</span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <span style="font-weight: 600;">💵 Amount:</span>
+                        <span style="font-size: 13px;">RM ${parseFloat(amount).toFixed(2)}</span>
+                    </div>
+                    <div style="margin-top: 8px;">
+                        <div style="font-weight: 600; margin-bottom: 4px;">📝 Reason:</div>
+                        <div style="background: white; padding: 8px; border-radius: 6px; font-size: 12px; color: #991b1b; max-height: 100px; overflow-y: auto;">
+                            ${note.replace(/\n/g, '<br>')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `,
+        icon: 'info',
+        showCloseButton: true,
+        showConfirmButton: false,
+        width: '450px'
+    });
+}
 function toggleActualAmount() {
     const type = document.getElementById('rejectionType').value;
     const div = document.getElementById('actualAmountDiv');
+    const amountInput = document.getElementById('actualPaidAmount');
     const label = document.getElementById('actualAmountLabel');
     const hint = document.getElementById('actualAmountHint');
     
     if (type === 'wrong_amount') {
         div.style.display = 'block';
-        label.innerHTML = 'What amount did the student actually pay?';
-        hint.innerHTML = 'This is LESS than expected. Student will need to pay the remaining amount.';
+        label.innerHTML = 'What amount did the student actually pay? (RM)';
+        hint.innerHTML = '⚠️ LESS than expected. Student will need to pay the remaining amount.';
+        amountInput.setAttribute('required', 'required');
+        amountInput.style.borderColor = '#dc2626';
     } else if (type === 'overpaid') {
         div.style.display = 'block';
-        label.innerHTML = 'What amount did the student actually pay?';
-        hint.innerHTML = 'This is MORE than expected. Student will receive a refund for the overpaid amount.Class will still proceed';
+        label.innerHTML = 'What amount did the student actually pay? (RM)';
+        hint.innerHTML = '✅ MORE than expected. Student will receive a refund for the overpaid amount.';
+        amountInput.setAttribute('required', 'required');
+        amountInput.style.borderColor = '#059669';
     } else {
         div.style.display = 'none';
+        amountInput.removeAttribute('required');
+        amountInput.style.borderColor = '';
+        amountInput.value = '';
     }
 }
 
@@ -2703,7 +3430,254 @@ if (overlay) {
         overlay.classList.remove('active');
         document.body.style.overflow = '';
     });
-}function markAsRefunded(paymentId, refundAmount) {
+}function markBulkAsRefunded(bulkItems, totalRefundAmount) {
+    // Collect all payment IDs that have overpaid amounts
+    const overpaidPayments = bulkItems.filter(item => {
+        const overpaid = (item.actual_paid_amount || 0) - item.amount;
+        return overpaid > 0 && item.refund_status === 'pending';
+    });
+    
+    if (overpaidPayments.length === 0) {
+        Swal.fire({
+            title: 'No Refunds Pending',
+            text: 'No overpaid payments need refund in this bulk group.',
+            icon: 'info',
+            confirmButtonColor: '#E75A9B'
+        });
+        return;
+    }
+    
+    // CHECK ALL PAYMENTS for bank details (not just the first one)
+    let bankDetailsFound = null;
+    let checkPromises = overpaidPayments.map(payment => {
+        return fetch(`get_payment_bank_details.php?payment_id=${payment.id}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.bank_name && !bankDetailsFound) {
+                    bankDetailsFound = data;
+                }
+                return data;
+            });
+    });
+    
+    Promise.all(checkPromises).then(() => {
+        let bankHtml = '';
+        let showBankInputs = true;
+        
+        if (bankDetailsFound && bankDetailsFound.bank_name) {
+            // Bank details found in one of the payments
+            bankHtml = `
+                <div style="background: #e0f2fe; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="margin: 0 0 8px 0; font-weight: 700;">
+                        <i class="bi bi-bank"></i> Student's Bank Details:
+                    </p>
+                    <p style="margin: 0;"><strong>Bank:</strong> ${bankDetailsFound.bank_name}</p>
+                    <p style="margin: 0;"><strong>Account Number:</strong> ${bankDetailsFound.bank_account_number}</p>
+                    <p style="margin: 0;"><strong>Account Name:</strong> ${bankDetailsFound.bank_account_name}</p>
+                </div>
+            `;
+            showBankInputs = false;
+        } else {
+            bankHtml = `
+                <div style="background: #fef3c7; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="margin: 0; color: #d97706;">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>No bank details found.</strong>
+                    </p>
+                    <p style="margin: 5px 0 0 0; font-size: 12px;">Please enter bank details manually below.</p>
+                </div>
+            `;
+            showBankInputs = true;
+        }
+        
+        // Build HTML list of overpaid payments
+        let paymentsList = '';
+        overpaidPayments.forEach(payment => {
+            const overpaid = (payment.actual_paid_amount || 0) - payment.amount;
+            paymentsList += `
+                <div style="border-bottom: 1px solid #eee; padding: 6px 0; font-size: 12px;">
+                    <strong>Booking #${payment.booking_id}</strong> - 
+                    Tutor: ${payment.tutor_name}<br>
+                    Overpaid: <strong style="color: #059669;">RM ${overpaid.toFixed(2)}</strong>
+                </div>
+            `;
+        });
+        
+        Swal.fire({
+            title: 'Process Bulk Refund',
+            html: `
+                <div style="text-align: left; font-size: 13px;">
+                    <p><strong>Total refund amount:</strong> <span style="color: #059669;">RM ${totalRefundAmount.toFixed(2)}</span></p>
+                    <p><strong>${overpaidPayments.length} payment(s) to refund:</strong></p>
+                    <div style="max-height: 120px; overflow-y: auto; margin: 8px 0; border: 1px solid #eee; border-radius: 8px; padding: 6px; background: #f9f9f9;">
+                        ${paymentsList}
+                    </div>
+                    
+                    ${bankHtml}
+                    
+                    ${showBankInputs ? `
+                        <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-top: 10px;">
+                            <label style="font-weight: 700; font-size: 12px;">Enter bank details manually:</label>
+                            <div class="form-group" style="margin-top: 8px;">
+                                <input type="text" id="swal_bank_name" class="swal2-input" placeholder="Bank Name" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                                <input type="text" id="swal_bank_account" class="swal2-input" placeholder="Account Number" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                                <input type="text" id="swal_account_name" class="swal2-input" placeholder="Account Holder Name" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label style="font-size: 12px; font-weight: 600;">Refund Receipt Number (optional):</label>
+                        <input type="text" id="swal_refund_receipt" class="swal2-input" placeholder="Auto-generated if empty" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                    </div>
+                    
+                    <div style="margin-top: 12px; padding: 8px; background: #fef3c7; border-radius: 8px; font-size: 12px;">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        Confirm you have transferred <strong>RM ${totalRefundAmount.toFixed(2)}</strong> to the student's bank account.
+                    </div>
+                </div>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            showCloseButton: true,
+            confirmButtonColor: '#f59e0b',
+            confirmButtonText: 'Yes, Process Refunds',
+            cancelButtonText: 'Cancel',
+            width: '500px',
+            preConfirm: () => {
+                if (showBankInputs) {
+                    const bankName = document.getElementById('swal_bank_name').value;
+                    const bankAccount = document.getElementById('swal_bank_account').value;
+                    const accountName = document.getElementById('swal_account_name').value;
+                    
+                    if (!bankName || !bankAccount || !accountName) {
+                        Swal.showValidationMessage('Please provide bank account details for the refund');
+                        return false;
+                    }
+                    return {
+                        refundReceipt: document.getElementById('swal_refund_receipt').value,
+                        bank_name: bankName,
+                        bank_account_number: bankAccount,
+                        bank_account_name: accountName
+                    };
+                } else {
+                    return {
+                        refundReceipt: document.getElementById('swal_refund_receipt').value,
+                        bank_name: bankDetailsFound.bank_name,
+                        bank_account_number: bankDetailsFound.bank_account_number,
+                        bank_account_name: bankDetailsFound.bank_account_name
+                    };
+                }
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Processing Refunds...',
+                    text: 'Please wait',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+                
+                const promises = overpaidPayments.map(payment => {
+                    const overpaid = (payment.actual_paid_amount || 0) - payment.amount;
+                    const receipt = result.value.refundReceipt 
+                        ? `${result.value.refundReceipt}-${payment.id}` 
+                        : `RFD-${Date.now()}-${payment.id}`;
+                    
+                    return fetch('mark_refunded.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            payment_id: payment.id,
+                            refund_amount: overpaid,
+                            refund_receipt: receipt,
+                            bank_name: result.value.bank_name,
+                            bank_account_number: result.value.bank_account_number,
+                            bank_account_name: result.value.bank_account_name
+                        })
+                    }).then(response => response.json());
+                });
+                
+                Promise.all(promises)
+                    .then(results => {
+                        const allSuccess = results.every(r => r.success);
+                        if (allSuccess) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Refunds Processed',
+                                html: `${overpaidPayments.length} payment(s) marked as refunded.<br><small>Refund emails sent to student.</small>`,
+                                confirmButtonColor: '#E75A9B'
+                            }).then(() => {
+                                location.reload();
+                            });
+                        } else {
+                            const failedCount = results.filter(r => !r.success).length;
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Partial Error',
+                                text: `${failedCount} of ${overpaidPayments.length} refunds failed. Please try again.`,
+                                confirmButtonColor: '#dc2626'
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: 'Error processing refunds. Please try again.',
+                            confirmButtonColor: '#dc2626'
+                        });
+                    });
+            }
+        });
+    }).catch(error => {
+        console.error('Error checking bank details:', error);
+        // Fallback - proceed with manual entry
+        Swal.fire({
+            title: 'Process Bulk Refund',
+            html: `
+                <div style="text-align: left;">
+                    <p>Total refund amount: <strong>RM ${totalRefundAmount.toFixed(2)}</strong></p>
+                    <div class="form-group">
+                        <label>Bank Name:</label>
+                        <input type="text" id="fallbackBankName" class="swal2-input" placeholder="Bank Name">
+                    </div>
+                    <div class="form-group">
+                        <label>Account Number:</label>
+                        <input type="text" id="fallbackAccountNumber" class="swal2-input" placeholder="Account Number">
+                    </div>
+                    <div class="form-group">
+                        <label>Account Holder Name:</label>
+                        <input type="text" id="fallbackAccountName" class="swal2-input" placeholder="Account Holder Name">
+                    </div>
+                </div>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#f59e0b',
+            confirmButtonText: 'Yes, Process Refunds',
+            preConfirm: () => {
+                const bankName = document.getElementById('fallbackBankName').value;
+                const bankAccount = document.getElementById('fallbackAccountNumber').value;
+                const accountName = document.getElementById('fallbackAccountName').value;
+                
+                if (!bankName || !bankAccount || !accountName) {
+                    Swal.showValidationMessage('Please provide bank account details');
+                    return false;
+                }
+                return { bank_name: bankName, bank_account_number: bankAccount, bank_account_name: accountName };
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Process refunds with manual bank details
+                // ... similar processing as above
+            }
+        });
+    });
+}
+function markAsRefunded(paymentId, refundAmount) {
     // First, fetch student's bank details if already provided
     fetch(`get_payment_bank_details.php?payment_id=${paymentId}`)
         .then(response => response.json())

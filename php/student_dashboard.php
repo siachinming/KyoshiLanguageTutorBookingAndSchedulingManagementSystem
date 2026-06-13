@@ -116,32 +116,37 @@ $favResult = $stmt->get_result();
 while ($row = $favResult->fetch_assoc()) {
     $favouriteIds[] = $row['tutor_id'];
 }
-// Get all tutors for search modal - UPDATED with availability
+// Get all tutors for search modal - FIXED VERSION
 $allTutors = [];
 $stmt = $conn->prepare("
-    SELECT u.id, u.fullname, u.profile_pic, tp.rate, tp.bio, tp.experience,
-           GROUP_CONCAT(DISTINCT tl.language) as languages,
-           GROUP_CONCAT(DISTINCT ttm.mode) as teaching_modes,
-           ul.location as location,
-           ROUND(AVG(r.rating), 1) as rating,
-           COUNT(r.id) as review_count,
-           GROUP_CONCAT(DISTINCT CONCAT(ta.day_of_week, '|', TIME_FORMAT(ta.start_time, '%H:%i'), '|', TIME_FORMAT(ta.end_time, '%H:%i'))) as availability,
-           GROUP_CONCAT(DISTINCT 
-               CASE 
-                   WHEN TIME(ta.start_time) < '12:00:00' THEN 'morning'
-                   WHEN TIME(ta.start_time) < '18:00:00' THEN 'afternoon'
-                   ELSE 'evening'
-               END
-           ) as time_slots
+    SELECT DISTINCT 
+        u.id, 
+        u.fullname, 
+        u.profile_pic, 
+        tp.rate, 
+        tp.bio, 
+        tp.experience,
+        GROUP_CONCAT(DISTINCT tl.language ORDER BY tl.language SEPARATOR ', ') as languages,
+        GROUP_CONCAT(DISTINCT ttm.mode ORDER BY ttm.mode SEPARATOR ', ') as teaching_modes,
+        ul.location as location,
+        (SELECT ROUND(AVG(rating), 1) FROM ratings WHERE tutor_id = u.id) as rating,
+        (SELECT COUNT(id) FROM ratings WHERE tutor_id = u.id) as review_count,
+        GROUP_CONCAT(DISTINCT CONCAT(ta.day_of_week, '|', TIME_FORMAT(ta.start_time, '%H:%i'), '|', TIME_FORMAT(ta.end_time, '%H:%i'))) as availability,
+        GROUP_CONCAT(DISTINCT 
+            CASE 
+                WHEN TIME(ta.start_time) < '12:00:00' THEN 'morning'
+                WHEN TIME(ta.start_time) < '18:00:00' THEN 'afternoon'
+                ELSE 'evening'
+            END
+        ) as time_slots
     FROM users u
     JOIN tutor_profiles tp ON u.id = tp.user_id
     LEFT JOIN tutor_languages tl ON u.id = tl.user_id
     LEFT JOIN tutor_teaching_modes ttm ON u.id = ttm.user_id
     LEFT JOIN user_locations ul ON u.id = ul.user_id
-    LEFT JOIN ratings r ON u.id = r.tutor_id
     LEFT JOIN tutor_availability ta ON u.id = ta.tutor_id
     WHERE u.role = 'tutor' AND u.status = 'approved'
-    GROUP BY u.id
+    GROUP BY u.id, u.fullname, u.profile_pic, tp.rate, tp.bio, tp.experience, ul.location
     ORDER BY u.fullname ASC
 ");
 $stmt->execute();
@@ -651,14 +656,10 @@ function e($value) {
       border-radius:50%;
       background:#E17C91;
     }
-    .profile{
-      display:flex; align-items:center; gap:8px;
-      border-radius:999px;
-      padding:5px 12px 5px 6px;
-      font-weight:700;
-    }
-    .profile img{width:34px; height:34px; border-radius:50%; object-fit:cover;}
-    .profile span{font-size:14px; max-width:100px; overflow:hidden; text-overflow:ellipsis;}
+     .profile{display:flex;align-items:center;gap:9px;border-radius:999px;padding:6px 12px 6px 6px;font-weight:900;color:#7A3D65;border:1px solid rgba(46,42,59,.08);background:rgba(255,255,255,.88);cursor:pointer}
+    .profile img{width:34px;height:34px;object-fit:cover;border-radius:50%}
+        .back-link{display:inline-flex;align-items:center;gap:6px;color:var(--pink-dark);font-weight:900;font-size:13px;padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.78);text-decoration:none;margin-bottom:20px}
+
     .search {
     position: relative; 
     flex: 0 0 auto;  /* Changed from flex:1 1 auto to prevent growing */
@@ -3185,7 +3186,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <?= e($tutor['languages'] ?? 'No language set') ?> · RM <?= e($tutor['rate']) ?>/hr
             <?php if (!empty($tutor['teaching_modes'])): ?> · <?= e($tutor['teaching_modes']) ?><?php endif; ?>
             <?php if (!empty($tutor['location'])): ?> · <?= e($tutor['location']) ?><?php endif; ?>
-            <?php if (!empty($tutor['rating'])): ?> · ⭐ <?= e($tutor['rating']) ?> (<?= e($tutor['review_count']) ?>)<?php endif; ?>
+            <?php if (!empty($tutor['rating']) && $tutor['rating'] > 0): ?> · ⭐ <?= number_format((float)$tutor['rating'], 1) ?> (<?= (int)$tutor['review_count'] ?> review<?= $tutor['review_count'] != 1 ? 's' : '' ?>)<?php endif; ?>
             </span>
         </div>
         <a href="tutor_profile.php?id=<?= $tutor['id'] ?>"

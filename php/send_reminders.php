@@ -153,7 +153,6 @@ function sendMeetingLinkReminder($conn, $booking_id) {
     }
     return false;
 }
-
 function sendSessionReminder($conn, $booking_id, $minutes_before) {
     // Get booking details
     $stmt = $conn->prepare("
@@ -182,7 +181,6 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
             "tutor_booking_detail.php?id={$booking_id}"
         );
         
-        // ========== IN-APP NOTIFICATION FOR STUDENT ==========
         insertNotification(
             $conn,
             $booking['student_id'],
@@ -195,68 +193,99 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
     
     $success = false;
     
-    // ========== EMAIL TO TUTOR ==========
-    $mail = new PHPMailer(true);
+// ========== EMAIL TO TUTOR - WITH DIRECT JOIN BUTTON ==========
+$mail = new PHPMailer(true);
+
+try {
+    $mail->isSMTP();
+    $mail->Host = 'smtp.gmail.com';
+    $mail->SMTPAuth = true;
+    $mail->Username = SMTP_USER;
+    $mail->Password = SMTP_PASS;
+    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port = 587;
+    $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
+    $mail->addAddress($booking['tutor_email'], $booking['tutor_name']);
+    $mail->isHTML(true);
     
-    try {
-        $mail->isSMTP();
-        $mail->Host = 'smtp.gmail.com';
-        $mail->SMTPAuth = true;
-        $mail->Username = SMTP_USER;
-        $mail->Password = SMTP_PASS;
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = 587;
-        $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
-        $mail->addAddress($booking['tutor_email'], $booking['tutor_name']);
-        $mail->isHTML(true);
-        
-        $sessionType = $booking['learning_mode'] === 'online' ? 'Online Meeting' : 'Face-to-Face Session';
-        $meetingInfo = '';
-        
-        if ($booking['learning_mode'] === 'online') {
-            $meetingInfo = !empty($booking['meeting_link']) 
-                ? "<p><strong>Meeting Link:</strong> <a href='{$booking['meeting_link']}' style='color:#E75A9B;'>{$booking['meeting_link']}</a></p>"
-                : "<p style='color: #dc2626;'><strong>No meeting link added yet! Please add it now.</strong></p>";
+    $sessionType = $booking['learning_mode'] === 'online' ? 'Online Meeting' : 'Face-to-Face Session';
+    $meetingInfo = '';
+    $tutorJoinButton = '';
+    
+    if ($booking['learning_mode'] === 'online') {
+        if (!empty($booking['meeting_link'])) {
+            $meetingInfo = "<p><strong>Meeting Link:</strong> <a href='{$booking['meeting_link']}' style='color:#E75A9B;'>{$booking['meeting_link']}</a></p>";
+            // BIG GREEN BUTTON for tutor to join
+            $tutorJoinButton = "
+                <div style='text-align: center; margin: 25px 0;'>
+                    <a href='http://kyoshitutor.site/php/join_meeting.php?booking_id={$booking_id}&link=" . urlencode($booking['meeting_link']) . "' 
+                       style='display: inline-block; padding: 15px 45px; background: linear-gradient(135deg, #28a745, #20c997); color: white; 
+                              text-decoration: none; border-radius: 50px; font-weight: bold; font-size: 18px; box-shadow: 0 4px 15px rgba(40,167,69,0.3);'>
+                        🎥 Click Here to Join Meeting
+                    </a>
+                    <p style='font-size: 12px; color: #666; margin-top: 10px;'>
+                        ⚡ Your attendance will be automatically recorded when you click this button
+                    </p>
+                </div>
+            ";
         } else {
-            $meetingInfo = !empty($booking['meeting_location'])
-                ? "<p><strong>Location:</strong> {$booking['meeting_location']}</p>"
-                : "<p style='color: #dc2626;'><strong>No location provided! Please contact the student.</strong></p>";
+            $meetingInfo = "<p style='color: #dc2626;'><strong>No meeting link added yet! Please add it now.</strong></p>";
         }
-        
-        $mail->Subject = "Session Reminder: {$booking['language']} in {$minutes_before} minutes - Kyoshi";
-        $mail->Body = "
-            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; background: #f9f9f9; border-radius: 20px; padding: 30px;'>
-                <div style='text-align: center;'>
-                    <h1 style='color: #E75A9B;'>Session Reminder</h1>
-                    <p style='font-size: 14px;'>Your session starts in <strong>{$minutes_before} minutes</strong></p>
-                </div>
-                <div style='background: white; border-radius: 16px; padding: 20px;'>
-                    <p>Dear <strong>{$booking['tutor_name']}</strong>,</p>
-                    <p>This is a reminder for your upcoming {$booking['language']} session.</p>
-                    <div style='background: #e8f4f8; border-radius: 12px; padding: 15px; margin: 20px 0;'>
-                        <p><strong>Student:</strong> {$booking['student_name']}</p>
-                        <p><strong>Session Type:</strong> {$sessionType}</p>
-                        <p><strong>Date:</strong> " . date('l, F j, Y', strtotime($booking['booking_date'])) . "</p>
-                        <p><strong>Time:</strong> " . date('g:i A', strtotime($booking['booking_time'])) . "</p>
-                        {$meetingInfo}
-                    </div>
-                    <div style='text-align: center; margin-top: 20px;'>
-                        <a href='http://kyoshitutor.site/php/tutor_booking_detail.php?id={$booking_id}' 
-                           style='display: inline-block; padding: 12px 30px; background: linear-gradient(135deg, #E75A9B, #F28AB2); color: white; 
-                                  text-decoration: none; border-radius: 30px;'>View Session Details</a>
-                    </div>
-                </div>
-            </div>
-        ";
-        $mail->send();
-        $success = true;
-        
-    } catch (Exception $e) {
-        writeLog("Tutor reminder failed for booking #$booking_id: " . $mail->ErrorInfo);
-        error_log("Tutor reminder failed: " . $mail->ErrorInfo);
+    } else {
+        $meetingInfo = !empty($booking['meeting_location'])
+            ? "<p><strong>Location:</strong> {$booking['meeting_location']}</p>"
+            : "<p style='color: #dc2626;'><strong>No location provided! Please contact the student.</strong></p>";
     }
     
-    // ========== EMAIL TO STUDENT ==========
+    $mail->Subject = "Session Reminder: {$booking['language']} in {$minutes_before} minutes - Kyoshi";
+    $mail->Body = "
+        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; background: #f9f9f9; border-radius: 20px; padding: 30px;'>
+            <div style='text-align: center;'>
+                <div style='background: #E75A9B; width: 60px; height: 60px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px;'>
+                    <span style='font-size: 30px; color: white;'>⏰</span>
+                </div>
+                <h1 style='color: #E75A9B; margin: 0;'>Session Reminder</h1>
+                <p style='font-size: 14px; color: #666;'>Your session starts in <strong style='color: #E75A9B;'>{$minutes_before} minutes</strong></p>
+            </div>
+            <div style='background: white; border-radius: 16px; padding: 25px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);'>
+                <p>Dear <strong>{$booking['tutor_name']}</strong>,</p>
+                <p>This is a friendly reminder for your upcoming {$booking['language']} session.</p>
+                <div style='background: linear-gradient(135deg, #f8f9fa, #fff); border-radius: 12px; padding: 15px; margin: 20px 0; border-left: 4px solid #E75A9B;'>
+                    <p style='margin: 8px 0;'><strong>👨‍🎓 Student:</strong> {$booking['student_name']}</p>
+                    <p style='margin: 8px 0;'><strong>📚 Language:</strong> {$booking['language']}</p>
+                    <p style='margin: 8px 0;'><strong>📅 Date:</strong> " . date('l, F j, Y', strtotime($booking['booking_date'])) . "</p>
+                    <p style='margin: 8px 0;'><strong>⏰ Time:</strong> " . date('g:i A', strtotime($booking['booking_time'])) . "</p>
+                    <p style='margin: 8px 0;'><strong>💻 Session Type:</strong> {$sessionType}</p>
+                    {$meetingInfo}
+                </div>
+                
+                {$tutorJoinButton}
+                
+                <div style='background: #e8f4f8; border-radius: 12px; padding: 12px; margin-top: 20px;'>
+                    <p style='margin: 0; font-size: 13px; color: #1d3156;'>
+                        <strong>💡 Tip:</strong> Make sure you have a stable internet connection and your camera/mic are working.
+                    </p>
+                </div>
+                
+                <div style='text-align: center; margin-top: 25px;'>
+                    <a href='http://kyoshitutor.site/php/tutor_booking_detail.php?id={$booking_id}' 
+                       style='display: inline-block; padding: 10px 25px; background: #64748b; color: white; 
+                              text-decoration: none; border-radius: 30px; font-size: 14px;'>View Session Details</a>
+                </div>
+            </div>
+            <div style='text-align: center; margin-top: 20px; font-size: 12px; color: #999;'>
+                <p>This is an automated reminder from Kyoshi.</p>
+            </div>
+        </div>
+    ";
+    $mail->send();
+    $success = true;
+    
+} catch (Exception $e) {
+    writeLog("Tutor reminder failed for booking #$booking_id: " . $mail->ErrorInfo);
+}
+    
+    // ========== EMAIL TO STUDENT - WITH DIRECT JOIN BUTTON THAT LOGS ==========
     $mail2 = new PHPMailer(true);
     
     try {
@@ -274,12 +303,41 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
         $sessionType = $booking['learning_mode'] === 'online' ? 'Online Meeting' : 'Face-to-Face Session';
         $joinButton = '';
         
+        // BIG GREEN BUTTON that logs meeting join
         if ($booking['learning_mode'] === 'online' && !empty($booking['meeting_link'])) {
             $joinButton = "
-                <div style='text-align: center; margin-top: 20px;'>
-                    <a href='join_meeting.php?booking_id={$booking_id}&link=" . urlencode($booking['meeting_link']) . "' 
-                       style='display: inline-block; padding: 12px 30px; background: #28a745; color: white; 
-                              text-decoration: none; border-radius: 30px;'>Join Meeting Now</a>
+                <div style='text-align: center; margin: 25px 0;'>
+                    <a href='http://kyoshitutor.site/php/join_meeting.php?booking_id={$booking_id}&link=" . urlencode($booking['meeting_link']) . "' 
+                       style='display: inline-block; padding: 15px 45px; background: linear-gradient(135deg, #28a745, #20c997); color: white; 
+                              text-decoration: none; border-radius: 50px; font-weight: bold; font-size: 18px; box-shadow: 0 4px 15px rgba(40,167,69,0.3);'>
+                        🎥 Click Here to Join Meeting
+                    </a>
+                    <p style='font-size: 12px; color: #666; margin-top: 10px;'>
+                        ⚡ Your attendance will be automatically recorded when you click this button
+                    </p>
+                </div>
+            ";
+        } elseif ($booking['learning_mode'] === 'online' && empty($booking['meeting_link'])) {
+            $joinButton = "
+                <div style='text-align: center; margin: 20px 0; padding: 15px; background: #fef3c7; border-radius: 12px;'>
+                    <p style='color: #d97706; margin: 0;'>
+                        ⚠️ Meeting link not yet available. The tutor will provide it before the session starts.
+                    </p>
+                </div>
+            ";
+        }
+        
+        // For face-to-face sessions, show location button
+        $locationInfo = '';
+        if ($booking['learning_mode'] === 'face_to_face' && !empty($booking['meeting_location'])) {
+            $locationInfo = "
+                <div style='text-align: center; margin: 20px 0;'>
+                    <a href='https://www.google.com/maps/search/?api=1&query=" . urlencode($booking['meeting_location']) . "' 
+                       target='_blank'
+                       style='display: inline-block; padding: 12px 35px; background: #1d3156; color: white; 
+                              text-decoration: none; border-radius: 50px; font-weight: bold; font-size: 16px;'>
+                        📍 View Meeting Location on Map
+                    </a>
                 </div>
             ";
         }
@@ -288,26 +346,40 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
         $mail2->Body = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; background: #f9f9f9; border-radius: 20px; padding: 30px;'>
                 <div style='text-align: center;'>
-                    <h1 style='color: #E75A9B;'>Session Reminder</h1>
-                    <p style='font-size: 14px;'>Your session starts in <strong>{$minutes_before} minutes</strong></p>
+                    <div style='background: #E75A9B; width: 60px; height: 60px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px;'>
+                        <span style='font-size: 30px; color: white;'>⏰</span>
+                    </div>
+                    <h1 style='color: #E75A9B; margin: 0;'>Session Reminder</h1>
+                    <p style='font-size: 14px; color: #666;'>Your session starts in <strong style='color: #E75A9B;'>{$minutes_before} minutes</strong></p>
                 </div>
-                <div style='background: white; border-radius: 16px; padding: 20px;'>
+                <div style='background: white; border-radius: 16px; padding: 25px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);'>
                     <p>Dear <strong>{$booking['student_name']}</strong>,</p>
-                    <p>This is a reminder for your upcoming {$booking['language']} session.</p>
-                    <div style='background: #e8f4f8; border-radius: 12px; padding: 15px; margin: 20px 0;'>
-                        <p><strong>Tutor:</strong> {$booking['tutor_name']}</p>
-                        <p><strong>Session Type:</strong> {$sessionType}</p>
-                        <p><strong>Date:</strong> " . date('l, F j, Y', strtotime($booking['booking_date'])) . "</p>
-                        <p><strong>Time:</strong> " . date('g:i A', strtotime($booking['booking_time'])) . "</p>
-                        " . ($booking['learning_mode'] === 'online' && !empty($booking['meeting_link']) ? "<p><strong>Meeting Link:</strong> <a href='" . $booking['meeting_link'] . "' style='color:#E75A9B;'>Join Meeting</a></p>" : "") . "
-                        " . ($booking['learning_mode'] === 'face_to_face' && !empty($booking['meeting_location']) ? "<p><strong>Location:</strong> {$booking['meeting_location']}</p>" : "") . "
+                    <p>This is a friendly reminder for your upcoming {$booking['language']} session.</p>
+                    <div style='background: linear-gradient(135deg, #f8f9fa, #fff); border-radius: 12px; padding: 15px; margin: 20px 0; border-left: 4px solid #E75A9B;'>
+                        <p style='margin: 8px 0;'><strong>👨‍🏫 Tutor:</strong> {$booking['tutor_name']}</p>
+                        <p style='margin: 8px 0;'><strong>📚 Language:</strong> {$booking['language']}</p>
+                        <p style='margin: 8px 0;'><strong>📅 Date:</strong> " . date('l, F j, Y', strtotime($booking['booking_date'])) . "</p>
+                        <p style='margin: 8px 0;'><strong>⏰ Time:</strong> " . date('g:i A', strtotime($booking['booking_time'])) . "</p>
+                        <p style='margin: 8px 0;'><strong>💻 Session Type:</strong> {$sessionType}</p>
                     </div>
+                    
                     {$joinButton}
-                    <div style='text-align: center; margin-top: 20px;'>
-                        <a href='http://kyoshitutor.site/php/booking_detail.php?id={$booking_id}' 
-                           style='display: inline-block; padding: 12px 30px; background: #1d3156; color: white; 
-                                  text-decoration: none; border-radius: 30px;'>View Session Details</a>
+                    {$locationInfo}
+                    
+                    <div style='background: #e8f4f8; border-radius: 12px; padding: 12px; margin-top: 20px;'>
+                        <p style='margin: 0; font-size: 13px; color: #1d3156;'>
+                            <strong>💡 Tip:</strong> Make sure you have a stable internet connection and your camera/mic are working.
+                        </p>
                     </div>
+                    
+                    <div style='text-align: center; margin-top: 25px;'>
+                        <a href='http://kyoshitutor.site/php/booking_detail.php?id={$booking_id}' 
+                           style='display: inline-block; padding: 10px 25px; background: #64748b; color: white; 
+                                  text-decoration: none; border-radius: 30px; font-size: 14px;'>View Session Details</a>
+                    </div>
+                </div>
+                <div style='text-align: center; margin-top: 20px; font-size: 12px; color: #999;'>
+                    <p>This is an automated reminder from Kyoshi.</p>
                 </div>
             </div>
         ";
@@ -323,7 +395,6 @@ function sendSessionReminder($conn, $booking_id, $minutes_before) {
         
     } catch (Exception $e) {
         writeLog("Student reminder failed for booking #$booking_id: " . $mail2->ErrorInfo);
-        error_log("Student reminder failed: " . $mail2->ErrorInfo);
     }
     
     return $success;

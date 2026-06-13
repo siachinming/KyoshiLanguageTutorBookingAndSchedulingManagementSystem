@@ -216,19 +216,17 @@ $stmt = $conn->prepare("
     SELECT b.id, b.language, b.learning_mode, b.booking_date, b.booking_time,
            b.status, b.focus, b.created_at, b.tutor_id,
            u.fullname AS tutor_name, u.profile_pic AS tutor_pic, tp.rate,
-           p.status AS payment_status,
-           p.amount AS payment_amount,
-           CASE 
-    WHEN r.id IS NOT NULL THEN 1
-    ELSE 0
-END AS rated
+           MAX(p.status) AS payment_status,
+           MAX(p.amount) AS payment_amount,
+           CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS rated
     FROM bookings b
     JOIN users u ON b.tutor_id = u.id
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
     LEFT JOIN payments p ON p.booking_id = b.id
     LEFT JOIN ratings r ON r.booking_id = b.id AND r.student_id = ?
-$where
-$orderBy
+    $where
+    GROUP BY b.id
+    $orderBy
 ");
 array_unshift($params, $userID);
 $types = "i" . $types;
@@ -1095,17 +1093,31 @@ $is_completed = ($b['status'] === 'completed');
         <span class="tag focus"><?= e(trim($f)) ?></span>
     <?php endforeach; endif; ?>
 
-    <?php if ($b['status'] === 'accepted'): ?>
-        <?php if ($b['payment_status'] === 'verified'): ?>
+<?php if ($b['status'] === 'accepted'): ?>
+    <?php 
+    // Check if there's ANY payment (including pending/rejected)
+    $has_any_payment = false;
+    $payment_check = $conn->prepare("SELECT id, status, amount FROM payments WHERE booking_id = ? ORDER BY created_at DESC LIMIT 1");
+    $payment_check->bind_param("i", $b['id']);
+    $payment_check->execute();
+    $latest_payment = $payment_check->get_result()->fetch_assoc();
+    $payment_check->close();
+    
+    if ($latest_payment):
+        $has_any_payment = true;
+        if ($latest_payment['status'] === 'verified'): ?>
             <span class="tag pay-ok"><i class="bi bi-check-circle"></i> Payment Verified</span>
-        <?php elseif ($b['payment_status'] === 'pending'): ?>
-            <span class="tag pay-no"><i class="bi bi-hourglass"></i> Payment Processing</span>
-        <?php elseif ($b['payment_status'] === 'failed'): ?>
-            <span class="tag pay-no"><i class="bi bi-x-circle"></i> Payment Failed</span>
+        <?php elseif ($latest_payment['status'] === 'pending'): ?>
+            <span class="tag pay-no"><i class="bi bi-hourglass"></i> Payment Processing (RM <?= number_format($latest_payment['amount'], 2) ?>)</span>
+        <?php elseif ($latest_payment['status'] === 'rejected'): ?>
+            <span class="tag pay-no"><i class="bi bi-exclamation-triangle"></i> Payment Rejected - Please pay remaining</span>
         <?php else: ?>
             <span class="tag pay-no"><i class="bi bi-clock"></i> Awaiting Payment</span>
-        <?php endif; ?>
+        <?php endif;
+    else: ?>
+        <span class="tag pay-no"><i class="bi bi-clock"></i> Awaiting Payment</span>
     <?php endif; ?>
+<?php endif; ?>
 </div>
 
 
@@ -1151,28 +1163,51 @@ $is_completed = ($b['status'] === 'completed');
     <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'pending')">
         <i class="bi bi-x-circle"></i> Cancel
     </button>
-
 <?php elseif ($b['status'] === 'accepted'): ?>
-        <?php if ($b['payment_status'] === 'pending'): ?>
-            <span class="btn-action muted">
-                <i class="bi bi-hourglass-split"></i> Payment Under Review
-            </span>
-        <?php elseif ($b['payment_status'] === 'failed'): ?>
-            <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-action purple">
-                <i class="bi bi-credit-card"></i> Retry Payment
-            </a>
-            <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
-                <i class="bi bi-x-circle"></i> Cancel
-            </button>
-        <?php elseif ($b['payment_status'] === 'verified'): ?>
-            <span class="btn-action muted">
-                <i class="bi bi-check-circle"></i> Awaiting Confirmation
-            </span>
-        <?php else: ?>
-            <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
-                <i class="bi bi-x-circle"></i> Cancel
-            </button>
-        <?php endif; ?>
+    <?php 
+    // Get the latest payment for this booking to check status
+    $payment_check = $conn->prepare("SELECT id, status, amount, actual_paid_amount FROM payments WHERE booking_id = ? ORDER BY created_at DESC LIMIT 1");
+    $payment_check->bind_param("i", $b['id']);
+    $payment_check->execute();
+    $latest_payment = $payment_check->get_result()->fetch_assoc();
+    $payment_check->close();
+    
+    $has_pending = ($latest_payment && $latest_payment['status'] === 'pending');
+    $has_rejected = ($latest_payment && $latest_payment['status'] === 'rejected');
+    $rejected_amount = ($latest_payment && $latest_payment['actual_paid_amount']) ? $latest_payment['actual_paid_amount'] : 0;
+    $remaining = $b['rate'] - $rejected_amount;
+    ?>
+    
+    <?php if ($has_pending): ?>
+        <span class="btn-action muted">
+            <i class="bi bi-hourglass-split"></i> Payment Under Review (RM <?= number_format($latest_payment['amount'], 2) ?>)
+        </span>
+    <?php elseif ($has_rejected && $rejected_amount > 0 && $rejected_amount < $b['rate']): ?>
+        <a href="payment_form.php?booking_id=<?= $b['id'] ?>&type=remaining" class="btn-action purple">
+            <i class="bi bi-cash"></i> Pay Remaining RM <?= number_format($remaining, 2) ?>
+        </a>
+        <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
+            <i class="bi bi-x-circle"></i> Cancel
+        </button>
+    <?php elseif ($b['payment_status'] === 'failed'): ?>
+        <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-action purple">
+            <i class="bi bi-credit-card"></i> Retry Payment
+        </a>
+        <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
+            <i class="bi bi-x-circle"></i> Cancel
+        </button>
+    <?php elseif ($b['payment_status'] === 'verified'): ?>
+        <span class="btn-action muted">
+            <i class="bi bi-check-circle"></i> Awaiting Confirmation
+        </span>
+    <?php else: ?>
+        <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-action primary">
+            <i class="bi bi-credit-card"></i> Pay Now
+        </a>
+        <button class="btn-action ghost" onclick="confirmCancel(<?= $b['id'] ?>, 'accepted')">
+            <i class="bi bi-x-circle"></i> Cancel
+        </button>
+    <?php endif; ?>
 
 <?php elseif ($b['status'] === 'confirmed'): ?>
     <?php 

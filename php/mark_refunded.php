@@ -17,6 +17,9 @@ $data = json_decode(file_get_contents('php://input'), true);
 $payment_id = $data['payment_id'] ?? 0;
 $refund_amount = $data['refund_amount'] ?? 0;
 $refund_receipt = $data['refund_receipt'] ?? '';
+$bank_name = $data['bank_name'] ?? '';
+$bank_account_number = $data['bank_account_number'] ?? '';
+$bank_account_name = $data['bank_account_name'] ?? '';
 
 if (!$payment_id) {
     echo json_encode(['success' => false, 'message' => 'Invalid payment ID']);
@@ -64,24 +67,32 @@ $update = $conn->prepare("
         refund_receipt_number = ?,
         refund_processed_at = NOW(),
         notes = CONCAT(IFNULL(notes, ''), '\n[REFUNDED: RM " . number_format($refund_amount, 2) . " on " . date('Y-m-d H:i:s') . "] Refund receipt: ', ?)
-    WHERE id = ? AND refund_status = 'pending'
+    WHERE id = ? AND (refund_status = 'pending' OR refund_status IS NULL)
 ");
 $update->bind_param("ssi", $refund_receipt, $refund_receipt, $payment_id);
 $update->execute();
 
 if ($update->affected_rows == 0) {
+    // Check if already refunded
+    $check = $conn->query("SELECT refund_status FROM payments WHERE id = $payment_id");
+    $check_result = $check->fetch_assoc();
+    if ($check_result && $check_result['refund_status'] == 'completed') {
+        echo json_encode(['success' => true, 'message' => 'Refund already processed', 'refund_receipt' => $refund_receipt]);
+        exit();
+    }
     echo json_encode(['success' => false, 'message' => 'Refund already processed or payment not found']);
     exit();
 }
 
 // Send refund email to student
-sendRefundEmail($payment, $refund_amount, $refund_receipt);
+$email_sent = sendRefundEmail($payment, $refund_amount, $refund_receipt, $bank_name, $bank_account_number, $bank_account_name);
 
 echo json_encode([
     'success' => true, 
     'message' => 'Refund of RM ' . number_format($refund_amount, 2) . ' processed successfully',
     'refund_amount' => $refund_amount,
-    'refund_receipt' => $refund_receipt
+    'refund_receipt' => $refund_receipt,
+    'email_sent' => $email_sent
 ]);
 exit();
 
@@ -89,7 +100,7 @@ exit();
 // EMAIL FUNCTION
 // ============================================
 
-function sendRefundEmail($payment, $refund_amount, $refund_receipt_number) {
+function sendRefundEmail($payment, $refund_amount, $refund_receipt_number, $bank_name = '', $bank_account_number = '', $bank_account_name = '') {
     $mail = new PHPMailer(true);
     
     try {
@@ -98,13 +109,26 @@ function sendRefundEmail($payment, $refund_amount, $refund_receipt_number) {
         $mail->SMTPAuth   = true;
         $mail->Username   = SMTP_USER; 
         $mail->Password   = SMTP_PASS;
-        $mail->SMTPSecure = 'tls';
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         $mail->setFrom('sohisabella87@gmail.com', 'Kyoshi');
         $mail->addAddress($payment['student_email'], $payment['student_name']);
         
         $mail->isHTML(true);
         $mail->Subject = 'Refund Processed - Kyoshi';
+        
+        // Build bank details section if provided
+        $bank_section = '';
+        if (!empty($bank_name) && !empty($bank_account_number) && !empty($bank_account_name)) {
+            $bank_section = "
+            <div style='background:#f0fdf4;padding:16px;border-radius:12px;margin:16px 0;border:1px solid #86efac;'>
+                <p style='margin:0 0 8px 0;'><strong>Bank Account for Refund:</strong></p>
+                <p style='margin:4px 0;'><strong>Bank:</strong> " . htmlspecialchars($bank_name) . "</p>
+                <p style='margin:4px 0;'><strong>Account Number:</strong> " . htmlspecialchars($bank_account_number) . "</p>
+                <p style='margin:4px 0;'><strong>Account Name:</strong> " . htmlspecialchars($bank_account_name) . "</p>
+            </div>
+            ";
+        }
         
         $mail->Body = "
         <div style='font-family:Segoe UI,sans-serif;max-width:550px;margin:auto;border:1px solid #e0e0e0;border-radius:16px;padding:24px;background:#fff;'>
@@ -127,6 +151,8 @@ function sendRefundEmail($payment, $refund_amount, $refund_receipt_number) {
                 <p style='margin:4px 0;'><strong>Refund Date:</strong> " . date('d M Y, h:i A') . "</p>
             </div>
             
+            " . $bank_section . "
+            
             <div style='background:#f8f9fa;padding:16px;border-radius:12px;margin:16px 0;'>
                 <p style='margin:0 0 8px 0;'><strong>Original Payment Details:</strong></p>
                 <p style='margin:4px 0;'><strong>Booking:</strong> " . htmlspecialchars($payment['language']) . " with " . htmlspecialchars($payment['tutor_name']) . "</p>
@@ -137,11 +163,11 @@ function sendRefundEmail($payment, $refund_amount, $refund_receipt_number) {
             </div>
             
             <div style='background:#e0f2fe;padding:12px;border-radius:8px;margin:16px 0;'>
-                <p style='margin:0;font-size:13px;'><i class='bi bi-info-circle'></i> The refund amount will be credited back to your original payment method within 3-5 business days.</p>
+                <p style='margin:0;font-size:13px;'>💡 The refund amount will be credited back to your original payment method within 3-5 business days.</p>
             </div>
             
             <div style='text-align:center;margin-top:24px;'>
-                <a href='http://kyoshitutor.site/kyoshi/php/receipt_refund.php?refund_id=" . $refund_receipt_number . "&payment_id=" . $payment['id'] . "' 
+                <a href='http://kyoshitutor.site/php/receipt_refund.php?refund_id=" . $refund_receipt_number . "&payment_id=" . $payment['id'] . "' 
                    style='display:inline-block;padding:10px 24px;background:#E75A9B;color:white;border-radius:30px;text-decoration:none;font-weight:bold;margin-right:10px;'>
                      📄 Download Refund Receipt
                 </a>
@@ -153,14 +179,16 @@ function sendRefundEmail($payment, $refund_amount, $refund_receipt_number) {
             
             <hr style='margin:24px 0 16px;'>
             <p style='font-size:12px;color:#666;text-align:center;'>This is an automated message from Kyoshi. Please keep this refund receipt for your records.</p>
+            <p style='font-size:11px;color:#999;text-align:center;margin-top:8px;'>Refund Receipt: " . htmlspecialchars($refund_receipt_number) . "</p>
         </div>
         ";
         
         $mail->send();
+        error_log("Refund email sent successfully to: " . $payment['student_email'] . " for receipt: " . $refund_receipt_number);
         return true;
         
     } catch (Exception $e) {
-        error_log("Refund email failed: " . $mail->ErrorInfo);
+        error_log("Refund email FAILED for payment ID {$payment['id']}: " . $mail->ErrorInfo);
         return false;
     }
 }

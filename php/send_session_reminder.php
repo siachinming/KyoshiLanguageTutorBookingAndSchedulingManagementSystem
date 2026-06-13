@@ -11,6 +11,16 @@ ini_set('error_log', __DIR__ . '/session_reminder_error.log');
 include __DIR__ . '/config.php';
 include __DIR__ . '/insert_notification.php';
 
+if (!$conn || !$conn->ping()) {
+    // Close old connection if exists
+    if ($conn) {
+        @$conn->close();
+    }
+    // Re-include config to get fresh connection
+    include __DIR__ . '/config.php';
+}
+// ========== END CONNECTION CHECK ==========
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
@@ -81,9 +91,9 @@ foreach ($sessions as $session) {
                 "session_ended_reminder", "booking_detail.php?id={$session['booking_id']}");
             
             $reminder_count++;
-            echo "  ✓ Reminder sent for booking #{$session['booking_id']}\n";
+            echo "  Reminder sent for booking #{$session['booking_id']}\n";
         } catch (Exception $e) {
-            echo "  ✗ Notification insert failed: " . $e->getMessage() . "\n";
+            echo "  Notification insert failed: " . $e->getMessage() . "\n";
             $email_failures++;
         }
     } else {
@@ -91,7 +101,6 @@ foreach ($sessions as $session) {
         $email_failures++;
     }
     
-    // Small delay to prevent overwhelming the server
     usleep(500000); // 0.5 second delay
 }
 

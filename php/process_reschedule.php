@@ -175,7 +175,7 @@ $notif->execute();
                         <p>Your original session remains as scheduled.</p>
                     </div>
                     <div style='text-align: center; margin-top: 20px;'>
-                        <a href='http://localhost/kyoshi/php/booking_detail.php?id={$bookingId}' 
+                        <a href='http://kyoshitutor.site/php/booking_detail.php?id={$bookingId}' 
                            style='display: inline-block; padding: 12px 30px; background: #1d3156; color: white; 
                                   text-decoration: none; border-radius: 30px;'>View Booking Details</a>
                     </div>

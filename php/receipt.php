@@ -6,22 +6,19 @@ use PHPMailer\PHPMailer\Exception;
 
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 $userID = $_SESSION['user_id'];
-
 $bookingID = intval($_GET['booking_id'] ?? 0);
 if (!$bookingID) { header("Location: booking_status.php"); exit(); }
 
+// Get booking details
 $stmt = $conn->prepare("
     SELECT b.*, u.fullname AS tutor_name, u.email AS tutor_email,
            tp.rate,
-           p.id AS payment_id, p.amount, p.payment_method, p.status AS payment_status,
-           p.receipt_number, p.created_at AS paid_at,
            s.fullname AS student_name, s.email AS student_email
     FROM bookings b
     JOIN users u ON b.tutor_id = u.id
     JOIN tutor_profiles tp ON b.tutor_id = tp.user_id
-    JOIN payments p ON p.booking_id = b.id
     JOIN users s ON b.student_id = s.id
-    WHERE b.id = ? AND b.student_id = ? AND p.status = 'verified'
+    WHERE b.id = ? AND b.student_id = ?
 ");
 $stmt->bind_param("ii", $bookingID, $userID);
 $stmt->execute();
@@ -29,6 +26,54 @@ $data = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$data) { header("Location: booking_detail.php?id=$bookingID"); exit(); }
+
+// Calculate TOTAL PAID from ALL payments (including rejected underpaid)
+$totalPaidStmt = $conn->prepare("
+    SELECT COALESCE(SUM(
+        CASE 
+            WHEN status = 'rejected' AND actual_paid_amount IS NOT NULL AND actual_paid_amount > 0 
+            THEN actual_paid_amount
+            WHEN status = 'rejected' THEN amount
+            ELSE amount 
+        END
+    ), 0) as total_paid
+    FROM payments 
+    WHERE booking_id = ? AND status IN ('verified', 'rejected', 'pending')
+");
+$totalPaidStmt->bind_param("i", $bookingID);
+$totalPaidStmt->execute();
+$totalPaidResult = $totalPaidStmt->get_result()->fetch_assoc();
+$totalPaid = $totalPaidResult['total_paid'];
+
+// Get the latest payment for method, date, and receipt number
+$latestStmt = $conn->prepare("
+    SELECT payment_method, created_at, receipt_number, status
+    FROM payments 
+    WHERE booking_id = ? 
+    ORDER BY created_at DESC LIMIT 1
+");
+$latestStmt->bind_param("i", $bookingID);
+$latestStmt->execute();
+$latestPayment = $latestStmt->get_result()->fetch_assoc();
+
+// Get ALL payments for breakdown display
+$allPaymentsStmt = $conn->prepare("
+    SELECT id, amount, actual_paid_amount, payment_method, status, created_at
+    FROM payments 
+    WHERE booking_id = ? 
+    ORDER BY created_at ASC
+");
+$allPaymentsStmt->bind_param("i", $bookingID);
+$allPaymentsStmt->execute();
+$allPayments = $allPaymentsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$allPaymentsStmt->close();
+
+// Use total paid amount for receipt
+$data['amount'] = $totalPaid;  // Override with total paid
+$data['payment_method'] = $latestPayment['payment_method'] ?? 'Online Banking';
+$data['paid_at'] = $latestPayment['created_at'] ?? date('Y-m-d H:i:s');
+$data['receipt_number'] = $latestPayment['receipt_number'] ?? 'RCP-' . date('Ymd') . '-' . str_pad($bookingID, 6, '0', STR_PAD_LEFT);
+$data['payment_status'] = $latestPayment['status'] ?? 'verified';
 
 $action = $_GET['action'] ?? 'pdf';
 
@@ -157,7 +202,33 @@ if ($action === 'pdf') {
     $zebraRow('Paid On', date('d M Y, g:i A', strtotime($data['paid_at'])));
     $zebraRow('Status', 'VERIFIED');
     $pdf->Ln(6);
-
+// Add payment breakdown if multiple payments
+if (count($allPayments) > 1) {
+    $pdf->Ln(2);
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->SetTextColor(60, 80, 120);
+    $pdf->Cell(0, 8, 'Payment Breakdown:', 0, 1, 'L');
+    
+    foreach ($allPayments as $payment) {
+        $paymentAmount = 0;
+        if ($payment['status'] === 'rejected') {
+            $paymentAmount = $payment['actual_paid_amount'] ?? $payment['amount'];
+        } else {
+            $paymentAmount = $payment['amount'];
+        }
+        
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->SetTextColor(80, 80, 100);
+        $pdf->Cell(40, 6, date('d M Y', strtotime($payment['created_at'])), 0, 0);
+        $pdf->Cell(50, 6, ucwords(str_replace('_', ' ', $payment['payment_method'])), 0, 0);
+        $pdf->Cell(0, 6, 'RM ' . number_format($paymentAmount, 2), 0, 1, 'R');
+    }
+    
+    $pdf->SetDrawColor(140, 192, 235);
+    $pdf->SetLineWidth(0.3);
+    $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
+    $pdf->Ln(2);
+}
     // ── TOTAL BOX ────────────────────────────────────────
     $pdf->SetFillColor(140, 192, 235);
     $pdf->SetTextColor(255, 255, 255);
@@ -306,26 +377,51 @@ if ($action === 'email') {
         $mail->addAddress($data['student_email'], $data['student_name']);
         $mail->isHTML(true);
         $mail->Subject = 'Your Kyoshi Receipt - ' . ($data['receipt_number'] ?? $bookingID);
-        $mail->Body = "
-            <div style='font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;'>
-                <div style='background:#8CC0EB;padding:30px;text-align:center;border-radius:16px 16px 0 0;'>
-                    <h1 style='color:white;margin:0;font-size:28px;letter-spacing:2px;'>KYOSHI</h1>
-                    <p style='color:rgba(255,255,255,.85);margin:6px 0 0;font-size:14px;'>Language Learning Platform</p>
-                </div>
-                <div style='background:#fff;padding:28px;border:1px solid #BFDDF0;border-top:none;border-radius:0 0 16px 16px;'>
-                    <h2 style='color:#3C5078;margin:0 0 6px;'>Payment Confirmed!</h2>
-                    <p style='color:#7B6178;'>Hi {$data['student_name']}, your payment has been verified. Please find your receipt attached.</p>
-                    <div style='background:#FFF9D2;border-radius:12px;padding:16px;margin:20px 0;border:1px solid #FFEBCC;'>
-                        <p style='margin:0 0 8px;font-size:13px;'><strong>Receipt No:</strong> {$data['receipt_number']}</p>
-                        <p style='margin:0 0 8px;font-size:13px;'><strong>Tutor:</strong> {$data['tutor_name']}</p>
-                        <p style='margin:0 0 8px;font-size:13px;'><strong>Language:</strong> {$data['language']}</p>
-                        <p style='margin:0 0 8px;font-size:13px;'><strong>Date:</strong> " . date('d M Y', strtotime($data['booking_date'])) . "</p>
-                        <p style='margin:0;font-size:13px;'><strong>Amount Paid:</strong> RM " . number_format($data['amount'], 2) . "</p>
-                    </div>
-                    <p style='color:#7B6178;font-size:13px;'>Thank you for learning with Kyoshi!</p>
-                </div>
+        // Build payment breakdown HTML for email
+        $breakdownHtml = '';
+        if (count($allPayments) > 1) {
+            $breakdownHtml = '<div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #FFEBCC;">
+                                <p style="margin: 0 0 8px; font-size: 12px; font-weight: bold; color: #3C5078;">Payment Breakdown:</p>';
+            foreach ($allPayments as $payment) {
+                $paymentAmount = 0;
+                if ($payment['status'] === 'rejected') {
+                    $paymentAmount = $payment['actual_paid_amount'] ?? $payment['amount'];
+                } else {
+                    $paymentAmount = $payment['amount'];
+                }
+                $paymentMethod = ucwords(str_replace('_', ' ', $payment['payment_method']));
+                $breakdownHtml .= '<div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; padding: 4px 0; border-bottom: 1px dashed #eee;">
+                                    <span>' . date('d M Y', strtotime($payment['created_at'])) . ' - ' . $paymentMethod . '</span>
+                                    <span style="font-weight: 600;">RM ' . number_format($paymentAmount, 2) . '</span>
+                                </div>';
+            }
+            $breakdownHtml .= '<div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; margin-top: 8px; padding-top: 6px; border-top: 2px solid #FFEBCC;">
+                                <span>Total Paid</span>
+                                <span style="color: #28a745;">RM ' . number_format($data['amount'], 2) . '</span>
+                            </div>
+                            </div>';
+        }
+       $mail->Body = "
+    <div style='font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;'>
+        <div style='background:#8CC0EB;padding:30px;text-align:center;border-radius:16px 16px 0 0;'>
+            <h1 style='color:white;margin:0;font-size:28px;letter-spacing:2px;'>KYOSHI</h1>
+            <p style='color:rgba(255,255,255,.85);margin:6px 0 0;font-size:14px;'>Language Learning Platform</p>
+        </div>
+        <div style='background:#fff;padding:28px;border:1px solid #BFDDF0;border-top:none;border-radius:0 0 16px 16px;'>
+            <h2 style='color:#3C5078;margin:0 0 6px;'>Payment Confirmed!</h2>
+            <p style='color:#7B6178;'>Hi {$data['student_name']}, your payment has been verified. Please find your receipt attached.</p>
+            <div style='background:#FFF9D2;border-radius:12px;padding:16px;margin:20px 0;border:1px solid #FFEBCC;'>
+                <p style='margin:0 0 8px;font-size:13px;'><strong>Receipt No:</strong> {$data['receipt_number']}</p>
+                <p style='margin:0 0 8px;font-size:13px;'><strong>Tutor:</strong> {$data['tutor_name']}</p>
+                <p style='margin:0 0 8px;font-size:13px;'><strong>Language:</strong> {$data['language']}</p>
+                <p style='margin:0 0 8px;font-size:13px;'><strong>Date:</strong> " . date('d M Y', strtotime($data['booking_date'])) . "</p>
+                <p style='margin:0;font-size:13px;'><strong>Total Amount Paid:</strong> RM " . number_format($data['amount'], 2) . "</p>
+                {$breakdownHtml}
             </div>
-        ";
+            <p style='color:#7B6178;font-size:13px;'>Thank you for learning with Kyoshi!</p>
+        </div>
+    </div>
+";
         $mail->addStringAttachment($pdfString, 'Kyoshi_Receipt_' . ($data['receipt_number'] ?? $bookingID) . '.pdf');
         $mail->send();
         header("Location: booking_detail.php?id=$bookingID&emailed=1");

@@ -41,6 +41,23 @@ if ($userRole === 'tutor' && $booking['tutor_id'] != $userID) {
     exit();
 }
 
+// Function to check and update booking status if both confirmed
+function checkAndCompleteBooking($conn, $booking_id) {
+    $checkStmt = $conn->prepare("SELECT tutor_confirmed, student_confirmed FROM session_completion WHERE booking_id = ?");
+    $checkStmt->bind_param("i", $booking_id);
+    $checkStmt->execute();
+    $result = $checkStmt->get_result()->fetch_assoc();
+    
+    if ($result && $result['tutor_confirmed'] == 1 && $result['student_confirmed'] == 1) {
+        // Both confirmed - update booking to completed
+        $updateBooking = $conn->prepare("UPDATE bookings SET status = 'completed', completed_at = NOW() WHERE id = ?");
+        $updateBooking->bind_param("i", $booking_id);
+        $updateBooking->execute();
+        return true;
+    }
+    return false;
+}
+
 // ==================== STUDENT ACTIONS ====================
 if ($userRole === 'student') {
     // Check if already confirmed
@@ -75,7 +92,14 @@ if ($userRole === 'student') {
         $stmt->bind_param("i", $booking_id);
         
         if ($stmt->execute()) {
-            echo json_encode(['success' => true, 'message' => 'Attendance confirmed! Tutor will submit feedback soon.']);
+            // Check if both confirmed now
+            $bothCompleted = checkAndCompleteBooking($conn, $booking_id);
+            
+            if ($bothCompleted) {
+                echo json_encode(['success' => true, 'message' => 'Both confirmed! Session completed!']);
+            } else {
+                echo json_encode(['success' => true, 'message' => 'Attendance confirmed! Waiting for tutor confirmation.']);
+            }
         } else {
             echo json_encode(['success' => false, 'message' => 'Database error: ' . $stmt->error]);
         }
@@ -163,6 +187,19 @@ elseif ($userRole === 'tutor') {
         }
         $stmt->bind_param("i", $booking_id);
         
+        if ($stmt->execute()) {
+            // Check if both confirmed now
+            $bothCompleted = checkAndCompleteBooking($conn, $booking_id);
+            
+            if ($bothCompleted) {
+                echo json_encode(['success' => true, 'message' => 'Both confirmed! Session completed!']);
+            } else {
+                echo json_encode(['success' => true, 'message' => 'Attendance confirmed! Waiting for student confirmation.']);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $stmt->error]);
+        }
+        
     } elseif ($action === 'student_no_show') {
         $reason = $data['reason'] ?? 'Tutor reported student did not attend';
         
@@ -182,6 +219,12 @@ elseif ($userRole === 'tutor') {
             ");
         }
         $stmt->bind_param("si", $reason, $booking_id);
+        
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'message' => 'Session marked as student no-show.']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $stmt->error]);
+        }
         
     } elseif ($action === 'tutor_no_show') {
         $reason = $data['reason'] ?? 'Tutor did not attend the session';
@@ -203,15 +246,15 @@ elseif ($userRole === 'tutor') {
         }
         $stmt->bind_param("si", $reason, $booking_id);
         
+        if ($stmt->execute()) {
+            $conn->query("UPDATE bookings SET status = 'disputed' WHERE id = $booking_id");
+            echo json_encode(['success' => true, 'message' => 'Issue reported. Admin will review and process refund.']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $stmt->error]);
+        }
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
         exit();
-    }
-    
-    if ($stmt->execute()) {
-        echo json_encode(['success' => true, 'message' => 'Action completed successfully']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Database error: ' . $stmt->error]);
     }
 }
 

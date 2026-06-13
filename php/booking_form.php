@@ -914,6 +914,12 @@ function renderDayPanels() {
         container.appendChild(panel);
     });
 }
+
+function updateAfterSlotChange(ds) {
+    updateRunningTotal();
+    renderDayPanels();
+    updateSummary();
+}
 function toggleSlot(ds, timeVal, btn) {
     const sess = sessions[ds];
     if (!sess) return;
@@ -925,7 +931,7 @@ function toggleSlot(ds, timeVal, btn) {
         return;
     }
 
-    // NEW: Check if THIS student has a booking at same date/time with ANY tutor
+    // Check if THIS student has a booking at same date/time with ANY tutor
     fetch('check_student_bookings.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -957,6 +963,7 @@ function toggleSlot(ds, timeVal, btn) {
         }
         
         updateAfterSlotChange(ds);
+        updateSummary();  // ← ADD THIS LINE to update the right sidebar
     });
 }
 

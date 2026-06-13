@@ -53,6 +53,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
     $role = $_POST['role'] ?? 'student';
     $return_to = $_POST['return_to'] ?? 'admin_tutor_actions.php';
     $default_password = 'Kyoshi@2026';
+
+    // Convert empty phone to NULL
+    if ($phone === '') {
+        $phone = null;
+    }
     
     // Validation
     if (empty($fullname) || empty($email)) {
@@ -70,9 +75,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
             // Hash the password
             $hashed_password = password_hash($default_password, PASSWORD_DEFAULT);
             
-            // Insert new user
+            // Method 1: Use NULL directly in the query (if phone is null)
+        if ($phone === null) {
+            $insertStmt = $conn->prepare("INSERT INTO users (fullname, email, phone, password, role, status, created_at) VALUES (?, ?, NULL, ?, ?, 'approved', NOW())");
+            $insertStmt->bind_param("ssss", $fullname, $email, $hashed_password, $role);
+        } else {
             $insertStmt = $conn->prepare("INSERT INTO users (fullname, email, phone, password, role, status, created_at) VALUES (?, ?, ?, ?, ?, 'approved', NOW())");
             $insertStmt->bind_param("sssss", $fullname, $email, $phone, $hashed_password, $role);
+        }
+        
             
             if ($insertStmt->execute()) {
                 // Send email with credentials

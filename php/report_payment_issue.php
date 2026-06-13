@@ -1,6 +1,7 @@
 <?php
 session_start();
-error_reporting(0);
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 header('Content-Type: application/json');
 
 include 'config.php';
@@ -12,16 +13,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $userID = $_SESSION['user_id'];
 
-// ✅ ADD THIS - Handle both JSON and FormData
-$input = file_get_contents('php://input');
-$json_data = json_decode($input, true);
-
-// If JSON data exists, use it; otherwise use $_POST
-if ($json_data && empty($_POST)) {
-    $_POST = $json_data;
-}
-
-// Now get form data (works for both JSON and FormData)
+// Get form data
 $payment_id = isset($_POST['payment_id']) ? intval($_POST['payment_id']) : 0;
 $booking_id = isset($_POST['booking_id']) ? intval($_POST['booking_id']) : 0;
 $resolution_requested = isset($_POST['resolution_requested']) ? $_POST['resolution_requested'] : '';
@@ -31,14 +23,7 @@ $bank_name = isset($_POST['bank_name']) ? trim($_POST['bank_name']) : null;
 $bank_account_number = isset($_POST['bank_account_number']) ? trim($_POST['bank_account_number']) : null;
 $bank_account_name = isset($_POST['bank_account_name']) ? trim($_POST['bank_account_name']) : null;
 
-// ✅ ADD VALIDATION HERE
-$allowed_resolutions = ['refund', 'reschedule', 'complete'];
-if (!in_array($resolution_requested, $allowed_resolutions)) {
-    echo json_encode(['success' => false, 'message' => 'Invalid resolution type selected']);
-    exit();
-}
-
-// Validate
+// Simple validation
 if ($payment_id <= 0 || $booking_id <= 0) {
     echo json_encode(['success' => false, 'message' => 'Invalid payment or booking ID']);
     exit();
@@ -54,59 +39,11 @@ if (empty($description)) {
     exit();
 }
 
-// For reschedule, check if preferred datetime is provided
-if ($resolution_requested === 'reschedule' && empty($preferred_datetime)) {
-    echo json_encode(['success' => false, 'message' => 'Please select a preferred new date and time for reschedule']);
-    exit();
-}
-
-// For refund, check if bank details are provided
-if ($resolution_requested === 'refund') {
-    if (empty($bank_name) || empty($bank_account_number) || empty($bank_account_name)) {
-        echo json_encode(['success' => false, 'message' => 'Please provide all bank account details for refund']);
-        exit();
-    }
-}
-
-// Handle file upload (only for refund)
-$proof_path = null;
-if ($resolution_requested === 'refund') {
-    if (!isset($_FILES['proof_image']) || $_FILES['proof_image']['error'] !== UPLOAD_ERR_OK) {
-        echo json_encode(['success' => false, 'message' => 'Please upload proof of deduction']);
-        exit();
-    }
-    
-    $upload_dir = '../uploads/dispute_proofs/';
-    if (!file_exists($upload_dir)) {
-        mkdir($upload_dir, 0777, true);
-    }
-    
-    $file_ext = strtolower(pathinfo($_FILES['proof_image']['name'], PATHINFO_EXTENSION));
-    $allowed = ['jpg', 'jpeg', 'png', 'pdf'];
-    
-    if (!in_array($file_ext, $allowed)) {
-        echo json_encode(['success' => false, 'message' => 'Only JPG, PNG, or PDF files allowed']);
-        exit();
-    }
-    
-    $file_name = 'dispute_' . time() . '_' . rand(1000, 9999) . '.' . $file_ext;
-    $file_path = $upload_dir . $file_name;
-    
-    if (!move_uploaded_file($_FILES['proof_image']['tmp_name'], $file_path)) {
-        echo json_encode(['success' => false, 'message' => 'Failed to upload file']);
-        exit();
-    }
-    $proof_path = 'uploads/dispute_proofs/' . $file_name;
-}
-
-// Get payment and booking details
+// Get payment details
 $query = $conn->prepare("
-    SELECT p.*, b.student_id, b.tutor_id, b.language, b.booking_date, b.booking_time, b.status as booking_status,
-           u.fullname as tutor_name, s.fullname as student_name, s.email as student_email
+    SELECT p.*, b.student_id, b.tutor_id, b.status as booking_status, b.booking_date, b.booking_time
     FROM payments p
     JOIN bookings b ON p.booking_id = b.id
-    JOIN users u ON b.tutor_id = u.id
-    JOIN users s ON b.student_id = s.id
     WHERE p.id = ? AND b.student_id = ?
 ");
 $query->bind_param("ii", $payment_id, $userID);
@@ -118,65 +55,118 @@ if (!$payment) {
     exit();
 }
 
-// Check if booking is cancelled
-if ($payment['booking_status'] === 'cancelled') {
-    echo json_encode(['success' => false, 'message' => 'This booking has been cancelled. Please contact support.']);
-    exit();
-}
-
-// Parse preferred date and time if reschedule
-$preferred_date = null;
-$preferred_time = null;
+// ========== ADD AVAILABILITY CHECK FOR RESCHEDULE ==========
 if ($resolution_requested === 'reschedule' && $preferred_datetime) {
-    $preferred_date = date('Y-m-d', strtotime($preferred_datetime));
-    $preferred_time = date('H:i:s', strtotime($preferred_datetime));
+    $preferred_date_obj = new DateTime($preferred_datetime);
+    $preferred_date = $preferred_date_obj->format('Y-m-d');
+    $preferred_time = $preferred_date_obj->format('H:i:s');
+    $day_of_week = $preferred_date_obj->format('w'); // 0=Sunday, 1=Monday, etc.
+    $tutor_id = $payment['tutor_id'];
+    $requested_time = $preferred_date_obj->format('H:i:s');
     
-    // Check if the preferred time is in the future
-    if (strtotime($preferred_datetime) < time()) {
-        echo json_encode(['success' => false, 'message' => 'Please select a future date and time for reschedule']);
+    // Check 1: Is the tutor available on this day_of_week within their time range?
+    $avail_stmt = $conn->prepare("
+        SELECT * FROM tutor_availability 
+        WHERE tutor_id = ? 
+        AND day_of_week = ?
+        AND start_time <= ?
+        AND end_time >= ?
+    ");
+    $avail_stmt->bind_param("iiss", $tutor_id, $day_of_week, $requested_time, $requested_time);
+    $avail_stmt->execute();
+    $availability = $avail_stmt->get_result()->fetch_assoc();
+    
+    if (!$availability) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'The tutor is not available at this time. Please check the tutor\'s available hours for ' . $preferred_date_obj->format('l') . '.'
+        ]);
         exit();
     }
     
-    // Check if tutor is available at that time
-    $check_availability = $conn->prepare("
+    // Check 2: Is the tutor already booked by another student at this specific date/time?
+    $check_stmt = $conn->prepare("
         SELECT COUNT(*) as count 
         FROM bookings 
         WHERE tutor_id = ? 
         AND booking_date = ? 
-        AND booking_time = ?
-        AND status NOT IN ('cancelled', 'rejected')
+        AND booking_time = ? 
+        AND status IN ('accepted', 'pending', 'verified')
         AND id != ?
     ");
-    $check_availability->bind_param("issi", $payment['tutor_id'], $preferred_date, $preferred_time, $booking_id);
-    $check_availability->execute();
-    $availability = $check_availability->get_result()->fetch_assoc();
+    $check_stmt->bind_param("issi", $tutor_id, $preferred_date, $preferred_time, $booking_id);
+    $check_stmt->execute();
+    $tutor_booked = $check_stmt->get_result()->fetch_assoc();
     
-    if ($availability['count'] > 0) {
+    if ($tutor_booked['count'] > 0) {
         echo json_encode([
             'success' => false, 
-            'message' => 'The tutor already has a booking at your preferred time. Please select a different time.'
+            'message' => 'This time slot is already booked by another student. Please select a different time.'
+        ]);
+        exit();
+    }
+    
+    // Check 3: Does the student already have another booking at this specific date/time?
+    $self_stmt = $conn->prepare("
+        SELECT COUNT(*) as count 
+        FROM bookings 
+        WHERE student_id = ? 
+        AND booking_date = ? 
+        AND booking_time = ? 
+        AND id != ?
+        AND status IN ('accepted', 'pending', 'verified')
+    ");
+    $self_stmt->bind_param("issi", $userID, $preferred_date, $preferred_time, $booking_id);
+    $self_stmt->execute();
+    $self_booked = $self_stmt->get_result()->fetch_assoc();
+    
+    if ($self_booked['count'] > 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'You already have another booking scheduled at this time. Please select a different time.'
         ]);
         exit();
     }
 }
 
+// Handle file upload if needed
+$proof_path = null;
+if (isset($_FILES['proof_image']) && $_FILES['proof_image']['error'] === UPLOAD_ERR_OK) {
+    $upload_dir = '../uploads/dispute_proofs/';
+    if (!file_exists($upload_dir)) {
+        mkdir($upload_dir, 0777, true);
+    }
+    $file_name = 'dispute_' . time() . '_' . rand(1000, 9999) . '.' . strtolower(pathinfo($_FILES['proof_image']['name'], PATHINFO_EXTENSION));
+    $file_path = $upload_dir . $file_name;
+    if (move_uploaded_file($_FILES['proof_image']['tmp_name'], $file_path)) {
+        $proof_path = 'uploads/dispute_proofs/' . $file_name;
+    }
+}
+
+// Parse preferred date (if not already set from above)
+$preferred_date = null;
+$preferred_time = null;
+if ($resolution_requested === 'reschedule' && $preferred_datetime) {
+    $preferred_date_obj = new DateTime($preferred_datetime);
+    $preferred_date = $preferred_date_obj->format('Y-m-d');
+    $preferred_time = $preferred_date_obj->format('H:i:s');
+}
+
 // Build detailed message
-$message = "=== DISPUTE REPORT ===\n\n";
-$message .= "Payment ID: #{$payment_id}\n";
+$message = "Payment ID: #{$payment_id}\n";
 $message .= "Booking ID: #{$booking_id}\n";
 $message .= "Resolution: " . ucfirst($resolution_requested) . "\n";
-if ($resolution_requested === 'reschedule' && $preferred_datetime) {
-    $message .= "Preferred new date/time: " . date('d M Y, h:i A', strtotime($preferred_datetime)) . "\n";
-}
 $message .= "Description: {$description}\n";
 if ($proof_path) {
     $message .= "Proof: {$proof_path}\n";
 }
 if ($bank_name) {
-    $message .= "\n=== BANK DETAILS FOR REFUND ===\n";
     $message .= "Bank: {$bank_name}\n";
-    $message .= "Account Number: {$bank_account_number}\n";
-    $message .= "Account Name: {$bank_account_name}\n";
+    $message .= "Account: {$bank_account_number}\n";
+    $message .= "Name: {$bank_account_name}\n";
+}
+if ($preferred_datetime && $resolution_requested === 'reschedule') {
+    $message .= "Preferred Reschedule Date/Time: {$preferred_datetime}\n";
 }
 
 // Check for existing dispute
@@ -188,9 +178,7 @@ if ($check->get_result()->num_rows > 0) {
     exit();
 }
 
-// Insert dispute with all fields
-$resolution_type = 'admin';
-
+// INSERT with all fields
 $insert = $conn->prepare("
     INSERT INTO disputes (
         booking_id, 
@@ -201,8 +189,7 @@ $insert = $conn->prepare("
         dispute_type, 
         message, 
         proof_image, 
-        status, 
-        resolution_type, 
+        status,
         resolution_requested,
         preferred_date,
         preferred_time,
@@ -210,59 +197,27 @@ $insert = $conn->prepare("
         bank_account_number,
         bank_account_name,
         created_at
-    ) VALUES (?, ?, ?, ?, 'money_deducted', 'payment', ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, NOW())
+    ) VALUES (?, ?, ?, ?, 'money_deducted', 'payment', ?, ?, 'pending', ?, ?, ?, ?, ?, ?, NOW())
 ");
 
-$insert->bind_param("iiissssssssss", 
-    $booking_id,           // i
-    $payment_id,           // i  
-    $userID,               // i
-    $payment['tutor_id'],  // i
-    $message,              // s
-    $proof_path,           // s
-    $resolution_type,      // s
-    $resolution_requested, // s
-    $preferred_date,       // s
-    $preferred_time,       // s
-    $bank_name,            // s
-    $bank_account_number,  // s
-    $bank_account_name     // s
+$insert->bind_param("iiiissssssss", 
+    $booking_id,           
+    $payment_id,           
+    $userID,               
+    $payment['tutor_id'],  
+    $message,              
+    $proof_path,           
+    $resolution_requested,
+    $preferred_date,       
+    $preferred_time,       
+    $bank_name,            
+    $bank_account_number,  
+    $bank_account_name     
 );
 
 if ($insert->execute()) {
-    $dispute_id = $conn->insert_id;
-    
-    $updatePayment = $conn->prepare("
-        UPDATE payments 
-        SET status = 'disputed', 
-            disputed_at = NOW(),
-            dispute_reason = ? 
-        WHERE id = ?
-    ");
-    $updatePayment->bind_param("si", $description, $payment_id);
-    $updatePayment->execute();
-    
-    // Also update booking status to 'disputed'
-    $updateBooking = $conn->prepare("
-        UPDATE bookings 
-        SET status = 'disputed' 
-        WHERE id = ?
-    ");
-    $updateBooking->bind_param("i", $booking_id);
-    $updateBooking->execute();
-    
-
-    $admin_email = "admin@kyoshi.com";
-    $subject = "New Payment Dispute #$dispute_id";
-    $email_body = "A new payment dispute has been submitted.\n\n";
-    $email_body .= "Student: " . $payment['student_name'] . "\n";
-    $email_body .= "Booking ID: #$booking_id\n";
-    $email_body .= "Tutor: " . $payment['tutor_name'] . "\n";
-    $email_body .= "Resolution: " . ucfirst($resolution_requested) . "\n";
-    if ($resolution_requested === 'reschedule' && $preferred_datetime) {
-        $email_body .= "Preferred New Time: " . date('d M Y, h:i A', strtotime($preferred_datetime)) . "\n";
-    }
-    mail($admin_email, $subject, $email_body);
+    $conn->query("UPDATE payments SET status = 'disputed', disputed_at = NOW() WHERE id = $payment_id");
+    $conn->query("UPDATE bookings SET status = 'disputed' WHERE id = $booking_id");
     
     echo json_encode([
         'success' => true,

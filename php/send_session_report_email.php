@@ -25,10 +25,10 @@ function sendSessionReportNotification($tutorEmail, $tutorName, $studentName, $s
         
         $formattedDate = date('d M Y', strtotime($sessionDate));
         $formattedTime = date('h:i A', strtotime($sessionTime));
-        $resubmitLink = "http://kyoshitutor.site/kyoshi/php/submit_session_report.php?resubmit=1&report_id=" . $reportId;
+        $resubmitLink = "http://kyoshitutor.site/php/submit_session_report.php?resubmit=1&report_id=" . $reportId;
         
         if ($status === 'approve') {
-            $mail->Subject = '✅ Session Report Approved - Kyoshi';
+            $mail->Subject = 'Session Report Approved - Kyoshi';
             $mail->Body = "
             <!DOCTYPE html>
             <html>
@@ -46,7 +46,7 @@ function sendSessionReportNotification($tutorEmail, $tutorName, $studentName, $s
             <body>
                 <div class='container'>
                     <div class='header'>
-                        <h2>✅ Session Report Approved!</h2>
+                        <h2>Session Report Approved!</h2>
                     </div>
                     <div class='content'>
                         <h3>Dear {$tutorName},</h3>
@@ -81,7 +81,7 @@ function sendSessionReportNotification($tutorEmail, $tutorName, $studentName, $s
             </html>
             ";
         } else {
-            $mail->Subject = '❌ Session Report Needs Revision - Kyoshi';
+            $mail->Subject = 'Session Report Needs Resubmit - Kyoshi';
             $mail->Body = "
             <!DOCTYPE html>
             <html>
@@ -100,7 +100,7 @@ function sendSessionReportNotification($tutorEmail, $tutorName, $studentName, $s
             <body>
                 <div class='container'>
                     <div class='header'>
-                        <h2>❌ Session Report Needs Revision</h2>
+                        <h2>Session Report Needs to resubmit</h2>
                     </div>
                     <div class='content'>
                         <h3>Dear {$tutorName},</h3>

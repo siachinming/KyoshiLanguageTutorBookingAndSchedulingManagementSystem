@@ -28,8 +28,7 @@ function e($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
 
 // Get selected language from URL
 $selectedLang = isset($_GET['lang']) ? trim($_GET['lang']) : '';
-
-// Fetch all tutors (optionally filtered by language)
+// Fetch all tutors (optionally filtered by language) - ONLY SHOW TUTORS WITH AVAILABILITY
 $allTutors = [];
 if ($selectedLang !== '') {
     $stmt = $conn->prepare("
@@ -38,13 +37,15 @@ if ($selectedLang !== '') {
                GROUP_CONCAT(DISTINCT ttm.mode) as teaching_modes,
                ul.location,
                ROUND(AVG(r.rating),1) as rating,
-               COUNT(DISTINCT r.id) as review_count
+               COUNT(DISTINCT r.id) as review_count,
+               GROUP_CONCAT(DISTINCT ta.day_of_week) as availability
         FROM users u
         JOIN tutor_profiles tp ON u.id = tp.user_id
         JOIN tutor_languages tl ON u.id = tl.user_id
         LEFT JOIN tutor_teaching_modes ttm ON u.id = ttm.user_id
         LEFT JOIN user_locations ul ON u.id = ul.user_id
         LEFT JOIN ratings r ON u.id = r.tutor_id
+        INNER JOIN tutor_availability ta ON u.id = ta.tutor_id
         WHERE u.role = 'tutor' AND u.status = 'approved'
           AND tl.language = ?
         GROUP BY u.id
@@ -58,13 +59,15 @@ if ($selectedLang !== '') {
                GROUP_CONCAT(DISTINCT ttm.mode) as teaching_modes,
                ul.location,
                ROUND(AVG(r.rating),1) as rating,
-               COUNT(DISTINCT r.id) as review_count
+               COUNT(DISTINCT r.id) as review_count,
+               GROUP_CONCAT(DISTINCT ta.day_of_week) as availability
         FROM users u
         JOIN tutor_profiles tp ON u.id = tp.user_id
         LEFT JOIN tutor_languages tl ON u.id = tl.user_id
         LEFT JOIN tutor_teaching_modes ttm ON u.id = ttm.user_id
         LEFT JOIN user_locations ul ON u.id = ul.user_id
         LEFT JOIN ratings r ON u.id = r.tutor_id
+        INNER JOIN tutor_availability ta ON u.id = ta.tutor_id
         WHERE u.role = 'tutor' AND u.status = 'approved'
         GROUP BY u.id
         ORDER BY tp.rate ASC

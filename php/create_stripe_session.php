@@ -140,7 +140,7 @@ if ($is_partial) {
 }
 
 // URLs - make sure they match your folder name (kyoshi or Kyoshi)
-$success_url = 'http://kyoshitutor.site/kyoshi/php/stripe_success.php?session_id={CHECKOUT_SESSION_ID}&booking_ids=' . implode(',', $booking_ids) . '&is_partial=' . ($is_partial ? '1' : '0') . '&original_payment=' . $original_payment_id;
+$success_url = 'http://kyoshitutor.site/php/stripe_success.php?session_id={CHECKOUT_SESSION_ID}&booking_ids=' . implode(',', $booking_ids) . '&is_partial=' . ($is_partial ? '1' : '0') . '&original_payment=' . $original_payment_id;
 $cancel_url = 'http://kyoshitutor.site/php/my_payments.php?cancelled=1';
 
 debug_stripe("success_url: " . $success_url);

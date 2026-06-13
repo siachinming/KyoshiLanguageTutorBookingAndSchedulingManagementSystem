@@ -970,7 +970,7 @@ function formatMoney($amount) {
 
 <!-- Main Content -->
 <div class="main-content" id="mainContent">
-<div class="top-bar">
+    <div class="top-bar">
     <button class="menu-toggle" id="menuToggle"><i class="bi bi-list"></i></button>
     
     <!-- Mobile Logo (visible only on mobile) -->

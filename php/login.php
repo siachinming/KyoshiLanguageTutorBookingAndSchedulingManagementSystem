@@ -304,7 +304,7 @@ input[type="checkbox"] {
 <div class="login-container">
 
   <div class="login-left">
-    <img src="../assets/img/Logo.png" style="width:120px;">
+    <img src="../assets/img/logo.png" style="width:120px;">
   </div>
 
   <div class="login-right">
@@ -315,7 +315,7 @@ input[type="checkbox"] {
       <div class="mobile-welcome" style="display: none; text-align: center;">
         <img src="../assets/img/logo.png" style="width: 70px;">
       </div>
-                <div class="page-welcome" style="text-align: center; margin-bottom: 20px; width: 100%;">
+    <div class="page-welcome" style="text-align: center; margin-bottom: 20px; width: 100%;">
     <h2 style="font-size: 28px; font-weight: 800; color: #1d3156; margin: 0;">Welcome to Kyoshi</h2>
     <p style="color: #7B6E8F; font-size: 14px; margin-top: 5px;">Your Language Learning Platform</p>
     <hr></div>

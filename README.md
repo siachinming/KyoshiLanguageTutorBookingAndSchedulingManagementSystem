@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/img/Logo.png" alt="Kyoshi Logo" width="180">
+  <img src="assets/img/logo.png" alt="Kyoshi Logo" width="180">
 </p>
 
 <h1 align="center">🎌 KYOSHI Language Learning Platform</h1>
@@ -47,6 +47,7 @@
 - [⚖️ Dispute Resolution Workflow](#️-dispute-resolution-workflow)
 - [🗄 Database Structure](#-database-structure)
 - [🚀 Installation Guide](#-installation-guide)
+- [⏰ Cron Jobs & Automated Tasks](#-cron-jobs--automated-tasks)
 - [📈 Future Enhancements](#-future-enhancements)
 - [🏆 Project Achievements](#-project-achievements)
 - [👥 Development Team](#-development-team)
@@ -431,6 +432,77 @@ http://localhost/Kyoshi
 ```
 ---
 
+# ⏰ Cron Jobs & Automated Tasks
+
+KYOSHI uses **cron-job.org** (external cron service) for automated background tasks since InfinityFree hosting doesn't support native cron jobs.
+
+## Cron Job Configuration
+
+### External Cron Service Setup
+
+1. **Sign up** at [cron-job.org](https://cron-job.org)
+2. **Create cron jobs** with the following settings:
+
+| # | Title | URL | Schedule |
+|---|-------|-----|----------|
+| 1 | AUTO CANCEL BOOKING | `https://kyoshitutor.site/php/auto_cancel_booking.php` | Daily at midnight (`0 0 * * *`) |
+| 2 | AUTO COMPLETE SESSIONS | `https://kyoshitutor.site/php/auto_complete_sessions.php` | Daily at midnight (`0 0 * * *`) |
+| 3 | AUTO REJECT | `https://kyoshitutor.site/php/cron_auto_reject.php` | Daily at midnight (`0 0 * * *`) |
+| 4 | AUTO END SESSIONS | `https://kyoshitutor.site/php/auto_end_sessions.php` | Every 15 minutes (`*/15 * * * *`) |
+| 5 | AUTO REJECT EXPIRED RESCHEDULE | `https://kyoshitutor.site/php/cron_reschedule_expire.php` | Daily at midnight (`0 0 * * *`) |
+| 6 | KYOSHI REMINDERS | `https://kyoshitutor.site/php/send_reminders.php` | Daily at 9:00 PM (`0 21 * * *`) |
+| 7 | KYOSHI SESSION REMINDERS | `https://kyoshitutor.site/php/send_session_reminder.php` | Daily at 8:50 PM (`50 20 * * *`) |
+
+## Automated Tasks Summary
+
+| Task | Frequency | Description |
+|------|-----------|-------------|
+| Auto-end sessions | Every 15 min | Marks completed sessions as finished |
+| Auto-complete sessions | Daily midnight | Completes old sessions automatically |
+| Auto-cancel booking | Daily midnight | Cancels no-show or expired bookings |
+| Auto-reject | Daily midnight | Rejects expired tutor applications/requests |
+| Auto-reject reschedule | Daily midnight | Handles expired reschedule requests |
+| Session reminders | Daily 8:50 PM | Sends reminders for upcoming sessions |
+| General reminders | Daily 9:00 PM | Sends general platform reminders |
+
+## Cron Files Description
+
+| File | Purpose |
+|------|---------|
+| `auto_cancel_booking.php` | Cancels unconfirmed or no-show bookings |
+| `auto_complete_sessions.php` | Completes sessions from previous dates |
+| `cron_auto_reject.php` | Rejects expired tutor applications/requests |
+| `auto_end_sessions.php` | Ends sessions after booking time passes |
+| `cron_reschedule_expire.php` | Handles expired reschedule requests |
+| `send_reminders.php` | Sends general platform reminders |
+| `send_session_reminder.php` | Sends session reminders to students |
+
+## Crontab Expressions Explained
+
+| Expression | Meaning |
+|------------|---------|
+| `*/15 * * * *` | Every 15 minutes |
+| `0 0 * * *` | Daily at midnight (12:00 AM) |
+| `50 20 * * *` | Daily at 8:50 PM |
+| `0 21 * * *` | Daily at 9:00 PM |
+
+## Manual Testing
+
+To test any cron job manually:
+
+```bash
+# Via browser
+https://kyoshitutor.site/php/auto_end_sessions.php
+
+# Via cURL
+curl -s https://kyoshitutor.site/php/auto_end_sessions.php
+
+# Test all at once
+for cron in auto_cancel_booking auto_complete_sessions cron_auto_reject auto_end_sessions cron_reschedule_expire send_reminders send_session_reminder; do
+    curl -s "https://kyoshitutor.site/php/${cron}.php"
+done
+```
+---
 # 📈 Future Enhancements
 
 - Real-Time Chat System

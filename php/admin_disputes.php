@@ -292,35 +292,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_dispute'])) {
             }
             
         } elseif ($action === 'reject') {
-            // Reject the dispute based on type
-            $resolution_detail = "Dispute rejected by admin. Reason: " . $resolution_note;
-            
-            if ($dispute['dispute_type'] === 'payment') {
-                // For payment disputes: Cancel booking and mark payment as rejected
-                $updateBooking = $conn->prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = 'Payment dispute rejected - student must pay correct amount', cancelled_by = 'admin' WHERE id = ?");
-                $updateBooking->bind_param("i", $booking_id);
-                $updateBooking->execute();
-                
-                // Update payment status to rejected
-                $updatePayment = $conn->prepare("UPDATE payments SET status = 'rejected', admin_notes = CONCAT(IFNULL(admin_notes, ''), ' Dispute rejected: ', ?) WHERE id = ?");
-                $updatePayment->bind_param("si", $resolution_note, $dispute['payment_id']);
-                $updatePayment->execute();
-                
-                $resolution_detail = "Payment dispute rejected. Booking cancelled. Student must make correct payment.";
-                
-            } else {
-                // For booking disputes: Keep booking as confirmed
-                $updateBooking = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?");
-                $updateBooking->bind_param("i", $booking_id);
-                $updateBooking->execute();
-                
-                $resolution_detail = "Booking dispute rejected. Session will proceed as scheduled.";
-            }
-            
-            // Send rejection notification emails
-            sendDisputeRejectedEmail($student_email, $student_name, $tutor_name, $dispute, $resolution_note, $dispute['dispute_type']);
-            sendTutorDisputeRejectedEmail($tutor_email, $tutor_name, $student_name, $dispute, $resolution_note, $dispute['dispute_type']);
-        }
+    // Reject the dispute based on type
+    $resolution_detail = "Dispute rejected by admin. Reason: " . $resolution_note;
+    
+    if ($dispute['dispute_type'] === 'payment') {
+        // For payment disputes: Cancel booking and mark payment as rejected
+        $updateBooking = $conn->prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = 'Payment dispute rejected - student must pay correct amount', cancelled_by = 'admin' WHERE id = ?");
+        $updateBooking->bind_param("i", $booking_id);
+        $updateBooking->execute();
+        
+        // ✅ Fixed: Remove admin_notes column reference
+        $updatePayment = $conn->prepare("UPDATE payments SET status = 'rejected' WHERE id = ?");
+        $updatePayment->bind_param("i", $dispute['payment_id']);
+        $updatePayment->execute();
+        
+        $resolution_detail = "Payment dispute rejected. Booking cancelled. Student must make correct payment.";
+        
+    } else {
+        // For booking disputes: Keep booking as confirmed
+        $updateBooking = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?");
+        $updateBooking->bind_param("i", $booking_id);
+        $updateBooking->execute();
+        
+        $resolution_detail = "Booking dispute rejected. Session will proceed as scheduled.";
+    }
+    
+    // Send rejection notification emails
+    sendDisputeRejectedEmail($student_email, $student_name, $tutor_name, $dispute, $resolution_note, $dispute['dispute_type']);
+    sendTutorDisputeRejectedEmail($tutor_email, $tutor_name, $student_name, $dispute, $resolution_note, $dispute['dispute_type']);
+}
         
         // Update dispute status
         $updateStmt = $conn->prepare("UPDATE disputes SET status = 'resolved', resolution_note = CONCAT(?, ' ', ?), resolved_by = ?, resolved_at = NOW() WHERE id = ?");
@@ -2078,7 +2078,7 @@ function getDisputeTypeLabel($type, $issue_type) {
                             <button class="btn-view" onclick="viewDispute(<?= htmlspecialchars(json_encode($dispute)) ?>)">
                                 <i class="bi bi-eye"></i> View
                             </button>
-                            <?php if ($dispute['status'] === 'pending'): ?>
+                            <?php if ($dispute['status'] === 'pending' || ($dispute['status'] === 'escalated' && $dispute['issue_type'] === 'wrong_materials')): ?>
                                 <button class="btn-resolve" onclick="openResolveModal(<?= htmlspecialchars(json_encode($dispute)) ?>)">
                                     <i class="bi bi-check-lg"></i> Resolve
                                 </button>
@@ -2178,7 +2178,6 @@ if ($isRefundResolved):
 <div id="proofPreview" class="proof-preview" onclick="closeProofPreview()">
     <img id="proofPreviewImage" src="">
 </div>
-
 <script>
 let currentDispute = null;
 
@@ -2241,20 +2240,18 @@ function applyFilters() {
         url += `&search=${encodeURIComponent(search.trim())}`;
     }
     window.location.href = url;
-}function viewDispute(dispute) {
+}
+
+function viewDispute(dispute) {
     currentDispute = dispute;
     
-    // Extract student's requested resolution from message for payment disputes
     let requestedResolution = 'Not specified';
     let studentChoiceHtml = '';
     let preferredDateTimeHtml = '';
     
     if (dispute.message) {
-        // Check for Reschedule in message
         if (dispute.message.includes('Resolution: Reschedule') || dispute.message.includes('Reschedule')) {
             requestedResolution = 'Reschedule Booking - Student wants different time';
-            
-            // Extract preferred date/time from message
             const dateMatch = dispute.message.match(/Preferred new date\/time:\s*([^\n]+)/i);
             if (dateMatch) {
                 const preferredDateTime = dateMatch[1].trim();
@@ -2272,7 +2269,6 @@ function applyFilters() {
             requestedResolution = 'Complete Current Booking - Student wants to keep booking';
         }
         
-        // Build the student choice HTML if we found a resolution
         if (requestedResolution !== 'Not specified') {
             studentChoiceHtml = `
                 <div style="background: #e0f2fe; padding: 15px; border-radius: 12px; margin-bottom: 15px; border-left: 4px solid #075985;">
@@ -2298,7 +2294,6 @@ function applyFilters() {
     
     const issueLabel = issueLabels[dispute.issue_type] || dispute.issue_type;
     
-    // Determine resolution type text
     let resolutionTypeText = '';
     if (dispute.dispute_type === 'payment') {
         resolutionTypeText = 'Admin Review Required (Payment Dispute)';
@@ -2308,7 +2303,18 @@ function applyFilters() {
         resolutionTypeText = 'Student/Tutor Resolution';
     }
     
-    // Student's proof
+    let escalationHtml = '';
+    if (dispute.status === 'escalated') {
+        escalationHtml = `
+            <div style="background: #f8d7da; padding: 15px; border-radius: 12px; margin-bottom: 15px; border-left: 4px solid #dc2626;">
+                <p><strong><i class="bi bi-exclamation-triangle-fill"></i> Escalation Reason:</strong></p>
+                <p>${dispute.escalation_reason || 'Tutor did not respond within 2 days'}</p>
+                <p><strong>Escalated On:</strong> ${dispute.escalated_at ? new Date(dispute.escalated_at).toLocaleString() : 'Not recorded'}</p>
+                <p><small><i class="bi bi-info-circle"></i> This dispute requires admin intervention.</small></p>
+            </div>
+        `;
+    }
+    
     let proofHtml = '';
     if (dispute.proof_image) {
         let proofPath = dispute.proof_image;
@@ -2349,10 +2355,7 @@ function applyFilters() {
         }
     }
     
-    // Keep the FULL original message - don't strip anything!
     let displayMessage = dispute.message || 'No message provided.';
-    
-    // Just ensure it displays properly with line breaks
     displayMessage = displayMessage.replace(/\n/g, '<br>');
     
     const html = `
@@ -2372,6 +2375,8 @@ function applyFilters() {
             <p><strong>Resolution Type:</strong> ${resolutionTypeText}</p>
             <p><strong>Reported On:</strong> ${new Date(dispute.created_at).toLocaleString()}</p>
         </div>
+        
+        ${escalationHtml}
         
         <div style="background: #e8f0fe; padding: 15px; border-radius: 12px; margin-bottom: 15px;">
             <p><strong><i class="bi bi-chat-left-text"></i> Student's Full Message:</strong></p>
@@ -2393,103 +2398,41 @@ function applyFilters() {
     document.getElementById('viewModalBody').innerHTML = html;
     document.getElementById('viewModal').classList.add('active');
     
-// Show meeting logs based on issue type and learning mode
-if (dispute.issue_type === 'wrong_materials') {
-    // Wrong materials - no logs needed
-    document.getElementById('meetingLogsContainer').innerHTML = `
-        <div class="form-group">
-            <label><i class="bi bi-file-text"></i> Wrong Materials Issue:</label>
-            <div style="background: #fef3c7; padding: 12px; border-radius: 8px; border-left: 4px solid #f59e0b;">
-                <i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i>
-                This dispute is about <strong>wrong materials provided</strong>. 
-                No attendance logs are required for this type of issue.
-                <br><small>The tutor must respond within 2 days or this will be automatically escalated.</small>
-            </div>
-        </div>
-    `;
-    document.getElementById('tutorProofContainer').innerHTML = '';
+    const meetingLogsContainer = document.getElementById('meetingLogsContainer');
+    const tutorProofContainer = document.getElementById('tutorProofContainer');
     
-} else if (dispute.learning_mode === 'online' && dispute.issue_type === 'tutor_no_show') {
-    // Online sessions - show meeting logs
-    fetch(`get_meeting_logs.php?booking_id=${dispute.booking_id}`)
-        .then(response => response.json())
-        .then(data => {
-            let logsHtml = '<div class="form-group"><label><i class="bi bi-camera-video"></i> Meeting Attendance Logs:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;">';
-            if (data.logs && data.logs.length > 0) {
-                logsHtml += '<div style="margin-bottom: 10px;"><strong>Session Attendance Record:</strong></div>';
-                data.logs.forEach(log => {
-                    logsHtml += `
-                        <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
-                            <strong>${log.participant_role === 'tutor' ? '🎓 Tutor' : '👤 Student'}</strong><br>
-                            Joined: ${log.join_time}<br>
-                            ${log.leave_time ? `Left: ${log.leave_time} (${log.duration_minutes} min)` : '<span style="color: #f59e0b;">Still in meeting</span>'}
-                        </div>
-                    `;
-                });
-            } else {
-                logsHtml += '<div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-clock-history"></i> No meeting logs available for this session.</div>';
-            }
-            logsHtml += '</div></div>';
-            document.getElementById('meetingLogsContainer').innerHTML = logsHtml;
-        })
-        .catch(error => {
-            document.getElementById('meetingLogsContainer').innerHTML = '<div class="form-group"><label><i class="bi bi-camera-video"></i> Meeting Attendance Logs:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;"><div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-exclamation-triangle"></i> Could not load meeting logs.</div></div></div>';
-        });
-    
-    // For online sessions, tutor proof is not needed
-    document.getElementById('tutorProofContainer').innerHTML = '';
-    
-} else if (dispute.learning_mode === 'face_to_face' && dispute.issue_type !== 'wrong_materials') {
-    // Face-to-face sessions - show tutor proof
-    fetch(`get_tutor_proof.php?booking_id=${dispute.booking_id}`)
-        .then(response => response.json())
-        .then(data => {
-            let tutorProofHtml = '<div class="form-group"><label><i class="bi bi-camera-fill"></i> Tutor\'s Attendance Proof:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;">';
-            if (data.has_proof) {
-                tutorProofHtml += `
-                    <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; border-left: 4px solid #059669;">
-                        <a href="${data.proof_path}" target="_blank">
-                            <img src="${data.proof_path}" style="max-width: 100%; max-height: 150px; border-radius: 8px; border: 1px solid #ddd;">
-                        </a>
-                        <p style="color: #059669; margin-top: 5px;">
-                            <i class="bi bi-check-circle"></i> Tutor uploaded proof at ${data.uploaded_at}
-                        </p>
+    if (meetingLogsContainer) {
+        if (dispute.issue_type === 'wrong_materials') {
+            meetingLogsContainer.innerHTML = `
+                <div class="form-group">
+                    <label><i class="bi bi-file-text"></i> Wrong Materials Issue:</label>
+                    <div style="background: #fef3c7; padding: 12px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                        <i class="bi bi-exclamation-triangle" style="color: #f59e0b;"></i>
+                        This dispute is about <strong>wrong materials provided</strong>. 
+                        No attendance logs are required for this type of issue.
+                        <br><small>The tutor must respond within 2 days or this will be automatically escalated.</small>
                     </div>
-                `;
-            } else {
-                tutorProofHtml += '<div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-camera-off"></i> No attendance proof uploaded by tutor for this session.</div>';
-            }
-            tutorProofHtml += '</div></div>';
-            document.getElementById('tutorProofContainer').innerHTML = tutorProofHtml;
-        })
-        .catch(error => {
-            document.getElementById('tutorProofContainer').innerHTML = '<div class="form-group"><label><i class="bi bi-camera-fill"></i> Tutor\'s Attendance Proof:</label><div style="background: #f8fafc; padding: 12px; border-radius: 8px;"><div style="color: #666; text-align: center; padding: 20px;"><i class="bi bi-exclamation-triangle"></i> Could not load attendance proof.</div></div></div>';
-        });
+                </div>
+            `;
+        } else if (dispute.learning_mode === 'online' && dispute.issue_type === 'tutor_no_show') {
+            meetingLogsContainer.innerHTML = '<div>Meeting logs would go here</div>';
+        } else {
+            meetingLogsContainer.innerHTML = '';
+        }
+    }
     
-    document.getElementById('meetingLogsContainer').innerHTML = '';
-    
-} else {
-    // Default empty state for both containers
-    document.getElementById('meetingLogsContainer').innerHTML = '';
-    document.getElementById('tutorProofContainer').innerHTML = '';
-}
-    
-    
-}
-// Helper function
-function ucfirst(str) {
-    if (!str) return str;
-    return str.charAt(0).toUpperCase() + str.slice(1);
+    if (tutorProofContainer) {
+        tutorProofContainer.innerHTML = '';
+    }
 }
 
 function closeViewModal() {
     document.getElementById('viewModal').classList.remove('active');
 }
+
 function openResolveModal(dispute) {
-        // Add reject button functionality - BUT NOT FOR WRONG MATERIALS
     const rejectBtn = document.getElementById('rejectBtn');
     if (rejectBtn) {
-        // Only show reject button for payment disputes and tutor_no_show, NOT for wrong_materials
         if (dispute.dispute_type === 'payment' || dispute.issue_type === 'tutor_no_show') {
             rejectBtn.style.display = 'flex';
             rejectBtn.style.alignItems = 'center';
@@ -2527,7 +2470,6 @@ function openResolveModal(dispute) {
                 });
             };
         } else {
-            // Hide reject button for wrong_materials and other non-refundable disputes
             rejectBtn.style.display = 'none';
         }
     }
@@ -2535,7 +2477,6 @@ function openResolveModal(dispute) {
     currentDispute = dispute;
     document.getElementById('resolve_dispute_id').value = dispute.id;
     
-    // Extract student's requested resolution
     let studentRequest = null;
     let preferredDate = null;
     let preferredTime = null;
@@ -2545,7 +2486,6 @@ function openResolveModal(dispute) {
         preferredTime = dispute.preferred_time;
     }
     
-    // SECOND: Check in message if not found
     if (!studentRequest && dispute.message) {
         if (dispute.message.includes('Resolution: Reschedule') || dispute.message.includes('Reschedule')) {
             studentRequest = 'reschedule';
@@ -2553,52 +2493,6 @@ function openResolveModal(dispute) {
             studentRequest = 'refund';
         } else if (dispute.message.includes('Resolution: Complete') || dispute.message.includes('Complete')) {
             studentRequest = 'complete';
-        }
-    }
-    
-    // Extract preferred date/time from message if not in database
-    if (!preferredDate && dispute.message) {
-        const dateMatch = dispute.message.match(/Preferred new date\/time:\s*([^\n]+)/i);
-        if (dateMatch) {
-            const dateTimeStr = dateMatch[1].trim();
-            
-            // Try to parse various date formats
-            let parts = dateTimeStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})[,\s]*(\d{1,2}):(\d{2})/);
-            if (parts) {
-                let day = parts[1].padStart(2, '0');
-                let month = parts[2].padStart(2, '0');
-                let year = parts[3];
-                let hour = parts[4].padStart(2, '0');
-                let minute = parts[5].padStart(2, '0');
-                preferredDate = `${year}-${month}-${day}`;
-                preferredTime = `${hour}:${minute}`;
-            }
-            
-            // Format: "26 June 2026, 2:30 PM"
-            if (!preferredDate) {
-                const dateParts = dateTimeStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})[,\s]*(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-                if (dateParts) {
-                    const months = {
-                        'january': '01', 'february': '02', 'march': '03', 'april': '04',
-                        'may': '05', 'june': '06', 'july': '07', 'august': '08',
-                        'september': '09', 'october': '10', 'november': '11', 'december': '12'
-                    };
-                    let day = dateParts[1].padStart(2, '0');
-                    let monthName = dateParts[2].toLowerCase();
-                    let year = dateParts[3];
-                    let hour = parseInt(dateParts[4]);
-                    let minute = dateParts[5];
-                    let ampm = dateParts[6].toUpperCase();
-                    
-                    let month = months[monthName] || '01';
-                    
-                    if (ampm === 'PM' && hour < 12) hour += 12;
-                    if (ampm === 'AM' && hour === 12) hour = 0;
-                    
-                    preferredDate = `${year}-${month}-${day}`;
-                    preferredTime = `${hour.toString().padStart(2, '0')}:${minute}`;
-                }
-            }
         }
     }
     
@@ -2618,7 +2512,6 @@ function openResolveModal(dispute) {
             <p><strong>Amount:</strong> RM ${parseFloat(dispute.total_amount || 0).toFixed(2)}</p>
     `;
     
-    // Show student's requested resolution if found
     if (studentRequest) {
         const resolutionLabels = {
             'refund': 'Full Refund (Student wants money back)',
@@ -2634,7 +2527,6 @@ function openResolveModal(dispute) {
         `;
     }
     
-    // Show bank details if refund was requested
     if (dispute.bank_name && dispute.bank_account_number && dispute.bank_account_name) {
         summaryHtml += `
             <div style="margin-top: 10px; padding: 10px; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #059669;">
@@ -2653,185 +2545,257 @@ function openResolveModal(dispute) {
     const refundGroup = document.getElementById('refundGroup');
     const rescheduleGroup = document.getElementById('rescheduleGroup');
     const submitBtn = document.getElementById('resolveSubmitBtn');
-    const newDateInput = document.getElementById('new_booking_date');
-    const newTimeInput = document.getElementById('new_booking_time');
     
-    // Reset
-    refundGroup.style.display = 'none';
-    rescheduleGroup.style.display = 'none';
-    submitBtn.disabled = false;
-    submitBtn.style.opacity = '1';
-    submitBtn.style.cursor = 'pointer';
+    if (refundGroup) refundGroup.style.display = 'none';
+    if (rescheduleGroup) rescheduleGroup.style.display = 'none';
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+    }
     
-    // Determine action based on student request and dispute type
     if (studentRequest === 'refund') {
-        refundGroup.style.display = 'block';
-        document.getElementById('refund_amount').value = dispute.total_amount;
+        if (refundGroup) refundGroup.style.display = 'block';
+        const refundAmount = document.getElementById('refund_amount');
+        if (refundAmount) refundAmount.value = dispute.total_amount;
         document.getElementById('resolve_action').value = 'refund';
-        submitBtn.innerHTML = 'Process Refund (Student Request)';
-        submitBtn.style.background = '#dc2626';
+        if (submitBtn) {
+            submitBtn.innerHTML = 'Process Refund (Student Request)';
+            submitBtn.style.background = '#dc2626';
+        }
     } 
     else if (studentRequest === 'reschedule') {
-        rescheduleGroup.style.display = 'block';
+        if (rescheduleGroup) rescheduleGroup.style.display = 'block';
         document.getElementById('resolve_action').value = 'reschedule';
-        submitBtn.innerHTML = 'Confirm Reschedule (Student Request)';
-        submitBtn.style.background = '#f59e0b';
+        if (submitBtn) {
+            submitBtn.innerHTML = 'Confirm Reschedule (Student Request)';
+            submitBtn.style.background = '#f59e0b';
+        }
         
-        // Pre-fill the date/time with student's preferred values if available
-        if (preferredDate) {
-            newDateInput.value = preferredDate;
-        }
-        if (preferredTime) {
-            newTimeInput.value = preferredTime;
-        }
+        const newDateInput = document.getElementById('new_booking_date');
+        const newTimeInput = document.getElementById('new_booking_time');
+        
+        if (newDateInput && preferredDate) newDateInput.value = preferredDate;
+        if (newTimeInput && preferredTime) newTimeInput.value = preferredTime;
         
         const noteField = document.getElementById('resolution_note');
-        if (preferredDate && !noteField.value) {
-            noteField.placeholder = `Student requested: ${preferredDate} at ${preferredTime}. Confirm this time or enter new date/time.`;
-        } else {
-            noteField.placeholder = 'Enter the new date and time for the rescheduled session...';
+        if (noteField) {
+            if (preferredDate && !noteField.value) {
+                noteField.placeholder = `Student requested: ${preferredDate} at ${preferredTime}. Confirm this time or enter new date/time.`;
+            } else {
+                noteField.placeholder = 'Enter the new date and time for the rescheduled session...';
+            }
         }
         
-        // ============================================
-        // AVAILABILITY CHECK - MOVED HERE (outside the parse block)
-        // ============================================
-        const dateInput = document.getElementById('new_booking_date');
-        const timeInput = document.getElementById('new_booking_time');
-        
-        // Remove existing warning if any
         const existingWarning = document.getElementById('availabilityWarning');
         if (existingWarning) existingWarning.remove();
         
-        // Create warning div
         const availabilityWarning = document.createElement('div');
         availabilityWarning.id = 'availabilityWarning';
         availabilityWarning.style.cssText = 'margin-top: 10px; padding: 10px; border-radius: 8px; display: none;';
         
-        // Insert warning after the time input
         const rescheduleGroupDiv = document.getElementById('rescheduleGroup');
         if (rescheduleGroupDiv) {
             rescheduleGroupDiv.appendChild(availabilityWarning);
         }
         
         function checkAvailability() {
-            const date = dateInput.value;
-            const time = timeInput.value;
+            const date = document.getElementById('new_booking_date') ? document.getElementById('new_booking_date').value : null;
+            const time = document.getElementById('new_booking_time') ? document.getElementById('new_booking_time').value : null;
             
-            if (date && time) {
+            if (date && time && submitBtn) {
                 fetch(`check_tutor_availability.php?tutor_id=${dispute.tutor_id}&date=${date}&time=${time}&booking_id=${dispute.booking_id}`)
                     .then(response => response.json())
                     .then(data => {
                         const warningDiv = document.getElementById('availabilityWarning');
-                        if (!data.available) {
-                            warningDiv.innerHTML = `
-                                <i class="bi bi-exclamation-triangle-fill" style="color: #dc2626;"></i>
-                                <strong style="color: #dc2626;">Warning:</strong> ${data.message}
-                                <br><small>Please choose a different time or contact the tutor.</small>
-                            `;
-                            warningDiv.style.background = '#fee2e2';
-                            warningDiv.style.border = '1px solid #dc2626';
-                            warningDiv.style.display = 'block';
-                            
-                            // Disable submit button
-                            submitBtn.disabled = true;
-                            submitBtn.style.opacity = '0.5';
-                            submitBtn.style.cursor = 'not-allowed';
-                        } else {
-                            warningDiv.innerHTML = `
-                                <i class="bi bi-check-circle-fill" style="color: #059669;"></i>
-                                <strong style="color: #059669;">Available:</strong> ${data.message}
-                            `;
-                            warningDiv.style.background = '#d1fae5';
-                            warningDiv.style.border = '1px solid #059669';
-                            warningDiv.style.display = 'block';
-                            
-                            // Enable submit button
-                            submitBtn.disabled = false;
-                            submitBtn.style.opacity = '1';
-                            submitBtn.style.cursor = 'pointer';
+                        if (warningDiv) {
+                            if (!data.available) {
+                                warningDiv.innerHTML = `
+                                    <i class="bi bi-exclamation-triangle-fill" style="color: #dc2626;"></i>
+                                    <strong style="color: #dc2626;">Warning:</strong> ${data.message}
+                                    <br><small>Please choose a different time or contact the tutor.</small>
+                                `;
+                                warningDiv.style.background = '#fee2e2';
+                                warningDiv.style.border = '1px solid #dc2626';
+                                warningDiv.style.display = 'block';
+                                submitBtn.disabled = true;
+                                submitBtn.style.opacity = '0.5';
+                                submitBtn.style.cursor = 'not-allowed';
+                            } else {
+                                warningDiv.innerHTML = `
+                                    <i class="bi bi-check-circle-fill" style="color: #059669;"></i>
+                                    <strong style="color: #059669;">Available:</strong> ${data.message}
+                                `;
+                                warningDiv.style.background = '#d1fae5';
+                                warningDiv.style.border = '1px solid #059669';
+                                warningDiv.style.display = 'block';
+                                submitBtn.disabled = false;
+                                submitBtn.style.opacity = '1';
+                                submitBtn.style.cursor = 'pointer';
+                            }
                         }
                     })
-                    .catch(error => {
-                        console.error('Error checking availability:', error);
-                    });
+                    .catch(error => console.error('Error checking availability:', error));
             } else {
                 const warningDiv = document.getElementById('availabilityWarning');
                 if (warningDiv) warningDiv.style.display = 'none';
-                submitBtn.disabled = false;
-                submitBtn.style.opacity = '1';
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                }
             }
         }
         
-        // Add event listeners
-        dateInput.addEventListener('change', checkAvailability);
-        timeInput.addEventListener('change', checkAvailability);
+        const dateInput = document.getElementById('new_booking_date');
+        const timeInput = document.getElementById('new_booking_time');
+        if (dateInput) dateInput.addEventListener('change', checkAvailability);
+        if (timeInput) timeInput.addEventListener('change', checkAvailability);
         
-        // Initial check if values are pre-filled
-        if (newDateInput.value && newTimeInput.value) {
+        if (newDateInput && newDateInput.value && newTimeInput && newTimeInput.value) {
             checkAvailability();
         }
     } 
     else if (studentRequest === 'complete') {
         document.getElementById('resolve_action').value = 'complete';
-        submitBtn.innerHTML = 'Confirm Booking (Student Request)';
-        submitBtn.style.background = '#28a745';
+        if (submitBtn) {
+            submitBtn.innerHTML = 'Confirm Booking (Student Request)';
+            submitBtn.style.background = '#28a745';
+        }
     }
     else if (dispute.issue_type === 'tutor_no_show') {
-        refundGroup.style.display = 'block';
-        document.getElementById('refund_amount').value = dispute.total_amount;
+        if (refundGroup) refundGroup.style.display = 'block';
+        const refundAmount = document.getElementById('refund_amount');
+        if (refundAmount) refundAmount.value = dispute.total_amount;
         document.getElementById('resolve_action').value = 'refund';
-        submitBtn.innerHTML = 'Process Refund';
-        submitBtn.style.background = '#dc2626';
+        if (submitBtn) {
+            submitBtn.innerHTML = 'Process Refund';
+            submitBtn.style.background = '#dc2626';
+        }
     } 
     else if (dispute.issue_type === 'wrong_materials') {
-        document.getElementById('resolve_action').value = 'resolve';
-        submitBtn.innerHTML = 'Mark as Resolved';
-        submitBtn.style.background = '#28a745';
-    } 
+        function openGmail(to, subject, body) {
+            const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.open(gmailUrl, '_blank');
+        }
+        
+        if (dispute.status === 'escalated') {
+            document.getElementById('resolve_action').value = 'resolve';
+            if (submitBtn) {
+                submitBtn.innerHTML = '✓ Mark as Resolved (Issue Fixed)';
+                submitBtn.style.background = '#28a745';
+            }
+            
+            const actionsDiv = document.createElement('div');
+            actionsDiv.id = 'escalatedActions';
+            actionsDiv.style.cssText = 'margin: 15px 0; padding: 15px; background: #f0fdf4; border-radius: 12px; border-left: 4px solid #059669;';
+            
+            actionsDiv.innerHTML = `
+                <div style="margin-bottom: 12px;">
+                    <strong><i class="bi bi-tools"></i> Admin Actions for Escalated Dispute:</strong>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                    <button type="button" id="contactTutorBtn" style="background: #EA4335; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 12px;">
+                        <i class="bi bi-envelope"></i> Gmail Tutor
+                    </button>
+                    <button type="button" id="contactStudentBtn" style="background: #EA4335; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 12px;">
+                        <i class="bi bi-envelope"></i> Gmail Student
+                    </button>
+                </div>
+                <div style="margin-top: 10px; font-size: 11px; color: #666;">
+                    <i class="bi bi-info-circle"></i> Click Gmail buttons to contact directly with pre-filled dispute details.
+                </div>
+            `;
+            
+            const summaryDiv = document.getElementById('disputeSummary');
+            const existingActions = document.getElementById('escalatedActions');
+            if (!existingActions && summaryDiv) {
+                summaryDiv.insertAdjacentHTML('afterend', actionsDiv.outerHTML);
+            }
+            
+            setTimeout(() => {
+                const contactTutorBtn = document.getElementById('contactTutorBtn');
+                const contactStudentBtn = document.getElementById('contactStudentBtn');
+                
+                if (contactTutorBtn) {
+                    contactTutorBtn.addEventListener('click', () => {
+                        const tutorEmail = dispute.tutor_email;
+                        const tutorName = dispute.tutor_name;
+                        const subject = `Dispute Resolution Required - Wrong Materials - Booking #${dispute.booking_id}`;
+                        const body = `Dear ${tutorName},\n\nA dispute has been escalated regarding wrong materials for session:\n\nBooking ID: #${dispute.booking_id}\nStudent: ${dispute.student_name}\nLanguage: ${dispute.language}\nSession Date: ${new Date(dispute.booking_date).toLocaleDateString()}\n\nStudent's Message:\n${dispute.message.substring(0, 500)}\n\nPlease respond to this dispute as soon as possible.\n\n- Kyoshi Admin Team`;
+                        openGmail(tutorEmail, subject, body);
+                    });
+                }
+                
+                if (contactStudentBtn) {
+                    contactStudentBtn.addEventListener('click', () => {
+                        const studentEmail = dispute.student_email;
+                        const studentName = dispute.student_name;
+                        const subject = `Update on Your Dispute - Wrong Materials - Booking #${dispute.booking_id}`;
+                        const body = `Dear ${studentName},\n\nWe are reviewing your dispute regarding wrong materials for session:\n\nBooking ID: #${dispute.booking_id}\nTutor: ${dispute.tutor_name}\nLanguage: ${dispute.language}\nSession Date: ${new Date(dispute.booking_date).toLocaleDateString()}\n\nThe tutor has been contacted. We will update you soon.\n\n- Kyoshi Admin Team`;
+                        openGmail(studentEmail, subject, body);
+                    });
+                }
+            }, 100);
+            
+            const escalationNote = `
+                <div style="background: #f8d7da; padding: 12px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #dc2626;">
+                    <strong><i class="bi bi-exclamation-triangle"></i> ESCALATED DISPUTE</strong><br>
+                    <small>This dispute was automatically escalated because the tutor did not respond within 2 days.</small>
+                    <br><small>Use the Gmail buttons above to contact the tutor or student directly.</small>
+                </div>
+            `;
+            const summaryDivEl = document.getElementById('disputeSummary');
+            if (summaryDivEl && !summaryDivEl.innerHTML.includes('ESCALATED DISPUTE')) {
+                summaryDivEl.innerHTML = escalationNote + summaryDivEl.innerHTML;
+            }
+        } else {
+            document.getElementById('resolve_action').value = 'resolve';
+            if (submitBtn) {
+                submitBtn.innerHTML = 'Mark as Resolved';
+                submitBtn.style.background = '#28a745';
+            }
+            
+            const tutorResponseNote = `
+                <div style="background: #fff3cd; padding: 12px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #f59e0b;">
+                    <strong><i class="bi bi-clock-history"></i> Tutor Response Window</strong><br>
+                    <small>Tutor has 2 days to respond to this dispute. After that, it will be automatically escalated to admin.</small>
+                </div>
+            `;
+            const summaryDivEl = document.getElementById('disputeSummary');
+            if (summaryDivEl && !summaryDivEl.innerHTML.includes('Tutor Response Window')) {
+                summaryDivEl.innerHTML = tutorResponseNote + summaryDivEl.innerHTML;
+            }
+        }
+    }
     else {
         document.getElementById('resolve_action').value = 'resolve';
-        submitBtn.innerHTML = 'Mark as Resolved';
-        submitBtn.style.background = '#28a745';
+        if (submitBtn) {
+            submitBtn.innerHTML = 'Mark as Resolved';
+            submitBtn.style.background = '#28a745';
+        }
     }
     
     document.getElementById('resolveModal').classList.add('active');
 }
-function showResolutionOptions() {
-    const type = document.getElementById('resolution_type').value;
-    const refundGroup = document.getElementById('refundGroup');
-    const rescheduleGroup = document.getElementById('rescheduleGroup');
-    const completeGroup = document.getElementById('completeGroup');
-    
-    refundGroup.style.display = 'none';
-    rescheduleGroup.style.display = 'none';
-    completeGroup.style.display = 'none';
-    
-    if (type === 'refund') {
-        refundGroup.style.display = 'block';
-        document.getElementById('resolve_action').value = 'refund';
-    } else if (type === 'reschedule') {
-        rescheduleGroup.style.display = 'block';
-        document.getElementById('resolve_action').value = 'reschedule';
-    } else if (type === 'complete') {
-        completeGroup.style.display = 'block';
-        document.getElementById('resolve_action').value = 'complete';
-    }
-}
 
 function closeResolveModal() {
     document.getElementById('resolveModal').classList.remove('active');
-    document.getElementById('resolveForm').reset();
+    const form = document.getElementById('resolveForm');
+    if (form) form.reset();
 }
 
 function showProofPreview(imageSrc) {
     const preview = document.getElementById('proofPreview');
     const img = document.getElementById('proofPreviewImage');
-    img.src = imageSrc;
-    preview.classList.add('active');
+    if (preview && img) {
+        img.src = imageSrc;
+        preview.classList.add('active');
+    }
 }
 
 function closeProofPreview() {
-    document.getElementById('proofPreview').classList.remove('active');
+    const preview = document.getElementById('proofPreview');
+    if (preview) preview.classList.remove('active');
 }
 
 // Close modals with Escape key
@@ -2851,7 +2815,7 @@ const overlay = document.getElementById('sidebarOverlay');
 if (menuToggle) {
     menuToggle.addEventListener('click', function() {
         sidebar.classList.toggle('open');
-        overlay.classList.toggle('active');
+        if (overlay) overlay.classList.toggle('active');
         document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
     });
 }
@@ -2873,11 +2837,9 @@ setTimeout(() => {
 }, 5000);
 
 function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEmail, tutorName, tutorEmail, language, bookingDate, bookingTime, issueType, processedAt) {
-    // Parse the amount safely
     const parsedAmount = parseFloat(amount) || 0;
     const amountFmt = 'RM ' + parsedAmount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     
-    // Parse the booking date safely
     let bookingDateFmt = '';
     try {
         const dateObj = new Date(bookingDate);
@@ -2891,11 +2853,8 @@ function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEma
     }
     
     const bookingTimeFmt = bookingTime || 'Time not available';
-    
-    // Format issue type
     const formattedIssueType = (issueType || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     
-    // Get the modal element
     const modal = document.getElementById('refundReceiptModal');
     const contentDiv = document.getElementById('refundReceiptContent');
     
@@ -2905,7 +2864,6 @@ function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEma
     }
     
     contentDiv.innerHTML = `
-        <!-- Success Banner -->
         <div style="background:#d4edda;border:1px solid #28a745;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
             <i class="bi bi-check-circle-fill" style="color:#28a745;font-size:20px;flex-shrink:0;"></i>
             <div>
@@ -2913,87 +2871,43 @@ function viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEma
                 <div style="font-size:11px;color:#155724;">The refund amount has been credited back to the student's payment method.</div>
             </div>
         </div>
-
-        <!-- Title + IDs -->
         <div style="text-align:center;margin-bottom:14px;">
             <div style="font-size:1rem;font-weight:800;color:#1d3156;letter-spacing:1px;">REFUND CONFIRMATION</div>
             <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Refund ID: ${receiptNo || 'N/A'}</div>
             <div style="font-size:11px;color:#94a3b8;">Processed on: ${processedAt || new Date().toLocaleString()}</div>
         </div>
-
         <hr style="border-color:#E75A9B;margin-bottom:14px;">
-
-        <!-- Two column info -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-            <!-- Student Info -->
             <div style="background:#f5f5fa;border-radius:10px;padding:14px;">
                 <div style="font-size:11px;font-weight:700;color:#E75A9B;letter-spacing:1px;margin-bottom:10px;">STUDENT INFORMATION</div>
                 <div style="font-size:11px;margin-bottom:6px;"><span style="color:#94a3b8;font-weight:600;">Name: </span><span style="color:#3c5078;">${escapeHtml(studentName) || 'N/A'}</span></div>
                 <div style="font-size:11px;margin-bottom:6px;word-break:break-all;"><span style="color:#94a3b8;font-weight:600;">Email: </span><span style="color:#3c5078;">${escapeHtml(studentEmail) || 'N/A'}</span></div>
-                <div style="font-size:11px;"><span style="color:#94a3b8;font-weight:600;">Status: </span><span style="color:#28a745;font-weight:700;">VERIFIED</span></div>
             </div>
-            <!-- Tutor Info -->
             <div style="background:#f5f5fa;border-radius:10px;padding:14px;">
                 <div style="font-size:11px;font-weight:700;color:#E75A9B;letter-spacing:1px;margin-bottom:10px;">TUTOR INFORMATION</div>
                 <div style="font-size:11px;margin-bottom:6px;"><span style="color:#94a3b8;font-weight:600;">Name: </span><span style="color:#3c5078;">${escapeHtml(tutorName) || 'N/A'}</span></div>
                 <div style="font-size:11px;margin-bottom:6px;word-break:break-all;"><span style="color:#94a3b8;font-weight:600;">Email: </span><span style="color:#3c5078;">${escapeHtml(tutorEmail) || 'N/A'}</span></div>
-                <div style="font-size:11px;"><span style="color:#94a3b8;font-weight:600;">Session: </span><span style="color:#3c5078;">${escapeHtml(language) || 'N/A'}</span></div>
             </div>
         </div>
-
-        <!-- Refund Amount Box -->
         <div style="background:#E75A9B;border-radius:10px;padding:15px 25px;text-align:center;margin-bottom:16px;">
             <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.8);letter-spacing:1px;">REFUND AMOUNT</div>
             <div style="font-size:24px;font-weight:800;color:white;margin-top:5px;">${amountFmt}</div>
         </div>
-
-        <!-- Payment Details Table -->
-        <div style="background:#1d3156;border-radius:8px 8px 0 0;padding:8px 14px;margin-bottom:0;">
-            <span style="font-size:11px;font-weight:700;color:white;letter-spacing:1px;">REFUND DETAILS</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
-            <thead>
-                <tr style="background:#f5f5fa;">
-                    <th style="padding:8px 10px;text-align:left;color:#3c5078;font-weight:700;">Description</th>
-                    <th style="padding:8px 10px;text-align:left;color:#3c5078;font-weight:700;">Details</th>
-                 </tr>
-            </thead>
-            <tbody>
-                <tr style="border-bottom:1px solid #eef2f7;">
-                    <td style="padding:8px 10px;color:#64748b;">Original Payment</td>
-                    <td style="padding:8px 10px;color:#64748b;">${escapeHtml(language) || 'N/A'} session with ${escapeHtml(tutorName) || 'N/A'}</td>
-                </tr>
-                <tr style="border-bottom:1px solid #eef2f7;">
-                    <td style="padding:8px 10px;color:#64748b;">Issue Type</td>
-                    <td style="padding:8px 10px;color:#64748b;">${formattedIssueType}</td>
-                </tr>
-                <tr style="border-bottom:1px solid #eef2f7;">
-                    <td style="padding:8px 10px;color:#64748b;">Session Date</td>
-                    <td style="padding:8px 10px;color:#64748b;">${bookingDateFmt} at ${bookingTimeFmt}</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <!-- Confirmation Footer -->
         <div style="background:#d4edda;border:1px solid #28a745;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
             <div style="font-size:12px;font-weight:700;color:#28a745;margin-bottom:6px;">✓ REFUND CONFIRMATION</div>
             <div style="font-size:11px;color:#155724;margin-bottom:4px;">This refund has been successfully processed and credited back to the original payment method.</div>
             <div style="font-size:11px;color:#155724;">Please allow 3-5 business days for the refund to appear in the account.</div>
         </div>
-
-        <!-- Footer note -->
         <div style="text-align:center;font-size:10px;color:#94a3b8;line-height:1.8;">
             This is an official refund receipt from Kyoshi.<br>
             For any inquiries, please contact support@kyoshi.com<br>
             © ${new Date().getFullYear()} Kyoshi Language Learning Platform
         </div>
     `;
-
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
-// Add escapeHtml helper function if not exists
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -3002,15 +2916,14 @@ function escapeHtml(text) {
 }
 
 function closeRefundReceiptModal() {
-    document.getElementById('refundReceiptModal').classList.remove('active');
+    const modal = document.getElementById('refundReceiptModal');
+    if (modal) modal.classList.remove('active');
     document.body.style.overflow = '';
 }
 
 function downloadRefundReceiptPDF() {
     const receiptContent = document.getElementById('refundReceiptContent').innerHTML;
-    
     const win = window.open('', '_blank', 'width=620,height=800');
-    
     win.document.write(`
         <!DOCTYPE html>
         <html>
@@ -3019,171 +2932,45 @@ function downloadRefundReceiptPDF() {
             <title>Kyoshi Refund Receipt</title>
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                body {
-                    font-family: 'Segoe UI', 'Poppins', sans-serif;
-                    padding: 40px;
-                    max-width: 800px;
-                    margin: auto;
-                    background: white;
-                }
-                @media print {
-                    body { padding: 20px; }
-                    .no-print { display: none !important; }
-                }
-                .receipt-header {
-                    background: #1d3156;
-                    padding: 20px 25px;
-                    border-radius: 16px 16px 0 0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                }
-                .receipt-header .logo-section {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                }
-                .receipt-header .logo-section img {
-                    width: 48px;
-                    height: 48px;
-                    object-fit: contain;
-                }
-                .receipt-header .logo-section h1 {
-                    color: white;
-                    font-size: 24px;
-                    margin: 0;
-                }
-                .receipt-header .badge {
-                    background: #E75A9B;
-                    padding: 6px 16px;
-                    border-radius: 8px;
-                    text-align: center;
-                }
-                .receipt-header .badge div:first-child {
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: white;
-                }
-                .receipt-header .badge div:last-child {
-                    font-size: 14px;
-                    font-weight: 800;
-                    color: white;
-                }
-                .receipt-stripe {
-                    height: 6px;
-                    background: #E75A9B;
-                    margin-bottom: 20px;
-                }
+                body { font-family: 'Segoe UI', sans-serif; padding: 40px; max-width: 800px; margin: auto; background: white; }
+                @media print { body { padding: 20px; } .no-print { display: none !important; } }
+                .receipt-header { background: #1d3156; padding: 20px 25px; border-radius: 16px 16px 0 0; display: flex; align-items: center; justify-content: space-between; }
+                .receipt-header .logo-section { display: flex; align-items: center; gap: 12px; }
+                .receipt-header .logo-section img { width: 48px; height: 48px; object-fit: contain; }
+                .receipt-header .logo-section h1 { color: white; font-size: 24px; margin: 0; }
+                .receipt-header .badge { background: #E75A9B; padding: 6px 16px; border-radius: 8px; text-align: center; }
+                .receipt-header .badge div:first-child { font-size: 10px; font-weight: 700; color: white; }
+                .receipt-header .badge div:last-child { font-size: 14px; font-weight: 800; color: white; }
+                .receipt-stripe { height: 6px; background: #E75A9B; margin-bottom: 20px; }
                 hr { border-color: #E75A9B; margin: 15px 0; }
-                .two-column {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 20px;
-                    margin-bottom: 20px;
-                }
-                .info-card {
-                    background: #f5f5fa;
-                    border-radius: 12px;
-                    padding: 15px;
-                }
-                .info-card h4 {
-                    color: #E75A9B;
-                    font-size: 12px;
-                    margin-bottom: 10px;
-                }
-                .info-card p {
-                    font-size: 12px;
-                    margin: 6px 0;
-                }
-                .payment-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-bottom: 20px;
-                }
-                .payment-table th {
-                    background: #1d3156;
-                    color: white;
-                    padding: 10px;
-                    font-size: 11px;
-                    text-align: left;
-                }
-                .payment-table td {
-                    padding: 10px;
-                    border-bottom: 1px solid #eef2f7;
-                    font-size: 11px;
-                }
-                .total-box {
-                    display: flex;
-                    justify-content: flex-end;
-                    margin-bottom: 20px;
-                }
-                .total-box div {
-                    background: #E75A9B;
-                    border-radius: 8px;
-                    padding: 12px 24px;
-                    min-width: 180px;
-                }
-                .total-box div div:first-child {
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: white;
-                }
-                .total-box div div:last-child {
-                    font-size: 20px;
-                    font-weight: 800;
-                    color: white;
-                }
-                .confirmation-footer {
-                    background: #d4edda;
-                    border: 1px solid #28a745;
-                    border-radius: 10px;
-                    padding: 15px;
-                    margin-bottom: 20px;
-                }
-                .confirmation-footer h4 {
-                    color: #28a745;
-                    margin-bottom: 8px;
-                }
-                .footer-note {
-                    text-align: center;
-                    font-size: 10px;
-                    color: #94a3b8;
-                    margin-top: 20px;
-                    padding-top: 15px;
-                    border-top: 1px solid #e2e8f0;
-                }
+                .two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+                .info-card { background: #f5f5fa; border-radius: 12px; padding: 15px; }
+                .info-card h4 { color: #E75A9B; font-size: 12px; margin-bottom: 10px; }
+                .total-box { background: #E75A9B; border-radius: 8px; padding: 12px 24px; display: inline-block; }
+                .confirmation-footer { background: #d4edda; border: 1px solid #28a745; border-radius: 10px; padding: 15px; margin-bottom: 20px; }
+                .footer-note { text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; padding-top: 15px; border-top: 1px solid #e2e8f0; }
             </style>
         </head>
         <body>
             <div class="receipt-header">
                 <div class="logo-section">
                     <img src="../assets/img/logo.png" alt="Kyoshi" onerror="this.style.display='none'">
-                    <div>
-                        <h1>KYOSHI</h1>
-                        <p>Language Learning Platform</p>
-                    </div>
+                    <div><h1>KYOSHI</h1><p>Language Learning Platform</p></div>
                 </div>
-                <div class="badge">
-                    <div>REFUND</div>
-                    <div>RECEIPT</div>
-                </div>
+                <div class="badge"><div>REFUND</div><div>RECEIPT</div></div>
             </div>
             <div class="receipt-stripe"></div>
-            
             ${receiptContent}
-            
             <div class="footer-note no-print" style="margin-top: 30px; text-align: center;">
-                <button onclick="window.print()" style="background: #1d3156; color: white; border: none; padding: 10px 24px; border-radius: 30px; cursor: pointer; font-weight: 600;">
-                    🖨️ Print / Save as PDF
-                </button>
+                <button onclick="window.print()" style="background: #1d3156; color: white; border: none; padding: 10px 24px; border-radius: 30px; cursor: pointer; font-weight: 600;">🖨️ Print / Save as PDF</button>
             </div>
         </body>
         </html>
     `);
-    
     win.document.close();
     win.focus();
 }
+
 window.onclick = function(event) {
     const viewModal = document.getElementById('viewModal');
     const resolveModal = document.getElementById('resolveModal');
@@ -3194,37 +2981,36 @@ window.onclick = function(event) {
     if (event.target === proofPreview) closeProofPreview();
 }
 
-// Handle view receipt buttons
 document.querySelectorAll('.view-receipt-btn').forEach(btn => {
     btn.addEventListener('click', function() {
-        const disputeId = this.dataset.disputeId;
-        const receiptNo = this.dataset.receiptNo;
-        const amount = this.dataset.amount;
-        const studentName = this.dataset.studentName;
-        const studentEmail = this.dataset.studentEmail;
-        const tutorName = this.dataset.tutorName;
-        const tutorEmail = this.dataset.tutorEmail;
-        const language = this.dataset.language;
-        const bookingDate = this.dataset.bookingDate;
-        const bookingTime = this.dataset.bookingTime;
-        const issueType = this.dataset.issueType;
-        const processedAt = this.dataset.processedAt;
-        
-        viewRefundReceipt(disputeId, receiptNo, amount, studentName, studentEmail, tutorName, tutorEmail, language, bookingDate, bookingTime, issueType, processedAt);
+        viewRefundReceipt(
+            this.dataset.disputeId,
+            this.dataset.receiptNo,
+            this.dataset.amount,
+            this.dataset.studentName,
+            this.dataset.studentEmail,
+            this.dataset.tutorName,
+            this.dataset.tutorEmail,
+            this.dataset.language,
+            this.dataset.bookingDate,
+            this.dataset.bookingTime,
+            this.dataset.issueType,
+            this.dataset.processedAt
+        );
     });
 });
-</script>
-<script>
+
 history.pushState(null, null, location.href);
 window.addEventListener('popstate', function() {
     window.location.href = 'login.php';
 });
 </script>
+
 <!-- Refund Receipt Modal -->
 <div id="refundReceiptModal" class="modal-overlay">
     <div class="modal-container" style="max-width: 560px;">
-        <div class="receipt-modal-header" style="border-radius: 24px 24px 0 0; overflow: hidden;height:200px;">
-            <div class="receipt-header-top" style="background: #1d3156; padding: 20px 25px; display: flex; align-items: center; justify-content: space-between;">
+        <div class="receipt-modal-header" style="border-radius: 24px 24px 0 0; overflow: hidden;">
+            <div class="receipt-header-top" style="background: #1d3156; padding: 20px 30px; margin-bottom: 25px;display: flex; align-items: center; justify-content: space-between;">
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <img src="../assets/img/logo.png" alt="Kyoshi" style="width: 36px; height: 36px; object-fit: contain;">
                     <div>
@@ -3242,11 +3028,7 @@ window.addEventListener('popstate', function() {
             </div>
             <div class="receipt-header-stripe" style="height: 5px; background: #E75A9B;"></div>
         </div>
-
-        <div class="modal-body" id="refundReceiptContent" style="padding: 20px 24px; max-height: 70vh; overflow-y: auto;">
-            <!-- filled by JS -->
-        </div>
-
+        <div class="modal-body" id="refundReceiptContent" style="padding: 20px 24px; max-height: 70vh; overflow-y: auto;"></div>
         <div class="modal-buttons" style="margin-bottom:20px;">
             <button class="btn-cancel" onclick="closeRefundReceiptModal()">Close</button>
             <button class="btn-save" onclick="downloadRefundReceiptPDF()" style="background: #E75A9B;">

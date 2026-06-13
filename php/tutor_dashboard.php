@@ -316,18 +316,6 @@ body::before{
 .nav-links a.active::after {
     width: 100%;
 }
-.profile{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    background:rgba(255,255,255,0.12);
-    border:1px solid rgba(255,255,255,0.2);
-    padding:6px 14px 6px 8px;
-    border-radius:40px;
-    cursor:pointer;
-    color:#1d3156;
-    transition:0.25s;
-}
 
 .profile:hover{
     background:rgba(255,255,255,0.2);
@@ -658,23 +646,32 @@ body::before{
 .profile {
     display: flex;
     align-items: center;
-    gap: 9px;
-    border-radius: 999px;
-    padding: 6px 12px 6px 6px;
-    font-weight: 900;
-    color: #7A3D65;
-    border: 1px solid rgba(46, 42, 59, 0.08);
-    background: rgba(255, 255, 255, 0.88);
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 6px 14px 6px 8px;
+    border-radius: 40px;
     cursor: pointer;
+    color: black;
+    transition: 0.25s;
+}
+
+.profile:hover {
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .profile img {
-    width: 34px;
-    height: 34px;
-    object-fit: cover;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
+.profile span {
+    font-size: 13px;
+    font-weight: 500;
+}
 /* Dropdown - positioned to the RIGHT */
 .dropdown {
     position: absolute;

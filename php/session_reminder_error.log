@@ -1,0 +1,5 @@
+[12-Jun-2026 12:40:28 Asia/Kuala_Lumpur] PHP Fatal error:  Uncaught mysqli_sql_exception: MySQL server has gone away in C:\xampp\htdocs\Kyoshi\php\send_session_reminder.php:27
+Stack trace:
+#0 C:\xampp\htdocs\Kyoshi\php\send_session_reminder.php(27): mysqli->prepare('\r\n    SELECT \r\n...')
+#1 {main}
+  thrown in C:\xampp\htdocs\Kyoshi\php\send_session_reminder.php on line 27

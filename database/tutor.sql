@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 10, 2026 at 05:10 PM
+-- Generation Time: Jun 13, 2026 at 07:50 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -145,12 +145,11 @@ CREATE TABLE `bookings` (
 --
 
 INSERT INTO `bookings` (`id`, `student_id`, `tutor_id`, `language`, `learning_mode`, `booking_date`, `booking_time`, `total_amount`, `status`, `completed_at`, `auto_completed`, `cancelled_by`, `cancel_reason`, `meeting_location`, `created_at`, `notes`, `focus`, `meeting_link`, `link_provided_at`, `link_reminder_sent`, `proficiency_level`, `reminder_sent`) VALUES
-(1, 2, 5, 'Japanese', 'online', '2026-05-28', '12:00:00', 45.00, 'completed', '2026-05-29 13:39:46', 1, NULL, NULL, NULL, '2026-05-09 07:25:23', '', 'Writing', NULL, NULL, 1, 'beginner', 0),
+(1, 2, 5, 'Japanese', 'online', '2026-06-13', '13:00:00', 45.00, 'confirmed', '2026-05-29 13:39:46', 1, NULL, NULL, NULL, '2026-05-09 07:25:23', '', 'Writing', 'https://meet.google.com/xvk-aohf-sei', '2026-06-13 12:51:49', 1, 'beginner', 1),
 (2, 2, 10, 'English', 'online', '2026-05-21', '01:00:00', 47.00, 'cancelled', '2026-06-06 12:00:19', 1, 'admin', 'Refunded due to dispute resolution', NULL, '2026-05-09 07:25:23', '', 'Speaking', NULL, NULL, 0, 'beginner', 0),
 (3, 2, 3, 'Mandarin', 'face_to_face', '2026-04-10', '09:00:00', 50.00, 'cancelled', NULL, 0, 'student', NULL, 'KLCC', '2026-05-09 07:25:23', NULL, NULL, NULL, NULL, 0, 'beginner', 0),
 (4, 2, 6, 'English', 'online', '2026-04-01', '11:00:00', 50.00, 'cancelled', NULL, 0, 'tutor', 'Not free at that moment', NULL, '2026-05-09 07:25:23', NULL, NULL, NULL, NULL, 0, 'beginner', 0),
 (5, 2, 8, 'Korean', 'online', '2026-03-15', '15:00:00', 46.00, 'cancelled', NULL, 0, 'student', NULL, NULL, '2026-05-09 07:25:23', NULL, NULL, NULL, NULL, 0, 'beginner', 0),
-(6, 4, 5, 'Japanese', 'online', '2026-05-18', '10:00:00', 45.00, 'completed', '2026-05-20 00:19:29', 1, NULL, NULL, NULL, '2026-05-09 07:25:23', NULL, NULL, NULL, NULL, 0, 'beginner', 0),
 (7, 4, 9, 'Malay', 'face_to_face', '2026-04-20', '13:00:00', 40.00, 'completed', NULL, 0, NULL, NULL, 'Mid Valley', '2026-05-09 07:25:23', NULL, NULL, NULL, NULL, 0, 'beginner', 0),
 (8, 2, 3, 'English', 'online', '2026-05-12', '12:00:00', 50.00, 'cancelled', NULL, 0, 'admin', NULL, NULL, '2026-05-09 13:09:59', '', 'Speaking', NULL, NULL, 0, 'beginner', 0),
 (9, 2, 3, 'English', 'online', '2026-05-13', '12:00:00', 50.00, 'completed', NULL, 0, NULL, NULL, NULL, '2026-05-09 13:09:59', '', 'Speaking', NULL, NULL, 0, 'beginner', 0),
@@ -204,19 +203,36 @@ INSERT INTO `bookings` (`id`, `student_id`, `tutor_id`, `language`, `learning_mo
 (57, 2, 6, 'English', 'online', '2026-06-04', '11:00:00', 50.00, 'cancelled', '2026-06-05 12:00:02', 1, 'admin', 'Refunded due to dispute resolution', NULL, '2026-06-03 04:01:02', 'I want to focus on my grammar', 'Speaking, Listening, Reading, Writing', NULL, NULL, 1, 'intermediate', 1),
 (58, 2, 6, 'English', 'online', '2026-06-04', '12:00:00', 50.00, 'pending', NULL, 0, NULL, NULL, NULL, '2026-06-03 04:01:02', 'I want to focus on my grammar', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'intermediate', 0),
 (59, 2, 5, 'Japanese', 'face_to_face', '2026-06-17', '12:00:00', 45.00, 'rescheduled', NULL, 0, NULL, NULL, 'Pulau Pinang, Malaysia', '2026-06-03 11:46:21', '', 'Reading', NULL, NULL, 0, 'master', 0),
-(60, 4, 5, 'Japanese', 'face_to_face', '2026-06-24', '13:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, 'Pulau Pinang, Malaysia', '2026-06-06 03:45:49', '', 'Speaking, Writing', NULL, NULL, 0, 'intermediate', 0),
-(61, 4, 5, 'Japanese', 'face_to_face', '2026-06-24', '12:00:00', 45.00, 'accepted', NULL, 0, NULL, NULL, 'Pulau Pinang, Malaysia', '2026-06-06 03:45:49', '', 'Speaking, Writing', NULL, NULL, 0, 'intermediate', 0),
 (62, 4, 7, 'Mandarin', 'online', '2026-06-25', '19:00:00', 48.00, 'pending', NULL, 0, NULL, NULL, NULL, '2026-06-06 03:46:16', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'beginner', 0),
-(63, 4, 5, 'Japanese', 'face_to_face', '2026-06-25', '13:00:00', 45.00, 'accepted', NULL, 0, NULL, NULL, 'Pulau Pinang, Malaysia', '2026-06-06 10:32:19', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
-(64, 4, 5, 'Japanese', 'face_to_face', '2026-06-25', '12:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, 'Pulau Pinang, Malaysia', '2026-06-06 10:32:19', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
-(65, 4, 5, 'Japanese', 'face_to_face', '2026-06-26', '11:00:00', 45.00, 'cancelled', NULL, 0, 'admin', 'Refunded due to dispute resolution', 'Pulau Pinang, Malaysia', '2026-06-06 10:32:19', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
-(66, 4, 5, 'Japanese', 'face_to_face', '2026-06-26', '10:00:00', 45.00, 'accepted', NULL, 0, NULL, 'Payment rejected: please reupload a photo', 'Pulau Pinang, Malaysia', '2026-06-06 10:32:19', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
-(67, 4, 10, 'English', 'online', '2026-06-17', '10:00:00', 47.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-08 14:02:21', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'advanced', 0),
-(68, 4, 10, 'English', 'online', '2026-06-24', '10:00:00', 47.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-08 14:02:21', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'advanced', 0),
-(69, 4, 10, 'English', 'online', '2026-06-23', '10:00:00', 47.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-08 14:02:21', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'advanced', 0),
+(67, 4, 10, 'English', 'online', '2026-06-17', '10:00:00', 47.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-08 14:02:21', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'advanced', 0),
+(68, 4, 10, 'English', 'online', '2026-06-24', '10:00:00', 47.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-08 14:02:21', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'advanced', 0),
+(69, 4, 10, 'English', 'online', '2026-06-23', '10:00:00', 47.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-08 14:02:21', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'advanced', 0),
 (70, 2, 5, 'Japanese', 'online', '2026-06-17', '09:00:00', 45.00, 'pending', NULL, 0, NULL, NULL, NULL, '2026-06-08 17:53:10', '', 'Listening', NULL, NULL, 0, 'beginner', 0),
 (71, 2, 5, 'Japanese', 'online', '2026-06-24', '11:00:00', 45.00, 'pending', NULL, 0, NULL, NULL, NULL, '2026-06-08 17:53:10', '', 'Listening', NULL, NULL, 0, 'beginner', 0),
-(72, 2, 5, 'Japanese', 'online', '2026-06-24', '09:00:00', 45.00, 'pending', NULL, 0, NULL, NULL, NULL, '2026-06-08 17:59:18', '', 'Speaking', NULL, NULL, 0, 'beginner', 0);
+(72, 2, 5, 'Japanese', 'online', '2026-06-24', '09:00:00', 45.00, 'pending', NULL, 0, NULL, NULL, NULL, '2026-06-08 17:59:18', '', 'Speaking', NULL, NULL, 0, 'beginner', 0),
+(73, 23, 5, 'Japanese', 'face_to_face', '2026-06-24', '12:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, 'Pulau Pinang, Malaysia', '2026-06-12 09:22:04', '', 'Reading', NULL, NULL, 0, 'intermediate', 0),
+(74, 27, 5, 'Japanese', 'online', '2026-06-25', '12:00:00', 45.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:14:47', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
+(75, 27, 5, 'Japanese', 'online', '2026-06-25', '13:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:14:47', '', 'Speaking, Listening, Reading, Writing', 'https://meet.google.com/xvk-aohf-sei', '2026-06-13 12:51:49', 0, 'master', 0),
+(76, 27, 5, 'Japanese', 'online', '2026-06-26', '16:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:23:31', '', 'Writing', 'https://meet.google.com/xvk-aohf-sei', '2026-06-13 12:51:49', 0, 'master', 0),
+(77, 27, 5, 'Japanese', 'online', '2026-06-26', '12:00:00', 45.00, 'cancelled', NULL, 0, 'admin', 'Refunded due to dispute resolution', NULL, '2026-06-12 13:23:31', '', 'Writing', NULL, NULL, 0, 'master', 0),
+(78, 27, 5, 'Japanese', 'online', '2026-06-24', '10:00:00', 45.00, 'pending', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:23:31', '', 'Writing', NULL, NULL, 0, 'master', 0),
+(79, 27, 5, 'Japanese', 'online', '2026-06-24', '17:00:00', 45.00, 'cancelled', NULL, 0, 'admin', 'Payment dispute rejected - student must pay correct amount', NULL, '2026-06-12 13:23:31', '', 'Writing', NULL, NULL, 0, 'master', 0),
+(80, 27, 8, 'Korean', 'online', '2026-06-13', '10:00:00', 46.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:25:40', '', 'Listening', NULL, NULL, 1, 'master', 0),
+(81, 25, 5, 'Japanese', 'online', '2026-06-15', '09:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:52:54', '', 'Speaking', 'https://meet.google.com/xvk-aohf-sei', '2026-06-13 12:51:49', 0, 'intermediate', 0),
+(82, 25, 5, 'Japanese', 'online', '2026-06-15', '10:00:00', 45.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:52:54', '', 'Speaking', NULL, NULL, 0, 'intermediate', 0),
+(83, 25, 3, 'Japanese', 'online', '2026-06-25', '16:00:00', 60.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-12 13:53:16', '', 'Speaking, Reading', NULL, NULL, 0, 'master', 0),
+(84, 20, 5, 'Japanese', 'online', '2026-06-25', '11:00:00', 45.00, 'cancelled', NULL, 0, NULL, 'Payment rejected: PLEASE PRESS MONEY ALREADY DEDUCTED BUTTON TO RESUBMIT YOUR PROVE', NULL, '2026-06-12 19:01:06', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
+(85, 20, 5, 'Japanese', 'online', '2026-06-25', '17:00:00', 45.00, 'cancelled', NULL, 0, NULL, 'Payment rejected: PLEASE PRESS MONEY ALREADY DEDUCTED BUTTON TO RESUBMIT YOUR PROVE', NULL, '2026-06-12 19:01:06', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
+(86, 20, 5, 'Japanese', 'online', '2026-06-24', '17:00:00', 45.00, 'cancelled', NULL, 0, NULL, 'Payment rejected: MONEY ALREADY DEDUCTED BUTTON', NULL, '2026-06-12 19:01:06', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
+(87, 20, 5, 'Japanese', 'online', '2026-06-24', '16:00:00', 45.00, 'cancelled', NULL, 0, NULL, 'Payment rejected: MONEY ALREADY DEDUCTED BUTTON', NULL, '2026-06-12 19:01:06', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
+(88, 20, 8, 'Korean', 'online', '2026-06-28', '13:00:00', 46.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-13 02:43:45', '', 'Listening, Writing', NULL, NULL, 0, 'advanced', 0),
+(89, 20, 8, 'Korean', 'online', '2026-06-28', '14:00:00', 46.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-13 02:43:45', '', 'Listening, Writing', NULL, NULL, 0, 'advanced', 0),
+(90, 20, 5, 'Japanese', 'face_to_face', '2026-06-16', '12:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, 'Pulau Pinang, Malaysia', '2026-06-13 02:46:41', '', 'Speaking', NULL, NULL, 0, 'intermediate', 0),
+(91, 20, 3, 'Japanese', 'online', '2026-06-25', '14:00:00', 60.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-13 03:35:42', ' Partial payment received. Remaining balance: RM 2.86', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
+(92, 20, 3, 'Japanese', 'online', '2026-06-25', '15:00:00', 60.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-13 03:35:42', '', 'Speaking, Listening, Reading, Writing', NULL, NULL, 0, 'master', 0),
+(93, 20, 5, 'Japanese', 'online', '2026-06-25', '17:00:00', 45.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-13 03:57:32', '', 'Listening, Reading', NULL, NULL, 0, 'master', 0),
+(94, 20, 5, 'Japanese', 'online', '2026-06-25', '16:00:00', 45.00, 'accepted', NULL, 0, NULL, NULL, NULL, '2026-06-13 03:57:32', ' Partial payment received. Remaining balance: RM 2.14', 'Listening, Reading', NULL, NULL, 0, 'master', 0),
+(95, 20, 5, 'Japanese', 'online', '2026-06-30', '12:00:00', 45.00, 'confirmed', NULL, 0, NULL, NULL, NULL, '2026-06-13 03:57:32', '', 'Listening, Reading', 'https://meet.google.com/xvk-aohf-sei', '2026-06-13 12:51:49', 0, 'master', 0);
 
 -- --------------------------------------------------------
 
@@ -261,9 +277,10 @@ INSERT INTO `disputes` (`id`, `booking_id`, `payment_id`, `student_id`, `tutor_i
 (4, 2, NULL, 2, 10, 'tutor_no_show', 'booking', 'Tutor didn\'t even give meeting links', NULL, 'resolved', 'admin', 'Refund of RM 47.00 processed. Receipt: RFD-20260608-000004 ', 1, '2026-06-08 19:54:43', '2026-06-07 02:01:26', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
 (5, 57, NULL, 2, 6, 'tutor_no_show', 'booking', 'I HAVE BEEN WAITING AT OUTSIDE FOR 30 MINUTES NO ONE LET ME IN', '../uploads/reports/1780771430_f974b364a69bc1aac852f69d4d2bc8312adf1992.png', 'resolved', 'admin', 'Refund of RM 50.00 processed. Receipt: RFD-20260607-000005 ', 1, '2026-06-07 06:48:26', '2026-06-07 02:43:50', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
 (6, 59, NULL, 2, 5, 'wrong_materials', 'booking', 'YOU HAVE SUBMITTED WRONG MATERIALS PLEASE RESUBMIT BASED ON WHAT I PICK ON THE LANGUAGE', NULL, 'escalated', 'student_tutor', NULL, NULL, NULL, '2026-06-07 02:47:49', '2026-06-09 22:14:31', NULL, NULL, NULL, NULL, NULL, 'Tutor did not respond within 2 days', '2026-06-09 22:14:32', NULL),
-(7, 65, 50, 4, 5, 'money_deducted', 'payment', '=== DISPUTE REPORT ===\n\nPayment ID: #50\nBooking ID: #65\nResolution: Refund\nDescription: I HAVE TRANSFERRED THE RIGHT AMOUNT AT 12 PM YESTERDAY ON ONLINE BANKING 11223344 PLEASE RECHECK AGAIN AND ACCEPT MY REFUND\nProof: uploads/dispute_proofs/dispute_1780776914_6186.png\n\nBank Details:\nBank: CIMB BANK\nAccount: 11223344\nName: SARAH\n', 'uploads/dispute_proofs/dispute_1780776914_6186.png', 'resolved', 'admin', 'Refund of RM 45.00 processed. Receipt: RFD-20260608-000007 ', 1, '2026-06-08 19:38:35', '2026-06-07 04:15:14', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(8, 66, 51, 4, 5, 'money_deducted', 'payment', '=== DISPUTE REPORT ===\n\nPayment ID: #51\nBooking ID: #66\nResolution: Reschedule\nDescription: I HAVE TRANSFER BUT UNCLEAR SO I TRY AGAIN\n', NULL, 'resolved', 'admin', ' ', 1, '2026-06-08 12:13:00', '2026-06-07 04:27:14', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(9, 32, 50, 4, 5, 'money_deducted', 'payment', 'Money was deducted but I still want the session at the original time.', NULL, 'resolved', 'student_tutor', 'Issue resolved between student and tutor. ', 1, '2026-06-08 21:28:46', '2026-06-08 21:15:10', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'complete');
+(9, 32, NULL, 4, 5, 'money_deducted', 'payment', 'Money was deducted but I still want the session at the original time.', NULL, 'resolved', 'student_tutor', 'Issue resolved between student and tutor. ', 1, '2026-06-08 21:28:46', '2026-06-08 21:15:10', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'complete'),
+(10, 79, 58, 27, 5, 'money_deducted', 'payment', '=== DISPUTE REPORT ===\n\nPayment ID: #58\nBooking ID: #79\nResolution: Refund\nDescription: I HAVE TRANSFTER AT 10 PM\nProof: uploads/dispute_proofs/dispute_1781274445_8587.png\n\n=== BANK DETAILS FOR REFUND ===\nBank: MAYBANK\nAccount Number: 122233\nAccount Name: JAMES\n', 'uploads/dispute_proofs/dispute_1781274445_8587.png', 'resolved', 'admin', 'Payment dispute rejected. Booking cancelled. Student must make correct payment. REJECTION REASON: ＮＯＴ　ＢＥＩＮＧ　ＲＥＣＥＩＶＥＤ　ＩＮ　ＴＨＥ　ＤＵＩＴ　ＮＯＷ　ＡＣＣＯＵＮＴ', 1, '2026-06-13 01:40:07', '2026-06-12 22:27:25', NULL, NULL, NULL, 'MAYBANK', '122233', 'JAMES', NULL, NULL, 'refund'),
+(12, 77, 63, 27, 5, 'money_deducted', 'payment', 'Payment ID: #62\nBooking ID: #76\nResolution: Refund\nDescription: I HAVE TRANSFER AT 12 AM\nProof: uploads/dispute_proofs/dispute_1781277934_5448.png\nBank: MAYBANK\nAccount: 122233\nName: JAMES\n', 'uploads/dispute_proofs/dispute_1781277934_5448.png', 'resolved', 'student_tutor', 'Refund of RM 45.00 processed. Receipt: RFD-20260613-000012 ', 1, '2026-06-13 01:36:52', '2026-06-12 23:25:34', NULL, NULL, NULL, 'MAYBANK', '122233', 'JAMES', NULL, NULL, 'refund'),
+(14, 76, 62, 27, 5, 'money_deducted', 'payment', 'Payment ID: #62\nBooking ID: #76\nResolution: Reschedule\nDescription: HH\nProof: uploads/dispute_proofs/dispute_1781282742_3848.png\nPreferred Reschedule Date/Time: 2026-06-26T16:00\n', 'uploads/dispute_proofs/dispute_1781282742_3848.png', 'resolved', 'student_tutor', 'Session rescheduled from 26 Jun 2026 at 1:00 PM to 26 Jun 2026 at 4:00 PM ', 1, '2026-06-13 00:48:14', '2026-06-13 00:45:42', NULL, '2026-06-26', '16:00:00', NULL, NULL, NULL, NULL, NULL, 'reschedule');
 
 -- --------------------------------------------------------
 
@@ -324,7 +341,10 @@ CREATE TABLE `meeting_logs` (
 
 INSERT INTO `meeting_logs` (`id`, `booking_id`, `meeting_id`, `participant_name`, `participant_role`, `join_time`, `leave_time`, `duration_minutes`) VALUES
 (2, 32, NULL, 'Sharon', 'student', '2026-05-27 15:13:13', '2026-05-27 15:58:13', 45),
-(3, 32, NULL, 'Feng Xi', 'tutor', '2026-05-27 15:15:33', '2026-05-27 16:00:33', 45);
+(3, 32, NULL, 'Feng Xi', 'tutor', '2026-05-27 15:15:33', '2026-05-27 16:00:33', 45),
+(4, 1, NULL, 'Haruka Tan', 'tutor', '2026-06-13 13:03:45', '2026-06-13 13:38:02', 34),
+(5, 1, NULL, 'Sharon', 'student', '2026-06-13 13:07:46', '2026-06-13 13:38:14', 30),
+(6, 1, NULL, 'Haruka Tan', 'tutor', '2026-06-13 13:38:33', '2026-06-13 13:45:20', 7);
 
 -- --------------------------------------------------------
 
@@ -639,7 +659,41 @@ INSERT INTO `notifications` (`id`, `user_id`, `title`, `message`, `type`, `link`
 (292, 4, 'Reschedule Request Cancelled', 'You have cancelled your reschedule request for Japanese session on 25 Jun 2026, 12:00 PM. Your original booking remains confirmed.', 'booking', 'booking_detail.php?id=64', 0, '2026-06-09 12:41:36'),
 (293, 5, 'Reschedule Request Cancelled by Student', 'Student has cancelled their reschedule request for Japanese session on 25 Jun 2026, 12:00 PM. The original booking remains confirmed.', 'booking', 'tutor_booking_detail.php?id=64', 0, '2026-06-09 12:41:36'),
 (294, 2, 'Reschedule Request Approved', 'Your tutor has approved your reschedule request. New date: 26 Jun 2026 at 4:00 PM', 'reschedule', NULL, 1, '2026-06-09 14:12:35'),
-(295, 2, 'Meeting Link Added!', 'Your tutor has added the meeting link for your Japanese session on Thursday, June 11, 2026 at 4:00 PM.', 'meeting_link', 'join_meeting.php?booking_id=54&link=https%3A%2F%2Fmeet.google.com%2Fceb-jegw-gmj', 1, '2026-06-09 14:21:55');
+(295, 2, 'Meeting Link Added!', 'Your tutor has added the meeting link for your Japanese session on Thursday, June 11, 2026 at 4:00 PM.', 'meeting_link', 'join_meeting.php?booking_id=54&link=https%3A%2F%2Fmeet.google.com%2Fceb-jegw-gmj', 1, '2026-06-09 14:21:55'),
+(296, 23, 'Booking Accepted!', 'Your booking for Japanese on 24 Jun 2026 at 12:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=73', 0, '2026-06-12 17:29:58'),
+(297, 27, 'Booking Accepted!', 'Your booking for Japanese on 24 Jun 2026 at 5:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=79', 0, '2026-06-12 21:24:05'),
+(298, 27, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 12:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=74', 0, '2026-06-12 21:24:17'),
+(299, 27, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 1:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=75', 0, '2026-06-12 21:24:28'),
+(300, 27, 'Booking Accepted!', 'Your booking for Japanese on 26 Jun 2026 at 1:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=76', 0, '2026-06-12 21:24:46'),
+(301, 27, 'Booking Accepted!', 'Your booking for Japanese on 26 Jun 2026 at 12:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=77', 0, '2026-06-12 21:24:55'),
+(302, 27, 'Booking Accepted!', 'Your booking for Korean on 13 Jun 2026 at 10:00 AM has been accepted by tutor Kim Jisoo. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=80', 0, '2026-06-12 21:26:42'),
+(303, 25, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 4:00 PM has been accepted by tutor Feng X. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=83', 0, '2026-06-12 21:53:36'),
+(304, 25, 'Booking Accepted!', 'Your booking for Japanese on 15 Jun 2026 at 9:00 AM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=81', 0, '2026-06-12 21:56:14'),
+(305, 27, 'Dispute Resolved', 'Your dispute has been resolved. Session rescheduled from 26 Jun 2026 at 1:00 PM to 26 Jun 2026 at 4:00 PM', 'dispute', 'booking_detail.php?id=76&resolved=1', 0, '2026-06-13 00:48:14'),
+(306, 5, 'Dispute Resolved', 'The dispute for session #76 has been resolved. Session rescheduled from 26 Jun 2026 at 1:00 PM to 26 Jun 2026 at 4:00 PM', 'dispute', 'tutor_booking_detail.php?id=76', 0, '2026-06-13 00:48:14'),
+(307, 27, 'Dispute Resolved', 'Your dispute has been resolved. Refund of RM 45.00 processed. Receipt: RFD-20260613-000012', 'dispute', 'booking_detail.php?id=77&resolved=1', 0, '2026-06-13 01:36:52'),
+(308, 5, 'Dispute Resolved', 'The dispute for session #77 has been resolved. Refund of RM 45.00 processed. Receipt: RFD-20260613-000012', 'dispute', 'tutor_booking_detail.php?id=77', 0, '2026-06-13 01:36:52'),
+(309, 27, 'Dispute Resolved', 'Your dispute has been resolved. Payment dispute rejected. Booking cancelled. Student must make correct payment.', 'dispute', 'booking_detail.php?id=79&resolved=1', 0, '2026-06-13 01:40:07'),
+(310, 5, 'Dispute Resolved', 'The dispute for session #79 has been resolved. Payment dispute rejected. Booking cancelled. Student must make correct payment.', 'dispute', 'tutor_booking_detail.php?id=79', 0, '2026-06-13 01:40:07'),
+(311, 20, 'Booking Accepted!', 'Your booking for Japanese on 24 Jun 2026 at 4:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=87', 0, '2026-06-13 03:01:35'),
+(312, 25, 'Booking Accepted!', 'Your booking for Japanese on 15 Jun 2026 at 10:00 AM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=82', 0, '2026-06-13 03:04:38'),
+(313, 20, 'Booking Accepted!', 'Your booking for Japanese on 24 Jun 2026 at 5:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=86', 0, '2026-06-13 03:04:50'),
+(314, 20, 'Booking Accepted!', 'Your booking for Japanese on 24 Jun 2026 at 5:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=86', 0, '2026-06-13 03:04:57'),
+(315, 20, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 11:00 AM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=84', 0, '2026-06-13 03:05:07'),
+(316, 20, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 5:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=85', 0, '2026-06-13 03:05:17'),
+(317, 20, 'Booking Accepted!', 'Your booking for Korean on 28 Jun 2026 at 1:00 PM has been accepted by tutor Kim Jisoo. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=88', 0, '2026-06-13 10:44:43'),
+(318, 20, 'Booking Accepted!', 'Your booking for Korean on 28 Jun 2026 at 2:00 PM has been accepted by tutor Kim Jisoo. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=89', 0, '2026-06-13 10:44:51'),
+(319, 20, 'Booking Accepted!', 'Your booking for Japanese on 16 Jun 2026 at 12:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=90', 0, '2026-06-13 10:47:11'),
+(320, 20, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 2:00 PM has been accepted by tutor Feng X. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=91', 0, '2026-06-13 11:36:05'),
+(321, 20, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 3:00 PM has been accepted by tutor Feng X. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=92', 0, '2026-06-13 11:36:17'),
+(322, 20, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 4:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=94', 0, '2026-06-13 11:57:59'),
+(323, 20, 'Booking Accepted!', 'Your booking for Japanese on 25 Jun 2026 at 5:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=93', 0, '2026-06-13 11:58:08'),
+(324, 20, 'Booking Accepted!', 'Your booking for Japanese on 30 Jun 2026 at 12:00 PM has been accepted by tutor Haruka Tan. Please proceed to payment.', 'booking', 'payment_form.php?booking_id=95', 0, '2026-06-13 11:58:16'),
+(325, 8, 'Meeting Link Required', 'Your Korean session with James Wong on 13 Jun 2026 needs a meeting link. Please add it before the session.', 'reminder', 'tutor_booking_detail.php?id=80', 0, '2026-06-13 12:53:37'),
+(326, 5, 'Session Starting Soon', 'Your Japanese session with Sharon starts in 6 minutes at 1:00 PM', 'reminder', 'tutor_booking_detail.php?id=1', 0, '2026-06-13 12:53:42'),
+(327, 2, 'Session Starting Soon', 'Your Japanese session with Haruka Tan starts in 6 minutes at 1:00 PM', 'reminder', 'booking_detail.php?id=1', 0, '2026-06-13 12:53:42'),
+(328, 5, 'Session Starting Soon', 'Your Japanese session with Sharon starts in 6 minutes at 1:00 PM', 'reminder', 'tutor_booking_detail.php?id=1', 0, '2026-06-13 12:53:46'),
+(329, 2, 'Session Starting Soon', 'Your Japanese session with Haruka Tan starts in 6 minutes at 1:00 PM', 'reminder', 'booking_detail.php?id=1', 1, '2026-06-13 12:53:46');
 
 -- --------------------------------------------------------
 
@@ -677,7 +731,7 @@ CREATE TABLE `payments` (
   `amount` decimal(10,2) NOT NULL,
   `actual_paid_amount` decimal(10,2) DEFAULT NULL,
   `payment_method` varchar(50) DEFAULT NULL,
-  `status` enum('pending','verified','rejected','cancelled','disputed') DEFAULT 'pending',
+  `status` enum('pending','verified','rejected','disputed','failed','refunded') NOT NULL DEFAULT 'pending',
   `refund_status` enum('none','pending','completed') DEFAULT 'none',
   `receipt_number` varchar(20) DEFAULT NULL,
   `refund_receipt_number` varchar(50) DEFAULT NULL,
@@ -687,6 +741,7 @@ CREATE TABLE `payments` (
   `proof_image` varchar(255) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `verified_at` datetime DEFAULT NULL,
+  `disputed_at` datetime DEFAULT NULL,
   `refund_processed_at` datetime DEFAULT NULL,
   `original_amount` decimal(10,2) DEFAULT NULL,
   `discount_amount` decimal(10,2) DEFAULT 0.00,
@@ -698,41 +753,60 @@ CREATE TABLE `payments` (
 -- Dumping data for table `payments`
 --
 
-INSERT INTO `payments` (`id`, `booking_id`, `student_id`, `tutor_id`, `amount`, `actual_paid_amount`, `payment_method`, `status`, `refund_status`, `receipt_number`, `refund_receipt_number`, `receipt_url`, `notes`, `rejection_type`, `proof_image`, `created_at`, `verified_at`, `refund_processed_at`, `original_amount`, `discount_amount`, `promo_code`, `platform_subsidy`) VALUES
-(1, 2, 2, 10, 47.00, NULL, 'online_banking', 'verified', 'completed', 'RCP-20260606-000001', 'RFD-20260608-000004', NULL, '', NULL, NULL, '2026-05-09 18:59:26', '2026-06-06 01:43:25', '2026-06-08 19:54:30', NULL, 0.00, NULL, 0.00),
-(2, 1, 2, 5, 45.00, NULL, 'stripe', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-10 12:21:22', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(3, 20, 2, 8, 46.00, NULL, 'stripe', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-17 16:30:37', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(4, 24, 2, 10, 47.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260603-000004', NULL, NULL, '', NULL, 'proof_24_1779042604.png', '2026-05-17 18:30:04', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(5, 30, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'RCP-2026-087463', NULL, NULL, NULL, NULL, NULL, '2026-05-21 04:14:00', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(6, 28, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TZOVlAjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKNGcutAGMgaijAHY6uI6LBYhhT2HOkmpzEHms_R0LMaagn4e0NLapRmjdVOuhc72hOoUXOw6IRPyD4bV', NULL, NULL, NULL, '2026-05-21 04:47:13', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(7, 37, 4, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TaGFkAjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMjqxtAGMgbS5KKDl5E6LBapz65LC1iIk5EJl8Fo_DsCS2_6ViuPvvKzNBqc4PlPYYY9oqFHunWBRavY', NULL, NULL, NULL, '2026-05-23 14:10:15', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(16, 35, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TbHibAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMPc1dAGMgZVCB8e5_46LBZhmCZDBM-9G0F7Qte9g_DZMrcQZ8K2yl9bZr1jg-4F2IAU6Jd_PHbNW60c', NULL, NULL, NULL, '2026-05-26 09:56:19', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(17, 32, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TbLF9AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKLLG1tAGMgb5PLDIsH06LBaKGEtxQrw_Rp_slkbt0iB74mIr98LBQ7AQxz39CuARarjDon7YOihuoKlc', NULL, NULL, NULL, '2026-05-26 13:42:10', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(18, 33, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TbLF9AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKLLG1tAGMgb5PLDIsH06LBaKGEtxQrw_Rp_slkbt0iB74mIr98LBQ7AQxz39CuARarjDon7YOihuoKlc', NULL, NULL, NULL, '2026-05-26 13:42:10', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(19, 34, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260603-000019', NULL, NULL, '', NULL, 'proof_1779803019_4413.png', '2026-05-26 13:43:39', '2026-06-03 05:28:40', NULL, NULL, 0.00, NULL, 0.00),
-(20, 9, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(21, 10, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(22, 11, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(23, 12, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(24, 13, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(27, 44, 2, 5, 45.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc3g9AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKOn84NAGMgYhZpPHX9E6LBZJx2-O9UzqepQ1Hf_iV1vfWjTmkTu_FOE97_CguX6UGcVggEzdyVUUp3bD', NULL, NULL, NULL, '2026-05-28 13:08:57', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(28, 19, 2, 8, 46.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc4bTAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMuY4dAGMgaSMPqwVS86LBbid_JNuemPhIS7O5gpETfacK4GiIpS6Ywx4oeFLiLmXfiJRzxyC2nX3iux', NULL, NULL, NULL, '2026-05-28 14:08:12', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(29, 45, 2, 7, 48.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc4bTAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMuY4dAGMgaSMPqwVS86LBbid_JNuemPhIS7O5gpETfacK4GiIpS6Ywx4oeFLiLmXfiJRzxyC2nX3iux', NULL, NULL, NULL, '2026-05-28 14:08:12', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(30, 48, 2, 3, 60.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc5tLAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKKO_4dAGMgZo9EJ6yKw6LBYHisMY3--v5--3xpGJdZpmL8YzEv8vaC65EXpQGTxmZ7jui0MhqPD9y-QO', NULL, NULL, NULL, '2026-05-28 15:30:43', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(31, 50, 2, 3, 60.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc647AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKL_E4dAGMgYShya3Ee06LBYCLsN_9AS8yxALjpNV3fqjGoSACT7yfexK9rkqoBzZJ4u2NhQqDO5CebFx', NULL, NULL, NULL, '2026-05-28 15:41:51', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(32, 52, 2, 10, 47.00, NULL, 'duitnow', 'verified', 'none', 'RCP-20260603-000032', NULL, NULL, '', NULL, 'proof_1780418373_6423.png', '2026-06-02 16:39:33', '2026-06-03 05:53:59', NULL, NULL, 0.00, NULL, 0.00),
-(33, 53, 2, 3, 60.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260604-000033', NULL, NULL, '', NULL, 'proof_1780431576_6837.png', '2026-06-02 20:19:36', '2026-06-04 11:11:20', NULL, NULL, 0.00, NULL, 0.00),
-(34, 54, 2, 3, 13.00, 47.00, 'stripe', '', 'none', 'pi_3Tf3mDAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKILTjNEGMgZo6WeTvpg6LBZG73v3DAs-e-C13-9PImdp2HYNmivcXpJWZ5ANfUHm4VX1bnbjpF3uk6vc', 'Wrong amount paid.  | Partial payment completed on 2026-06-06 03:54:39', 'wrong_amount', 'proof_1780431576_6837.png', '2026-06-05 19:54:39', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(35, 55, 2, 3, 60.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260603-000035', NULL, NULL, '', NULL, 'proof_1780444202_7843.png', '2026-06-02 23:50:02', '2026-06-03 08:05:27', NULL, NULL, 0.00, NULL, 0.00),
-(36, 56, 2, 3, 60.00, NULL, 'stripe', 'verified', 'none', 'pi_3Te3GiAjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKLD8_dAGMgbHAdAwRkM6LBYHDzvdn9FJ_bdrSmdypBTMC8BzaUZN7DfY7zP9JkuhJGzDikeNiGyzwyiV', NULL, NULL, NULL, '2026-06-03 01:06:54', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(37, 57, 2, 6, 50.00, NULL, 'stripe', 'verified', 'completed', 'pi_3Te64MAjFaJboEti1', 'RFD-20260607-000005', 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKL_Q_tAGMgazUmIrLO86LBYdgJQcogrMU_JZ8EWXSJDf2o1qndNu2khrQX9_quaK8zh6iRe20i0LYSDN', NULL, NULL, NULL, '2026-06-03 04:06:23', NULL, '2026-06-07 06:48:15', NULL, 0.00, NULL, 0.00),
-(38, 59, 2, 5, 45.00, NULL, 'stripe', 'verified', 'none', 'pi_3TeDTWAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKPWugNEGMgZiKQUPc1o6LBagyd71p2sqFuklr7XYZbwYeFaWRsQ7xMvDVMcaaWW-iI1Zd9ku09k64zxe', NULL, NULL, NULL, '2026-06-03 12:00:53', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(44, 60, 4, 5, 21.50, 23.50, 'stripe', 'verified', 'none', 'pi_3TfFA5AjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKL2nj9EGMgb9NyUPDis6LBZMb71_bH2fK7UkOx_CaEgBzZY7ovjQwbmRB0z8-Yy_lwO2duD-L3AxdUO0', 'Part of bulk payment. Paid: RM 23.50 of RM 45.00. Remaining: RM 21.50 | Partial payment completed on 2026-06-06 16:01:00', 'underpaid_bulk', 'proof_1780728204_1144.png', '2026-06-06 08:01:00', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(45, 61, 4, 5, 45.00, 23.50, 'online_banking', 'rejected', 'none', 'RCP-2026-020111', NULL, NULL, 'Part of bulk payment. Paid: RM 23.50 of RM 45.00. Remaining: RM 21.50', 'underpaid_bulk', 'proof_1780728204_1144.png', '2026-06-06 06:43:24', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(48, 63, 4, 5, 45.00, 40.00, 'online_banking', 'rejected', 'none', 'RCP-2026-083660', NULL, NULL, 'Part of payment. Paid: RM 40, Remaining: RM 5', 'wrong_amount', 'proof_1780742192_4262.pdf', '2026-06-06 10:36:32', NULL, NULL, NULL, 0.00, NULL, 0.00),
-(49, 64, 4, 5, 45.00, 100.00, 'online_banking', 'verified', 'completed', 'RCP-2026-083660', 'RFD-20260606-000049', NULL, ' [OVERPAID: RM 55.00]\n[REFUND BANK DETAILS: CIMB - 1122334 - SARAH submitted on 2026-06-06 21:16:15]\n[REFUNDED: RM 55.00 on 2026-06-06 21:25:09] Refund receipt: RFD-20260606-000049', NULL, 'proof_1780742192_4262.pdf', '2026-06-06 10:36:32', '2026-06-06 19:21:28', '2026-06-06 21:25:09', NULL, 0.00, NULL, 0.00),
-(50, 65, 4, 5, 45.00, NULL, 'online_banking', 'rejected', 'completed', 'RCP-2026-083660', 'RFD-20260608-000007', NULL, 'UNCLEAR PROOF PLEASE UPLOAD AGAIN', 'invalid_proof', 'proof_1780742192_4262.pdf', '2026-06-06 10:36:32', NULL, '2026-06-08 19:38:21', NULL, 0.00, NULL, 0.00),
-(51, 66, 4, 5, 45.00, NULL, 'online_banking', 'rejected', 'none', 'RCP-2026-083660', NULL, NULL, 'please reupload a photo', 'unrelated_proof', 'proof_1780742192_4262.pdf', '2026-06-06 10:36:32', NULL, NULL, NULL, 0.00, NULL, 0.00);
+INSERT INTO `payments` (`id`, `booking_id`, `student_id`, `tutor_id`, `amount`, `actual_paid_amount`, `payment_method`, `status`, `refund_status`, `receipt_number`, `refund_receipt_number`, `receipt_url`, `notes`, `rejection_type`, `proof_image`, `created_at`, `verified_at`, `disputed_at`, `refund_processed_at`, `original_amount`, `discount_amount`, `promo_code`, `platform_subsidy`) VALUES
+(1, 2, 2, 10, 47.00, NULL, 'online_banking', 'verified', 'completed', 'RCP-20260606-000001', 'RFD-20260608-000004', NULL, '', NULL, NULL, '2026-05-09 18:59:26', '2026-06-06 01:43:25', NULL, '2026-06-08 19:54:30', NULL, 0.00, NULL, 0.00),
+(2, 1, 2, 5, 45.00, NULL, 'stripe', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-10 12:21:22', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(3, 20, 2, 8, 46.00, NULL, 'stripe', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-17 16:30:37', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(4, 24, 2, 10, 47.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260603-000004', NULL, NULL, '', NULL, 'proof_24_1779042604.png', '2026-05-17 18:30:04', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(5, 30, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'RCP-2026-087463', NULL, NULL, NULL, NULL, NULL, '2026-05-21 04:14:00', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(6, 28, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TZOVlAjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKNGcutAGMgaijAHY6uI6LBYhhT2HOkmpzEHms_R0LMaagn4e0NLapRmjdVOuhc72hOoUXOw6IRPyD4bV', NULL, NULL, NULL, '2026-05-21 04:47:13', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(7, 37, 4, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TaGFkAjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMjqxtAGMgbS5KKDl5E6LBapz65LC1iIk5EJl8Fo_DsCS2_6ViuPvvKzNBqc4PlPYYY9oqFHunWBRavY', NULL, NULL, NULL, '2026-05-23 14:10:15', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(16, 35, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TbHibAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMPc1dAGMgZVCB8e5_46LBZhmCZDBM-9G0F7Qte9g_DZMrcQZ8K2yl9bZr1jg-4F2IAU6Jd_PHbNW60c', NULL, NULL, NULL, '2026-05-26 09:56:19', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(17, 32, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TbLF9AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKLLG1tAGMgb5PLDIsH06LBaKGEtxQrw_Rp_slkbt0iB74mIr98LBQ7AQxz39CuARarjDon7YOihuoKlc', NULL, NULL, NULL, '2026-05-26 13:42:10', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(18, 33, 2, 3, 50.00, NULL, 'stripe', 'verified', 'none', 'pi_3TbLF9AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKLLG1tAGMgb5PLDIsH06LBaKGEtxQrw_Rp_slkbt0iB74mIr98LBQ7AQxz39CuARarjDon7YOihuoKlc', NULL, NULL, NULL, '2026-05-26 13:42:10', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(19, 34, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260603-000019', NULL, NULL, '', NULL, 'proof_1779803019_4413.png', '2026-05-26 13:43:39', '2026-06-03 05:28:40', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(20, 9, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(21, 10, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(22, 11, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(23, 12, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(24, 13, 2, 3, 50.00, NULL, 'online_banking', 'verified', 'none', NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-28 06:42:30', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(27, 44, 2, 5, 45.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc3g9AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKOn84NAGMgYhZpPHX9E6LBZJx2-O9UzqepQ1Hf_iV1vfWjTmkTu_FOE97_CguX6UGcVggEzdyVUUp3bD', NULL, NULL, NULL, '2026-05-28 13:08:57', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(28, 19, 2, 8, 46.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc4bTAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMuY4dAGMgaSMPqwVS86LBbid_JNuemPhIS7O5gpETfacK4GiIpS6Ywx4oeFLiLmXfiJRzxyC2nX3iux', NULL, NULL, NULL, '2026-05-28 14:08:12', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(29, 45, 2, 7, 48.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc4bTAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKMuY4dAGMgaSMPqwVS86LBbid_JNuemPhIS7O5gpETfacK4GiIpS6Ywx4oeFLiLmXfiJRzxyC2nX3iux', NULL, NULL, NULL, '2026-05-28 14:08:12', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(30, 48, 2, 3, 60.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc5tLAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKKO_4dAGMgZo9EJ6yKw6LBYHisMY3--v5--3xpGJdZpmL8YzEv8vaC65EXpQGTxmZ7jui0MhqPD9y-QO', NULL, NULL, NULL, '2026-05-28 15:30:43', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(31, 50, 2, 3, 60.00, NULL, 'stripe', 'verified', 'none', 'pi_3Tc647AjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKL_E4dAGMgYShya3Ee06LBYCLsN_9AS8yxALjpNV3fqjGoSACT7yfexK9rkqoBzZJ4u2NhQqDO5CebFx', NULL, NULL, NULL, '2026-05-28 15:41:51', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(32, 52, 2, 10, 47.00, NULL, 'duitnow', 'verified', 'none', 'RCP-20260603-000032', NULL, NULL, '', NULL, 'proof_1780418373_6423.png', '2026-06-02 16:39:33', '2026-06-03 05:53:59', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(33, 53, 2, 3, 60.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260604-000033', NULL, NULL, '', NULL, 'proof_1780431576_6837.png', '2026-06-02 20:19:36', '2026-06-04 11:11:20', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(34, 54, 2, 3, 13.00, 47.00, 'stripe', '', 'none', 'pi_3Tf3mDAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKILTjNEGMgZo6WeTvpg6LBZG73v3DAs-e-C13-9PImdp2HYNmivcXpJWZ5ANfUHm4VX1bnbjpF3uk6vc', 'Wrong amount paid.  | Partial payment completed on 2026-06-06 03:54:39', 'wrong_amount', 'proof_1780431576_6837.png', '2026-06-05 19:54:39', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(35, 55, 2, 3, 60.00, NULL, 'online_banking', 'verified', 'none', 'RCP-20260603-000035', NULL, NULL, '', NULL, 'proof_1780444202_7843.png', '2026-06-02 23:50:02', '2026-06-03 08:05:27', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(36, 56, 2, 3, 60.00, NULL, 'stripe', 'verified', 'none', 'pi_3Te3GiAjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKLD8_dAGMgbHAdAwRkM6LBYHDzvdn9FJ_bdrSmdypBTMC8BzaUZN7DfY7zP9JkuhJGzDikeNiGyzwyiV', NULL, NULL, NULL, '2026-06-03 01:06:54', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(37, 57, 2, 6, 50.00, NULL, 'stripe', 'verified', 'completed', 'pi_3Te64MAjFaJboEti1', 'RFD-20260607-000005', 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKL_Q_tAGMgazUmIrLO86LBYdgJQcogrMU_JZ8EWXSJDf2o1qndNu2khrQX9_quaK8zh6iRe20i0LYSDN', NULL, NULL, NULL, '2026-06-03 04:06:23', NULL, NULL, '2026-06-07 06:48:15', NULL, 0.00, NULL, 0.00),
+(38, 59, 2, 5, 45.00, NULL, 'stripe', 'verified', 'none', 'pi_3TeDTWAjFaJboEti0', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKPWugNEGMgZiKQUPc1o6LBagyd71p2sqFuklr7XYZbwYeFaWRsQ7xMvDVMcaaWW-iI1Zd9ku09k64zxe', NULL, NULL, NULL, '2026-06-03 12:00:53', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(52, 68, 4, 10, 47.00, NULL, 'duitnow', 'verified', 'none', 'RCP-20260612-000052', NULL, NULL, '', NULL, 'proof_1781254008_3049.png', '2026-06-12 08:46:48', '2026-06-12 21:46:21', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(53, 69, 4, 10, 47.00, NULL, 'duitnow', 'verified', 'none', 'RCP-20260612-000053', NULL, NULL, '', NULL, 'proof_1781254008_3049.png', '2026-06-12 08:46:48', '2026-06-12 21:46:25', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(54, 67, 4, 10, 47.00, 10.00, 'duitnow', 'rejected', 'none', 'RCP-2026-034827', NULL, NULL, 'Part of payment. Paid: RM 10, Remaining: RM 37', 'wrong_amount', 'proof_1781254043_2145.png', '2026-06-12 08:47:23', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(55, 67, 4, 10, 37.00, 10.00, 'duitnow', 'verified', 'none', 'RCP-20260612-000055', NULL, NULL, 'Partial payment for original payment #54. Remaining amount paid: RM 37.00. ', NULL, 'proof_1781255067_2112.pdf', '2026-06-12 09:04:27', '2026-06-12 21:43:06', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(56, 73, 23, 5, 45.00, 40.00, 'duitnow', 'rejected', 'none', 'RCP-2026-037642', NULL, NULL, 'Part of payment. Paid: RM 40, Remaining: RM 5', 'wrong_amount', 'proof_1781256640_1983.png', '2026-06-12 09:30:40', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(57, 73, 23, 5, 5.00, 47.00, 'online_banking', 'verified', 'completed', 'RCP-2026-086271', 'RFD-20260612-000057', NULL, 'Partial payment for original payment #56. Remaining amount paid: RM 5.00.  [OVERPAID: RM 42.00]\n[REFUND BANK DETAILS: MAYBANK - 11223344 - OLIVIA submitted on 2026-06-12 18:23:26]\n[REFUNDED: RM 42.00 on 2026-06-12 18:23:43] Refund receipt: RFD-20260612-000057', NULL, 'proof_1781257706_5505.png', '2026-06-12 09:48:26', '2026-06-12 18:22:38', NULL, '2026-06-12 18:23:43', NULL, 0.00, NULL, 0.00),
+(58, 79, 27, 5, 45.00, NULL, 'duitnow', 'rejected', 'none', 'RCP-2026-098972', NULL, NULL, 'INVALID PROOF. IF YOU HAVE TRANSFERED PLEASE PRESS MONEY ALREADY DEDUCTED BUTTON TO RESEND A NEW PAYMENT PROOF', 'invalid_proof', 'proof_1781270900_7537.png', '2026-06-12 13:28:20', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(59, 80, 27, 8, 46.00, NULL, 'duitnow', 'verified', 'none', 'RCP-20260612-000059', NULL, NULL, '', NULL, 'proof_1781270900_7537.png', '2026-06-12 13:28:20', '2026-06-12 21:45:55', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(60, 83, 25, 3, 60.00, NULL, 'duitnow', 'verified', 'none', 'RCP-20260612-000060', NULL, NULL, '', NULL, 'proof_1781272632_2718.png', '2026-06-12 13:57:12', '2026-06-12 21:57:43', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(61, 81, 25, 5, 45.00, NULL, 'duitnow', 'verified', 'none', 'RCP-20260612-000061', NULL, NULL, '', NULL, 'proof_1781272632_2718.png', '2026-06-12 13:57:12', '2026-06-12 21:57:47', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(62, 76, 27, 5, 45.00, NULL, 'online_banking', 'disputed', 'none', 'RCP-2026-003658', NULL, NULL, 'THE PHOTO IS UNCLEAR.PLEASE PRESS THE MONEY ALREADY DEDUCTED BUTTON TO RESUBMIT A VALID PROOF FOR PROPER SOLUTION', 'unrelated_proof', 'proof_1781276219_7309.png', '2026-06-12 14:56:59', NULL, '2026-06-13 00:45:42', NULL, NULL, 0.00, NULL, 0.00),
+(63, 77, 27, 5, 45.00, NULL, 'online_banking', 'disputed', 'completed', 'RCP-2026-032360', 'RFD-20260613-000012', NULL, 'THE PHOTO IS UNCLEAR. IF YOU HAVE ANY PROBLEM CAN PRESS THE MONEY ALREADY DEDUCTED TO ASK FOR SOLUTION', 'invalid_proof', 'proof_1781276248_6131.png', '2026-06-12 14:57:28', NULL, '2026-06-12 23:26:30', '2026-06-13 01:36:40', NULL, 0.00, NULL, 0.00),
+(64, 75, 27, 5, 45.00, 100.00, 'online_banking', 'verified', 'completed', 'RCP-2026-090239', 'RFD-20260613-000064', NULL, ' [OVERPAID: RM 55.00]\n[REFUND BANK DETAILS: MAYBANK - 11223344 - OLIVIA submitted on 2026-06-13 01:47:39]\n[REFUNDED: RM 55.00 on 2026-06-13 01:47:48] Refund receipt: RFD-20260613-000064', NULL, 'proof_1781286353_3917.png', '2026-06-12 17:45:53', '2026-06-13 01:46:51', NULL, '2026-06-13 01:47:48', NULL, 0.00, NULL, 0.00),
+(75, 84, 20, 5, 45.00, NULL, 'duitnow', 'rejected', 'none', 'RCP-2026-064423', NULL, NULL, 'PLEASE PRESS MONEY ALREADY DEDUCTED BUTTON TO RESUBMIT YOUR PROVE', 'invalid_proof', 'proof_1781292294_3913.png', '2026-06-12 19:24:54', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(76, 85, 20, 5, 45.00, NULL, 'duitnow', 'rejected', 'none', 'RCP-2026-064423', NULL, NULL, 'PLEASE PRESS MONEY ALREADY DEDUCTED BUTTON TO RESUBMIT YOUR PROVE', 'invalid_proof', 'proof_1781292294_3913.png', '2026-06-12 19:24:54', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(77, 86, 20, 5, 45.00, NULL, '', 'pending', 'none', '', NULL, NULL, '', '', '', '2026-06-12 19:25:26', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(78, 87, 20, 5, 45.00, NULL, 'duitnow', 'rejected', 'none', 'RCP-2026-095495', NULL, NULL, 'MONEY ALREADY DEDUCTED BUTTON', 'unrelated_proof', 'proof_1781292326_4389.png', '2026-06-12 19:25:26', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(79, 89, 20, 8, 46.00, 50.55, 'online_banking', 'verified', 'completed', 'RCP-2026-088861', 'BULK-1781320337024-79', NULL, ' [OVERPAID: RM 54.00]\n[REFUND BANK DETAILS: MAYBANK - 11223344 - OLIVIA submitted on 2026-06-13 11:11:58]\n[REFUNDED: RM 4.55 on 2026-06-13 11:12:17] Refund receipt: BULK-1781320337024-79', NULL, 'proof_1781318871_9102.png', '2026-06-13 02:47:51', '2026-06-13 10:49:09', NULL, '2026-06-13 11:12:17', NULL, 0.00, NULL, 0.00),
+(80, 90, 20, 5, 45.00, 49.45, 'online_banking', 'verified', 'completed', 'RCP-2026-088861', 'BULK-1781320337034-80', NULL, ' [OVERPAID: RM 55.00]\n[REFUNDED: RM 4.45 on 2026-06-13 11:12:23] Refund receipt: BULK-1781320337034-80', NULL, 'proof_1781318871_9102.png', '2026-06-13 02:47:51', '2026-06-13 10:49:12', NULL, '2026-06-13 11:12:23', NULL, 0.00, NULL, 0.00),
+(81, 88, 20, 8, 46.00, 47.74, 'online_banking', 'verified', 'completed', 'RCP-2026-035451', 'RFD-1781322710395-81', NULL, ' [OVERPAID: RM 1.74]\n[REFUNDED: RM 1.74 on 2026-06-13 11:51:50] Refund receipt: RFD-1781322710395-81', NULL, 'proof_1781321820_4818.png', '2026-06-13 03:37:00', '2026-06-13 11:37:56', NULL, '2026-06-13 11:51:50', NULL, 0.00, NULL, 0.00),
+(82, 92, 20, 3, 60.00, 62.26, 'online_banking', 'verified', 'completed', 'RCP-2026-035451', 'RFD-1781322710397-82', NULL, ' [OVERPAID: RM 2.26]\n[REFUND BANK DETAILS: MAYBANK - 11223344 - james submitted on 2026-06-13 11:41:39]\n[REFUNDED: RM 2.26 on 2026-06-13 11:51:57] Refund receipt: RFD-1781322710397-82', NULL, 'proof_1781321820_4818.png', '2026-06-13 03:37:00', '2026-06-13 11:38:01', NULL, '2026-06-13 11:51:57', NULL, 0.00, NULL, 0.00),
+(83, 93, 20, 5, 45.00, 40.00, 'online_banking', 'rejected', 'none', 'RCP-2026-034010', NULL, NULL, 'Part of bulk payment...', 'underpaid_bulk', 'proof_1781323138_2423.png', '2026-06-13 03:58:58', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(84, 95, 20, 5, 45.00, 45.00, 'online_banking', 'verified', 'none', 'pi_3ThimDAjFaJboEti1', NULL, 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVFZWSFBBakZhSmJvRXRpKOits9EGMgYSmuRZhTI6LBY69E4qnqaVyC5bCjIgrtBvXITgt6Cr7xoatMsTX9xFyoDP81LRlMXQoHIU', 'Part of bulk payment... | Remaining amount (RM 5.00) paid via Stripe on 2026-06-13 12:04:55', 'underpaid_bulk', 'proof_1781323138_2423.png', '2026-06-13 03:58:59', '2026-06-13 12:04:55', NULL, NULL, NULL, 0.00, NULL, 0.00),
+(87, 91, 20, 3, 60.00, 57.14, 'online_banking', 'rejected', 'none', 'RCP-2026-030671', NULL, NULL, ' [UNDERPAID: Paid RM 57.14, Remaining: RM 2.86]', 'underpaid_bulk', 'proof_1781324988_8686.png', '2026-06-13 04:29:48', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00),
+(88, 94, 20, 5, 45.00, 42.86, 'online_banking', 'rejected', 'none', 'RCP-2026-030671', NULL, NULL, ' [UNDERPAID: Paid RM 42.86, Remaining: RM 2.14]', 'underpaid_bulk', 'proof_1781324988_8686.png', '2026-06-13 04:29:48', NULL, NULL, NULL, NULL, 0.00, NULL, 0.00);
 
 -- --------------------------------------------------------
 
@@ -828,23 +902,6 @@ INSERT INTO `ratings` (`id`, `booking_id`, `student_id`, `tutor_id`, `rating`, `
 -- --------------------------------------------------------
 
 --
--- Table structure for table `refunds`
---
-
-CREATE TABLE `refunds` (
-  `id` int(11) NOT NULL,
-  `booking_id` int(11) NOT NULL,
-  `amount` decimal(10,2) NOT NULL,
-  `status` enum('pending','processed','failed') DEFAULT 'pending',
-  `requested_at` datetime NOT NULL,
-  `processed_at` datetime DEFAULT NULL,
-  `student_email` varchar(255) DEFAULT NULL,
-  `student_name` varchar(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
 -- Table structure for table `reschedule_requests`
 --
 
@@ -916,7 +973,6 @@ CREATE TABLE `session_completion` (
 --
 
 INSERT INTO `session_completion` (`id`, `booking_id`, `tutor_confirmed`, `student_confirmed`, `tutor_confirmed_at`, `student_confirmed_at`, `completed_at`, `dispute_reason`, `attendance_manually_set`, `no_show_type`, `status`, `auto_completed`, `tutor_proof_image`, `disputed_at`) VALUES
-(1, 6, 1, 1, NULL, NULL, '2026-05-20 00:19:29', NULL, 0, NULL, 'completed', 0, NULL, NULL),
 (2, 21, 1, 1, NULL, '2026-05-20 03:46:08', '2026-05-20 02:00:01', NULL, 0, NULL, 'completed', 0, NULL, NULL),
 (4, 7, 1, 1, NULL, NULL, '2026-05-21 11:01:09', NULL, 0, NULL, 'completed', 0, NULL, NULL),
 (5, 9, 1, 1, NULL, NULL, '2026-05-21 11:01:09', NULL, 0, NULL, 'completed', 0, NULL, NULL),
@@ -926,7 +982,7 @@ INSERT INTO `session_completion` (`id`, `booking_id`, `tutor_confirmed`, `studen
 (9, 13, 1, 1, NULL, NULL, '2026-05-21 11:01:09', NULL, 0, NULL, 'completed', 0, NULL, NULL),
 (13, 30, 1, 1, NULL, NULL, '2026-05-26 12:00:02', NULL, 0, NULL, 'completed', 0, NULL, NULL),
 (14, 28, 0, 0, NULL, NULL, NULL, 'No reason provided', 1, 'student_no_show', 'disputed', 0, NULL, NULL),
-(16, 1, 0, 1, NULL, '2026-05-28 18:28:37', NULL, 'student reported: tutor_no_show - Tutor didn\'t even provide meeting link for today session', 0, NULL, 'completed', 0, NULL, NULL),
+(16, 1, 1, 1, '2026-06-13 13:29:18', '2026-05-28 18:28:37', NULL, 'student reported: tutor_no_show - Tutor didn\'t even provide meeting link for today session', 1, NULL, 'completed', 0, NULL, NULL),
 (18, 35, 0, 0, NULL, NULL, '2026-05-29 13:14:34', NULL, 0, NULL, 'disputed', 1, NULL, NULL),
 (24, 22, 0, 1, NULL, '2026-05-31 03:18:59', NULL, NULL, 1, NULL, 'pending', 0, NULL, NULL),
 (25, 50, 0, 1, NULL, '2026-05-31 15:49:07', '2026-06-01 17:06:35', NULL, 0, NULL, 'completed', 1, NULL, NULL),
@@ -981,8 +1037,7 @@ INSERT INTO `session_reports` (`id`, `booking_id`, `tutor_id`, `student_id`, `se
 (5, 13, 3, 2, '2026-05-12', '12:00:00', 'Learn how to speak more confidentially', 'It seems that student is a bit afraid to speak English in class as her English is not very good.', 'Pronunciations', 'No homework assigned', '', NULL, 'No materials uploaded', '', 'attended', 'approved', '', '2026-05-30 03:33:25', '2026-06-04 22:22:51', '2026-05-30 03:33:25'),
 (6, 12, 3, 2, '2026-05-12', '17:00:00', 'Learn how to speak more confidentially', 'Try to speak loud and clear english, good start', 'pronuncation', 'No homework assigned', '', NULL, 'No materials uploaded', '', 'attended', 'approved', '', '2026-05-30 03:34:37', '2026-06-04 22:22:48', '2026-05-30 03:34:37'),
 (7, 10, 3, 2, '2026-05-12', '11:00:00', 'Learn how to speak in front of others', 'Still very unconfident about themselves, but still try their best already.', 'Self confidence', 'No homework assigned', '', NULL, 'No materials uploaded', '', 'attended', 'approved', '', '2026-05-30 03:37:08', '2026-06-04 22:22:29', '2026-05-30 03:37:08'),
-(8, 1, 5, 2, '2026-05-28', '12:00:00', 'Learn how to write hiragana', 'Still improving', 'HIRAGANA', 'No homework assigned', '', NULL, 'No materials uploaded', '', 'attended', 'approved', '', '2026-06-03 08:19:00', '2026-06-10 00:36:48', '2026-06-03 08:20:26'),
-(9, 6, 5, 4, '2026-05-18', '10:00:00', 'Self Introduction', 'Good work', 'INTRODUCTION', 'No homework assigned', '', NULL, 'No materials uploaded', '', 'attended', 'approved', '', '2026-06-08 12:22:12', '2026-06-10 00:31:44', '2026-06-08 12:22:12');
+(8, 1, 5, 2, '2026-05-28', '12:00:00', 'Learn how to write hiragana', 'Still improving', 'HIRAGANA', 'No homework assigned', '', NULL, 'No materials uploaded', '', 'attended', 'approved', '', '2026-06-03 08:19:00', '2026-06-10 00:36:48', '2026-06-03 08:20:26');
 
 -- --------------------------------------------------------
 
@@ -1367,29 +1422,29 @@ INSERT INTO `users` (`id`, `fullname`, `email`, `password`, `phone`, `role`, `pr
 (1, 'Ali', 'ali@gmail.com', '$2y$10$BFTMIbbp0RhnxUkRdHmG9.BLGGhcNJAXu00jolOoVLWEYF0Et7j9O', '01155532488', 'admin', NULL, '2026-05-06 06:38:20', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (2, 'Sharon', 'morasharon790@gmail.com', '$2y$10$mHZyF3jf7APnAYmK/GtWs.Ng8o5LaPRWwSPMXDO9OKXIoZHsh.Dqm', '01155532488', 'student', 'student_2_1779222498.png', '2026-05-06 09:16:55', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 0, NULL),
 (3, 'Feng X', 'fengxiii87@gmail.com', '$2y$10$LiwtHaYor.N79M.LSGZzfOOXwSy3YWmlBaV0stZUUpmRtYj1l4qPy', '014 2739441', 'tutor', 'tutor_3_1779895960.jpg', '2026-05-06 13:03:13', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(4, 'Sarah', 'sarah@gmail.com', '$2y$10$pto8/27JofkiIgpqJRgDeeRPGtV0TQIjv/mzPTl3rAHfMAly69Wau', '0123456701', 'student', '', '2026-05-07 05:59:23', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(4, 'Sarah', 'sarah@gmail.com', '$2y$10$pto8/27JofkiIgpqJRgDeeRPGtV0TQIjv/mzPTl3rAHfMAly69Wau', '0123456701', 'student', NULL, '2026-05-07 05:59:23', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (5, 'Haruka Tan', 'haruka@kyoshi.com', '$2y$10$9.IAgJjqSWzoXeaSKgTKtehJx8sLiBz4Fy3ft..EyUCkcYSVJ9xRa', '0123456781', 'tutor', 'haruka.jpg', '2026-05-08 04:14:30', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (6, 'Daniel Lee', 'daniel@kyoshi.com', '$2y$10$9.IAgJjqSWzoXeaSKgTKtehJx8sLiBz4Fy3ft..EyUCkcYSVJ9xRa', '0123456782', 'tutor', 'daniel.jpg', '2026-05-08 04:14:30', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (7, 'Alicia Wong', 'alicia@kyoshi.com', '$2y$10$9.IAgJjqSWzoXeaSKgTKtehJx8sLiBz4Fy3ft..EyUCkcYSVJ9xRa', '0123456783', 'tutor', 'alicia.jpg', '2026-05-08 04:14:30', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (8, 'Kim Jisoo', 'kimjisoo@kyoshi.com', '$2y$10$9.IAgJjqSWzoXeaSKgTKtehJx8sLiBz4Fy3ft..EyUCkcYSVJ9xRa', '0123456784', 'tutor', 'kimjisoo.jpg', '2026-05-08 04:14:30', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(9, 'Farah Nabila', 'farah@kyoshi.com', '$2y$10$9.IAgJjqSWzoXeaSKgTKtehJx8sLiBz4Fy3ft..EyUCkcYSVJ9xRa', '0123456785', 'tutor', 'farah.jpg', '2026-05-08 04:14:30', 'inactive', NULL, 0, 0, 0, '2026-06-03 09:20:32', '', 0, 1, NULL),
+(9, 'Farah Nabila', 'farah@kyoshi.com', '$2y$10$9.IAgJjqSWzoXeaSKgTKtehJx8sLiBz4Fy3ft..EyUCkcYSVJ9xRa', '0123456785', 'tutor', 'farah.jpg', '2026-05-08 04:14:30', 'approved', NULL, 0, 0, 0, NULL, '', 0, 1, NULL),
 (10, 'Aina Yusuf', 'aina@kyoshi.com', '$2y$10$9.IAgJjqSWzoXeaSKgTKtehJx8sLiBz4Fy3ft..EyUCkcYSVJ9xRa', '0123456786', 'tutor', 'aina.jpg', '2026-05-08 04:14:30', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(11, 'Kay', 'kay@gmail.com', '$2y$10$Ky3faHhz7Zh4YviWQwDrw.KzGT.X3F9HhIVftf8mN/WNa5K7oEeyi', '', 'student', '', '2026-05-11 14:36:20', 'approved', '9d0a2437b772fe9c8e4f1532a1dfb28df627cb22902ee5a0d0998dab112677ac', 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(12, 'Sia', 'chinming0210@gmail.com', '$2y$10$.f4052SpkFwpGCDOGYr8yOfcK3u7RycxnobH/NCYYuqHvAtpSv4Ta', '', 'student', '', '2026-05-18 03:30:12', 'approved', '7aaea97bc148c358f33502ef5eb882da23e96482a2c47d104fa6255c7668ff5f', 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(11, 'Kay', 'kay@gmail.com', '$2y$10$Ky3faHhz7Zh4YviWQwDrw.KzGT.X3F9HhIVftf8mN/WNa5K7oEeyi', NULL, 'student', NULL, '2026-05-11 14:36:20', 'approved', '9d0a2437b772fe9c8e4f1532a1dfb28df627cb22902ee5a0d0998dab112677ac', 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(12, 'Sia', 'chinming0210@gmail.com', '$2y$10$.f4052SpkFwpGCDOGYr8yOfcK3u7RycxnobH/NCYYuqHvAtpSv4Ta', NULL, 'student', NULL, '2026-05-18 03:30:12', 'approved', '7aaea97bc148c358f33502ef5eb882da23e96482a2c47d104fa6255c7668ff5f', 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (13, 'Kay Hueen', 'kayhueen5@gmail.com', '$2y$10$NF7ux3xADRav1RrK3YU55eI5hVwInHgD9B6v6jih3AME4D8.nJh5e', '0142739441', 'tutor', 'profile_1780386916_16b66aea.jpg', '2026-06-02 07:55:16', 'approved', '8ed7c5f08dd4a9fca9ebe01124b976dd3a98bcd5dc4808a74c125d429a4f0028', 0, 0, 0, NULL, NULL, 0, 1, NULL),
 (14, 'Gg', 'gg@gmail.com', '$2y$10$VRtHuo26qNSdf2Yctf/2EOF9xeLXFtOlSFXmrfeQbQ/pkVMhYFci6', '1165048088', 'tutor', 'profile_1780532607_739d2454.jpg', '2026-06-04 00:23:27', 'approved', 'f53809178c3086abc4be064b3a15f445241a0649f0dfebfd1be6c7f6fb84be4c', 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(16, 'WAN DI', 'wandi@gmail.com', '$2y$10$4BFtp8i1kH0NIgaTCxCicuHaiiYOBaFEZNHqxLKYnpVxEFRBUy4A2', '', 'tutor', NULL, '2026-06-05 07:47:25', 'inactive', NULL, 0, 0, 0, '2026-06-05 17:38:34', NULL, 0, 1, NULL),
-(18, 'sa', 'sa@gmail.com', '$2y$10$XzX4uZhUGBOFCqcFeE9m2u3w612mmAB9k69MG/OrrqHU9xbjV.o4i', '123116887', 'student', 'default-student.png', '2026-06-08 15:20:29', 'approved', '157d54d2bf53903dfb093ec1504d03345e7e5f666db3f068439df4bffd9cfd4a', 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(19, 'Nur Aisyah Binti Abdullah', 'aisyah.abdullah@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456701', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(20, 'Lee Wei Chen', 'weichen.lee@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456702', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(21, 'Siti Nurhaliza Binti Mohd', 'siti.nurhaliza@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456703', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(22, 'Rajesh Kumar A/L Subramaniam', 'rajesh.kumar@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456704', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(23, 'Olivia Chen', 'olivia.chen@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456705', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(24, 'Muhammad Faiz Bin Rosli', 'faiz.rosli@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456706', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(25, 'Tan Hui Ling', 'huiling.tan@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456707', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(26, 'Kavitha A/P Rajendran', 'kavitha.rajendran@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456708', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(27, 'James Wong', 'james.wong@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456709', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
-(28, 'Nadiah Binti Kamaruddin', 'nadiah.kamaruddin@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456710', 'student', '', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL);
+(16, 'WAN DI', 'wandi@gmail.com', '$2y$10$4BFtp8i1kH0NIgaTCxCicuHaiiYOBaFEZNHqxLKYnpVxEFRBUy4A2', '0123776887', 'tutor', NULL, '2026-06-05 07:47:25', 'inactive', NULL, 0, 0, 0, '2026-06-05 17:38:34', NULL, 0, 1, NULL),
+(18, 'sa', 'sa@gmail.com', '$2y$10$XzX4uZhUGBOFCqcFeE9m2u3w612mmAB9k69MG/OrrqHU9xbjV.o4i', '123116887', 'student', NULL, '2026-06-08 15:20:29', 'approved', '157d54d2bf53903dfb093ec1504d03345e7e5f666db3f068439df4bffd9cfd4a', 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(19, 'Nur Aisyah Binti Abdullah', 'aisyah.abdullah@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456701', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(20, 'Lee Wei Chen', 'weichen.lee@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456702', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(21, 'Siti Nurhaliza Binti Mohd', 'siti.nurhaliza@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456703', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(22, 'Rajesh Kumar A/L Subramaniam', 'rajesh.kumar@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456704', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(23, 'Olivia Chen', 'olivia.chen@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456705', 'student', 'student_23_1781262520.png', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(24, 'Muhammad Faiz Bin Rosli', 'faiz.rosli@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456706', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(25, 'Tan Hui Ling', 'huiling.tan@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456707', 'student', 'student_25_1781272604.png', '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(26, 'Kavitha A/P Rajendran', 'kavitha.rajendran@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456708', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(27, 'James Wong', 'james.wong@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456709', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL),
+(28, 'Nadiah Binti Kamaruddin', 'nadiah.kamaruddin@example.com', '$2y$10$U3PE5jdOuvB4KhdQGI0p4.1iRm/LDjvH9NHkSXPebdIIiRwG6Xv7C', '0123456710', 'student', NULL, '2026-06-10 15:08:29', 'approved', NULL, 0, 0, 0, NULL, NULL, 0, 1, NULL);
 
 -- --------------------------------------------------------
 
@@ -1409,7 +1464,7 @@ CREATE TABLE `user_locations` (
 
 INSERT INTO `user_locations` (`user_id`, `location`, `location_type`) VALUES
 (2, 'Kuala Lumpur', 'teaching'),
-(3, 'Kuala Lumpur', 'teaching'),
+(3, 'Johor Bahru', 'teaching'),
 (4, 'Johor Bahru', 'teaching'),
 (5, 'Penang', 'teaching'),
 (7, 'Johor Bahru', 'teaching'),
@@ -1524,13 +1579,6 @@ ALTER TABLE `ratings`
   ADD KEY `booking_id` (`booking_id`),
   ADD KEY `student_id` (`student_id`),
   ADD KEY `tutor_id` (`tutor_id`);
-
---
--- Indexes for table `refunds`
---
-ALTER TABLE `refunds`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `booking_id` (`booking_id`);
 
 --
 -- Indexes for table `reschedule_requests`
@@ -1682,13 +1730,13 @@ ALTER TABLE `attendance_proofs`
 -- AUTO_INCREMENT for table `bookings`
 --
 ALTER TABLE `bookings`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=73;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=96;
 
 --
 -- AUTO_INCREMENT for table `disputes`
 --
 ALTER TABLE `disputes`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
 
 --
 -- AUTO_INCREMENT for table `learning_materials`
@@ -1700,13 +1748,13 @@ ALTER TABLE `learning_materials`
 -- AUTO_INCREMENT for table `meeting_logs`
 --
 ALTER TABLE `meeting_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=296;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=330;
 
 --
 -- AUTO_INCREMENT for table `password_resets`
@@ -1718,7 +1766,7 @@ ALTER TABLE `password_resets`
 -- AUTO_INCREMENT for table `payments`
 --
 ALTER TABLE `payments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=52;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=89;
 
 --
 -- AUTO_INCREMENT for table `payout_requests`
@@ -1737,12 +1785,6 @@ ALTER TABLE `promotions`
 --
 ALTER TABLE `ratings`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
-
---
--- AUTO_INCREMENT for table `refunds`
---
-ALTER TABLE `refunds`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `reschedule_requests`
@@ -1917,12 +1959,6 @@ ALTER TABLE `ratings`
   ADD CONSTRAINT `ratings_ibfk_1` FOREIGN KEY (`booking_id`) REFERENCES `bookings` (`id`),
   ADD CONSTRAINT `ratings_ibfk_2` FOREIGN KEY (`student_id`) REFERENCES `users` (`id`),
   ADD CONSTRAINT `ratings_ibfk_3` FOREIGN KEY (`tutor_id`) REFERENCES `users` (`id`);
-
---
--- Constraints for table `refunds`
---
-ALTER TABLE `refunds`
-  ADD CONSTRAINT `refunds_ibfk_1` FOREIGN KEY (`booking_id`) REFERENCES `bookings` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `reschedule_requests`

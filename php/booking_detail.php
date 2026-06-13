@@ -23,15 +23,8 @@ $stmt = $conn->prepare("
            u.phone AS tutor_phone,
            tp.rate, tp.bio, tp.experience,
            GROUP_CONCAT(DISTINCT tl.language) AS tutor_languages,
-           -- Get the LATEST payment info for display (any status except rejected for display)
-           (SELECT amount FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS payment_amount,
-           (SELECT payment_method FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS payment_method,
-           (SELECT status FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS payment_status,
-           (SELECT receipt_number FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS receipt_number,
-           (SELECT receipt_url FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS receipt_url,
-           (SELECT created_at FROM payments WHERE booking_id = b.id AND status != 'rejected' ORDER BY created_at DESC LIMIT 1) AS paid_at,
-           -- Calculate TOTAL PAID amount from ALL payments (including rejected ones, since money was still deducted)
-           (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE booking_id = b.id) AS total_paid_amount,
+           -- REMOVE the old subqueries that exclude rejected
+           -- Instead, we'll calculate everything in PHP after fetching
            r.id AS rated, 
            r.rating AS my_rating, 
            r.comment AS my_comment,
@@ -47,62 +40,58 @@ $stmt = $conn->prepare("
 $stmt->bind_param("iii", $userID, $bookingID, $userID);
 $stmt->execute();
 $b = $stmt->get_result()->fetch_assoc();
-// Calculate total paid from ALL payments (regardless of status)
-$totalPaidStmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE booking_id = ?");
-$totalPaidStmt->bind_param("i", $bookingID);
-$totalPaidStmt->execute();
-$totalPaidResult = $totalPaidStmt->get_result()->fetch_assoc();
-$b['total_paid_amount'] = $totalPaidResult['total'] ?? 0;
-$totalPaidStmt->close();
+// Get ALL payments for this booking (including rejected)
+$allPaymentsQuery = $conn->prepare("
+    SELECT id, amount, actual_paid_amount, payment_method, status, created_at 
+    FROM payments 
+    WHERE booking_id = ? 
+    ORDER BY created_at ASC
+");
+$allPaymentsQuery->bind_param("i", $bookingID);
+$allPaymentsQuery->execute();
+$paymentResults = $allPaymentsQuery->get_result()->fetch_all(MYSQLI_ASSOC);
+$allPaymentsQuery->close();
 
-// Get ALL payments and calculate properly
-$allPaymentsStmt = $conn->prepare("SELECT id, amount, actual_paid_amount, payment_method, status, created_at FROM payments WHERE booking_id = ? ORDER BY created_at ASC");
-$allPaymentsStmt->bind_param("i", $bookingID);
-$allPaymentsStmt->execute();
-$paymentResults = $allPaymentsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$allPaymentsStmt->close();
-
-// Build payment list - handle the case where actual_paid_amount represents a separate payment
+// Calculate totals
+$totalPaid = 0;
+$totalExpected = $b['rate'];
+$latestPayment = null;
 $allPaymentsForDisplay = [];
-$totalPaidSum = 0;
 
 foreach ($paymentResults as $payment) {
-    // If actual_paid_amount exists and is different from amount, treat it as a separate payment
-    if (!empty($payment['actual_paid_amount']) && $payment['actual_paid_amount'] != $payment['amount']) {
-        // Add the original payment (actual_paid_amount)
-        $allPaymentsForDisplay[] = [
-            'amount' => $payment['actual_paid_amount'],
-            'payment_method' => 'online_banking', // or original method
-            'status' => 'rejected',
-            'created_at' => $payment['created_at'],
-            'is_original' => true
-        ];
-        $totalPaidSum += $payment['actual_paid_amount'];
+    $paymentAmount = 0;
+    
+    if ($payment['status'] === 'rejected') {
+        // For rejected, use actual_paid_amount (what they actually paid)
+        $paymentAmount = $payment['actual_paid_amount'] ?? $payment['amount'];
+        $totalPaid += $paymentAmount;
+        $payment['display_amount'] = $paymentAmount;
+        $payment['is_rejected'] = true;
+    } else {
+        // For pending/verified, use amount
+        $paymentAmount = $payment['amount'];
+        $totalPaid += $paymentAmount;
+        $payment['display_amount'] = $paymentAmount;
+        $payment['is_rejected'] = false;
     }
     
-    // Add the current payment
-    $allPaymentsForDisplay[] = [
-        'amount' => $payment['amount'],
-        'payment_method' => $payment['payment_method'],
-        'status' => $payment['status'],
-        'created_at' => $payment['created_at'],
-        'is_original' => false
-    ];
-    $totalPaidSum += $payment['amount'];
-}
-
-// Remove duplicates if needed (if both original and current are the same)
-$uniquePayments = [];
-foreach ($allPaymentsForDisplay as $payment) {
-    $key = $payment['amount'] . '_' . $payment['created_at'];
-    if (!isset($uniquePayments[$key])) {
-        $uniquePayments[$key] = $payment;
+    $allPaymentsForDisplay[] = $payment;
+    
+    // Get latest non-rejected payment for method display
+    if ($payment['status'] !== 'rejected') {
+        $latestPayment = $payment;
     }
 }
-$allPaymentsForDisplay = array_values($uniquePayments);
 
-// Update total paid amount
-$b['total_paid_amount'] = $totalPaidSum;
+$remainingAmount = max(0, $totalExpected - $totalPaid);
+$hasUnderpayment = ($totalPaid > 0 && $totalPaid < $totalExpected);
+
+// Set payment status variables for display
+$b['payment_amount'] = $latestPayment ? $latestPayment['amount'] : null;
+$b['payment_method'] = $latestPayment ? $latestPayment['payment_method'] : null;
+$b['payment_status'] = $latestPayment ? $latestPayment['status'] : null;
+$b['paid_at'] = $latestPayment ? $latestPayment['created_at'] : null;
+$b['total_paid_amount'] = $totalPaid;
 
 // Auto-end stuck meeting logs for this booking
 $autoEndStmt = $conn->prepare("
@@ -558,10 +547,9 @@ unset($_SESSION['success_message']);
   gap:16px;
   align-items:start;
 }
-
 .error-toast {
     position: fixed;
-    top: 20px;
+    bottom: 20px;  /* Changed from top to bottom */
     left: 50%;
     transform: translateX(-50%);
     background: #dc3545;
@@ -572,20 +560,21 @@ unset($_SESSION['success_message']);
     font-weight: 900;
     z-index: 9999;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    animation: slideDown 0.3s ease;
+    animation: slideUp 0.3s ease;  /* Changed animation name */
 }
 
 .success-toast {
     background: #28a745;
 }
 
-@keyframes slideDown {
+/* Changed animation from slideDown to slideUp */
+@keyframes slideUp {
     from {
-        top: -50px;
+        bottom: -50px;
         opacity: 0;
     }
     to {
-        top: 20px;
+        bottom: 20px;
         opacity: 1;
     }
 }
@@ -1040,6 +1029,31 @@ unset($_SESSION['success_message']);
     }, 5000);
 </script>
 <?php endif; ?>
+<?php if (isset($_GET['emailed']) && $_GET['emailed'] == 1): ?>
+<div class="error-toast success-toast" id="emailSuccessToast" style="background: #28a745;">
+    <i class="bi bi-envelope-check-fill"></i> 
+    Receipt has been sent to your email address!
+</div>
+<script>
+    setTimeout(() => {
+        const toast = document.getElementById('emailSuccessToast');
+        if(toast) toast.style.display = 'none';
+    }, 5000);
+</script>
+<?php endif; ?>
+
+<?php if (isset($_GET['email_failed']) && $_GET['email_failed'] == 1): ?>
+<div class="error-toast" id="emailFailedToast" style="background: #dc3545;">
+    <i class="bi bi-envelope-exclamation-fill"></i> 
+    Failed to send email. Please try again or contact support.
+</div>
+<script>
+    setTimeout(() => {
+        const toast = document.getElementById('emailFailedToast');
+        if(toast) toast.style.display = 'none';
+    }, 5000);
+</script>
+<?php endif; ?>
 <?php 
 // Check if session has ended and needs confirmation
 $class_time = strtotime($b['booking_date'] . ' ' . $b['booking_time']);
@@ -1085,21 +1099,43 @@ if ($is_minor_dispute && $activeDispute):
         'tutor_no_show' => 'Tutor Did Not Attend',
         'student_no_show' => 'Student Did Not Attend',
         'wrong_materials' => 'Wrong Materials Provided',
-        'other' => 'Other Issue'
+        'other' => 'Other Issue',
+        'money_deducted' => 'Money Deducted - Payment Issue'  // ADD THIS
     ];
     $issueLabel = $issue_labels[$activeDispute['issue_type']] ?? ucfirst(str_replace('_', ' ', $activeDispute['issue_type']));
     
-    // Different guidance based on issue type
-    $guidance = '';
-    if ($activeDispute['issue_type'] === 'wrong_materials') {
-        $guidance = 'The tutor will upload the correct materials. Please check the Learning Materials section.';
-    } elseif ($activeDispute['issue_type'] === 'technical_issues') {
-        $guidance = 'The tutor will help you resolve the technical issue. Please message them to discuss.';
-    } elseif ($activeDispute['issue_type'] === 'other') {
-        $guidance = 'The tutor has been notified and will contact you to resolve this issue.';
-    } else {
-        $guidance = 'The tutor has been notified. Please discuss and resolve this issue together.';
-    }
+    // SPECIAL HANDLING FOR MONEY DEDUCTED ISSUES
+    if ($activeDispute['issue_type'] === 'money_deducted'):
+?>
+<div class="status-banner" style="background:rgba(255,200,200,.4);border:1px solid #dc354533;align-items:center; margin-bottom:16px;">
+    <div class="s-icon" style="color:#dc3545"><i class="bi bi-cash-stack"></i></div>
+    <div style="flex:1;">
+        <strong style="color:#dc3545">Payment Dispute - Under Admin Review</strong>
+        <p style="margin:0;">You reported that money was deducted from your account but payment was rejected.</p>
+        <p style="margin:5px 0 0; font-size:12px; color:#856404;">
+            <i class="bi bi-clock-history"></i> Our admin team is reviewing your proof. This may take 1-2 business days.
+        </p>
+    </div>
+    <div style="margin-left: auto;">
+        <button onclick="contactSupport()" 
+                style="background:#E75A9B;color:white;padding:8px 20px;border:none;border-radius:30px;cursor:pointer;font-size:13px;font-weight:900;display:inline-flex;align-items:center;gap:8px;">
+            <i class="bi bi-envelope"></i> Contact Support
+        </button>
+    </div>
+</div>
+<?php 
+    else:
+        // Original guidance for other issue types
+        $guidance = '';
+        if ($activeDispute['issue_type'] === 'wrong_materials') {
+            $guidance = 'The tutor will upload the correct materials. Please check the Learning Materials section.';
+        } elseif ($activeDispute['issue_type'] === 'technical_issues') {
+            $guidance = 'The tutor will help you resolve the technical issue. Please message them to discuss.';
+        } elseif ($activeDispute['issue_type'] === 'other') {
+            $guidance = 'The tutor has been notified and will contact you to resolve this issue.';
+        } else {
+            $guidance = 'The tutor has been notified. Please discuss and resolve this issue together.';
+        }
 ?>
 <div class="status-banner" style="background:rgba(255,241,200,.78);border:1px solid #f59e0b33;align-items:center; margin-bottom:16px;">
     <div class="s-icon" style="color:#f59e0b"><i class="bi bi-chat-dots"></i></div>
@@ -1117,6 +1153,9 @@ if ($is_minor_dispute && $activeDispute):
         </button>
     </div>
 </div>
+<?php 
+    endif;
+elseif ($bookStatus === 'disputed' && $is_serious_dispute): ?>
 <?php elseif ($bookStatus === 'disputed' && $is_serious_dispute): ?>
 <div class="status-banner" style="background:rgba(255,200,200,.78);border:1px solid #dc354533;align-items:center; margin-bottom:16px;">
     <div class="s-icon" style="color:#dc3545"><i class="bi bi-exclamation-triangle-fill"></i></div>
@@ -1169,14 +1208,29 @@ if ($is_minor_dispute && $activeDispute):
             </button>
         </form>
     </div>
-    <?php elseif ($is_past_class && $is_confirmed && !$is_completed && $student_confirmed): ?>
-    <div style="display:flex;gap:8px;flex-shrink:0;">
-        <div style="background:#d4edda;padding:10px 18px;border-radius:999px;color:#155724;">
-            <i class="bi bi-check-circle-fill"></i> You confirmed attendance. Waiting for tutor...
+
+    <?php elseif ($is_past_class && $is_confirmed && !$is_completed): ?>
+    <?php if ($student_confirmed && !$tutor_confirmed): ?>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+            <div style="background:#d4edda;padding:10px 18px;border-radius:999px;color:#155724;">
+                <i class="bi bi-check-circle-fill"></i> You confirmed attendance. Waiting for tutor...
+            </div>
         </div>
-    </div>
+    <?php elseif ($tutor_confirmed && !$student_confirmed): ?>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+            <div style="background:#d4edda;padding:10px 18px;border-radius:999px;color:#155724;">
+                <i class="bi bi-check-circle-fill"></i> Tutor confirmed attendance. Waiting for you...
+            </div>
+        </div>
+    <?php elseif ($tutor_confirmed && $student_confirmed && !$is_completed): ?>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+            <div style="background:#28a745;padding:10px 18px;border-radius:999px;color:white;">
+                <i class="bi bi-check-circle-fill"></i> Both confirmed! Session will be marked as completed.
+            </div>
+        </div>
     <?php endif; ?>
-    
+<?php endif; ?>
+
     <!-- Report Issue Button - Shows for confirmed sessions AND auto-completed sessions (within 7 days) -->
     <?php 
     $show_report = false;
@@ -1342,55 +1396,92 @@ if ($is_minor_dispute && $activeDispute):
             <i class="bi bi-x-circle"></i> Cancel Reschedule Request
         </button>
     </div>
-    <?php elseif ($bookStatus === 'accepted'): ?>
+    
+  <?php elseif ($bookStatus === 'accepted'): ?>
+      <?php if ($hasUnderpayment): ?>
+        <!-- Show underpayment status -->
+        <div class="pay-box review">
+          <div class="pay-row">
+              <span class="pl">Status</span>
+              <span class="pv" style="color:#f59e0b;">
+                  <i class="bi bi-exclamation-triangle"></i> Partial Payment Received
+              </span>
+          </div>
+          <div class="pay-row">
+              <span class="pl">Total Amount</span>
+              <span class="pv">RM <?= number_format($totalExpected, 2) ?></span>
+          </div>
+          <div class="pay-row">
+              <span class="pl">Amount Paid</span>
+              <span class="pv" style="color:#28a745;">RM <?= number_format($totalPaid, 2) ?></span>
+          </div>
+          <div class="pay-row">
+              <span class="pl">Remaining Balance</span>
+              <span class="pv" style="color:#dc2626; font-weight: 900;">RM <?= number_format($remainingAmount, 2) ?></span>
+          </div>
+        </div>
+        
+        <div class="info-note" style="background:rgba(255,241,200,.78); border-left-color:#f59e0b; margin-bottom:12px;">
+            <i class="bi bi-exclamation-triangle"></i> 
+            <strong>Partial payment detected!</strong> You have paid RM <?= number_format($totalPaid, 2) ?> out of RM <?= number_format($totalExpected, 2) ?>.
+            Please pay the remaining RM <?= number_format($remainingAmount, 2) ?> to confirm your session.
+        </div>
+        
+        <div class="action-bar">
+            <a href="payment_form.php?booking_id=<?= $b['id'] ?>&type=remaining" class="btn-primary">
+                <i class="bi bi-credit-card"></i> Pay Remaining RM <?= number_format($remainingAmount, 2) ?>
+            </a>
+            <button onclick="openCancelModal()" class="btn-cancel">
+                <i class="bi bi-x-circle"></i> Cancel Booking
+            </button>
+        </div>
 
-  <?php if ($paymentState === 'processing'): ?>
-    <div class="pay-box review">
-      <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#A06B00;"><i class="bi bi-hourglass-split"></i> Payment Under Review</span></div>
-      <div class="pay-row"><span class="pl">Amount</span><span class="pv">RM <?= e(number_format($b['payment_amount'] ?? 0,2)) ?></span></div>
-      <?php if (!empty($b['payment_method'])): ?>
-      <div class="pay-row"><span class="pl">Method</span><span class="pv"><?= e(ucwords(str_replace('_',' ',$b['payment_method']))) ?></span></div>
+      <?php elseif ($paymentState === 'processing'): ?>
+        <div class="pay-box review">
+          <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#A06B00;"><i class="bi bi-hourglass-split"></i> Payment Under Review</span></div>
+          <div class="pay-row"><span class="pl">Amount Paid</span><span class="pv" style="color:#28a745;">RM <?= number_format($totalPaid, 2) ?></span></div>
+          <div class="pay-row"><span class="pl">Total Amount</span><span class="pv">RM <?= number_format($totalExpected, 2) ?></span></div>
+          <?php if (!empty($b['payment_method'])): ?>
+          <div class="pay-row"><span class="pl">Method</span><span class="pv"><?= e(ucwords(str_replace('_',' ',$b['payment_method']))) ?></span></div>
+          <?php endif; ?>
+          <?php if (!empty($b['paid_at'])): ?>
+          <div class="pay-row"><span class="pl">Submitted On</span><span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span></div>
+          <?php endif; ?>
+        </div>
+        <div class="info-note"><i class="bi bi-info-circle"></i> Your payment is being verified. Session will be confirmed shortly.</div>
+
+      <?php elseif ($paymentState === 'failed'): ?>
+        <div class="pay-box cancelled">
+          <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#C94F4F;"><i class="bi bi-x-circle-fill"></i> Payment Failed</span></div>
+        </div>
+        <div class="action-bar">
+          <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-primary"><i class="bi bi-credit-card"></i> Retry Payment</a>
+        </div>
+
+      <?php else: ?>
+        <div class="pay-box unpaid">
+          <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#A35F3F;"><i class="bi bi-clock"></i> Awaiting Payment</span></div>
+          <div class="pay-row"><span class="pl">Amount Due</span><span class="pv" style="color:var(--hot-pink);font-size:18px;">RM <?= e($b['rate']) ?></span></div>
+        </div>
+        <div class="info-note" style="margin-bottom:12px;"><i class="bi bi-info-circle"></i> After payment, admin will verify and confirm your session within 1–2 business days.</div>
+        <div class="action-bar">
+          <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-primary"><i class="bi bi-credit-card"></i> Pay Now</a>
+          <button onclick="openCancelModal()" class="btn-cancel">
+            <i class="bi bi-x-circle"></i> Cancel Booking
+          </button>
+        </div>
       <?php endif; ?>
-      <?php if (!empty($b['paid_at'])): ?>
-      <div class="pay-row"><span class="pl">Submitted On</span><span class="pv"><?= date('d M Y, g:i A', strtotime($b['paid_at'])) ?></span></div>
-      <?php endif; ?>
-    </div>
-    <div class="info-note"><i class="bi bi-info-circle"></i> Your payment is being verified. Session will be confirmed shortly.</div>
 
-  <?php elseif ($paymentState === 'failed'): ?>
-    <div class="pay-box cancelled">
-      <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#C94F4F;"><i class="bi bi-x-circle-fill"></i> Payment Failed</span></div>
+<?php elseif ($bookStatus === 'confirmed'): ?>
+    <div class="pay-box paid">
+        <div class="pay-row">
+            <span class="pl">Status</span>
+            <span class="pv" style="color:#3D7047;">
+                <i class="bi bi-check-circle-fill"></i> Payment Paid & Verified
+            </span>
+        </div>
     </div>
-    <div class="action-bar">
-      <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-primary"><i class="bi bi-credit-card"></i> Retry Payment</a>
-    </div>
-
-  <?php else: ?>
-    <div class="pay-box unpaid">
-      <div class="pay-row"><span class="pl">Status</span><span class="pv" style="color:#A35F3F;"><i class="bi bi-clock"></i> Awaiting Payment</span></div>
-      <div class="pay-row"><span class="pl">Amount Due</span><span class="pv" style="color:var(--hot-pink);font-size:18px;">RM <?= e($b['rate']) ?></span></div>
-    </div>
-    <div class="info-note" style="margin-bottom:12px;"><i class="bi bi-info-circle"></i> After payment, admin will verify and confirm your session within 1–2 business days.</div>
-    <div class="action-bar">
-      <a href="payment_form.php?booking_id=<?= $b['id'] ?>" class="btn-primary"><i class="bi bi-credit-card"></i> Pay Now</a>
-      <button onclick="openCancelModal()" class="btn-cancel">
-    <i class="bi bi-x-circle"></i> Cancel Booking
-</button>
-    </div>
-  <?php endif; ?>
- <?php elseif ($bookStatus === 'confirmed'): ?>
-
-<div class="pay-box paid">
-    <div class="pay-row">
-        <span class="pl">Status</span>
-        <span class="pv" style="color:#3D7047;">
-            <i class="bi bi-check-circle-fill"></i>
-            Payment Paid & Verified
-        </span>
-    </div>
-
-
-
+    
 <!-- Payment Breakdown - Show ALL payments -->
 <div class="pay-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
     <span class="pl">Payment Breakdown</span>
@@ -1398,17 +1489,20 @@ if ($is_minor_dispute && $activeDispute):
         <?php 
         $displayTotal = 0;
         foreach ($allPaymentsForDisplay as $index => $payment): 
-            $displayTotal += $payment['amount'];
+            $displayTotal += $payment['display_amount'] ?? $payment['amount'];
             $statusBadge = '';
             if ($payment['status'] === 'verified') {
                 $statusBadge = '<span style="color: #28a745; font-size: 10px;">✓ Verified</span>';
-            } elseif ($payment['status'] === 'rejected' || ($payment['is_original'] ?? false)) {
-                $statusBadge = '<span style="color: #dc2626; font-size: 10px;">⚠️ Rejected</span>';
+            } elseif ($payment['status'] === 'rejected' && ($payment['is_rejected'] ?? false)) {
+                // Underpaid - money was deducted
+                $statusBadge = '<span style="color: #f59e0b; font-size: 10px;">⚠️ Partial Payment</span>';
+            } elseif ($payment['status'] === 'rejected') {
+                // Other rejections
+                $statusBadge = '<span style="color: #dc2626; font-size: 10px;">✗ Rejected</span>';
             } elseif ($payment['status'] === 'pending') {
                 $statusBadge = '<span style="color: #f59e0b; font-size: 10px;">⏳ Pending</span>';
             }
             
-            // Determine method display
             $methodDisplay = $payment['payment_method'];
             if (($payment['is_original'] ?? false)) {
                 $methodDisplay = 'Online Banking';
@@ -1420,7 +1514,7 @@ if ($is_minor_dispute && $activeDispute):
                 Payment <?= $index + 1 ?> (<?= ucwords(str_replace('_', ' ', $methodDisplay)) ?>)
                 <?= $statusBadge ?>
             </span>
-            <span style="font-weight: 700;">RM <?= number_format($payment['amount'], 2) ?></span>
+            <span style="font-weight: 700;">RM <?= number_format($payment['display_amount'] ?? $payment['amount'], 2) ?></span>
         </div>
         <div style="font-size: 10px; color: #666; margin-bottom: 8px;">
             <i class="bi bi-clock"></i> <?= date('d M Y, g:i A', strtotime($payment['created_at'])) ?>
@@ -1429,7 +1523,7 @@ if ($is_minor_dispute && $activeDispute):
     </div>
     <div style="margin-top: 8px; padding-top: 8px; border-top: 2px solid rgba(0,0,0,0.1); display: flex; justify-content: space-between; width: 100%;">
         <span class="p1">Total Paid</span>
-        <span style="font-weight: 900; color: #28a745;">RM <?= number_format($displayTotal, 2) ?></span>
+        <span style="font-weight: 900; color: #28a745;">RM <?= number_format($totalPaid, 2) ?></span>
     </div>
 </div>
 
@@ -1454,37 +1548,33 @@ if ($is_minor_dispute && $activeDispute):
     </div>
     <?php endif; ?>
     
-    <!-- ADD CANCELLATION POLICY INFO BOX -->
-    </div>
-</div>
-
-<!-- ACTION BAR FOR CONFIRMED SESSIONS -->
-<div class="action-bar" style="margin-top:16px;">
-    <?php if ($is_future_session): ?>
-        <a href="reschedule_booking.php?id=<?= $bookingID ?>" class="btn-primary">
-            <i class="bi bi-calendar-plus"></i> Reschedule Session
-        </a>
-    <?php else: ?>
-        <span class="btn-secondary" style="opacity:0.6; cursor:not-allowed;">
-            <i class="bi bi-calendar-x"></i> Cannot Cancel (Session Ended)
-        </span>
-    <?php endif; ?>
-    
-    <?php if ($paymentState === 'paid'): ?>
-        <?php if ($b['payment_method'] === 'stripe'): ?>
-            <a href="receipt_stripe.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
-                <i class="bi bi-download"></i> Download Receipt
-            </a>
-            <a href="receipt_stripe.php?booking_id=<?= $b['id'] ?>&action=email" class="btn-secondary">
-                <i class="bi bi-envelope"></i> Email Receipt
+    <!-- ACTION BAR FOR CONFIRMED SESSIONS -->
+    <div class="action-bar" style="margin-top:16px;">
+        <?php if ($is_future_session): ?>
+            <a href="reschedule_booking.php?id=<?= $bookingID ?>" class="btn-primary">
+                <i class="bi bi-calendar-plus"></i> Reschedule Session
             </a>
         <?php else: ?>
-            <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
-                <i class="bi bi-download"></i> Download Receipt
-            </a>
-            <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=email" class="btn-secondary">
-                <i class="bi bi-envelope"></i> Email Receipt
-            </a>
+            <span class="btn-secondary" style="opacity:0.6; cursor:not-allowed;">
+                <i class="bi bi-calendar-x"></i> Cannot Cancel
+            </span>
+        <?php endif; ?>
+        
+        <?php if ($paymentState === 'paid'): ?>
+            <?php if ($b['payment_method'] === 'stripe'): ?>
+                <a href="receipt_stripe.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
+                    <i class="bi bi-download"></i> Download Receipt
+                </a>
+                <a href="receipt_stripe.php?booking_id=<?= $b['id'] ?>&action=email" class="btn-secondary">
+                    <i class="bi bi-envelope"></i> Email Receipt
+                </a>
+            <?php else: ?>
+                <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=pdf" class="btn-secondary">
+                    <i class="bi bi-download"></i> Download Receipt
+                </a>
+                <a href="receipt.php?booking_id=<?= $b['id'] ?>&action=email" class="btn-secondary">
+                    <i class="bi bi-envelope"></i> Email Receipt
+                </a>
         <?php endif; ?>
     <?php endif; ?>
 </div>
@@ -1659,13 +1749,12 @@ Payment made directly during session.
     Your report has been escalated to admin. This involves a no-show or serious matter.<br>
     Admin will review within 2-3 business days. Payment is on hold pending review.
 </div>
-
 <?php else: ?>
 <div class="pay-box review">
     <div class="pay-row">
         <span class="pl">Status</span>
         <span class="pv" style="color:#f59e0b;">
-            <i class="bi bi-chat-dots"></i> Issue Reported - Pending Resolution
+            <i class="bi bi-chat-dots"></i> Issue Reported - Under Review
         </span>
     </div>
     <div class="pay-row">
@@ -1688,24 +1777,42 @@ Payment made directly during session.
     <?php endif; ?>
 </div>
 
+<!-- Show different message based on issue type -->
+<?php if ($activeDispute && $activeDispute['issue_type'] === 'money_deducted'): ?>
+<div class="info-note" style="background:rgba(255,200,200,.4); border-left-color:#dc3545;">
+    <i class="bi bi-cash-stack" style="color:#dc3545;"></i> 
+    <strong>💰 Payment Dispute - Under Admin Review</strong><br>
+    <?php if ($activeDispute): ?>
+        <strong>Issue:</strong> Money deducted but payment rejected<br>
+        <strong>Your message:</strong> "<?= e($activeDispute['message']) ?>"<br><br>
+    <?php endif; ?>
+    Our admin team is reviewing your proof of payment deduction. This may take 1-2 business days.<br>
+    You will be notified once the review is complete.
+    
+    <div style="margin-top: 15px;">
+        <button onclick="contactSupport()" 
+                style="background:#E75A9B;color:white;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;font-size:13px;font-weight:900;display:inline-flex;align-items:center;gap:8px;">
+            <i class="bi bi-envelope"></i> Contact Support
+        </button>
+    </div>
+</div>
+<?php elseif ($activeDispute && $activeDispute['issue_type'] !== 'money_deducted'): ?>
 <div class="info-note" style="background:rgba(255,241,200,.4); border-left-color:#f59e0b;">
     <i class="bi bi-chat-dots" style="color:#f59e0b;"></i> 
     <strong>📝 Issue Reported - Please Resolve with Tutor</strong><br>
-    <?php if ($activeDispute): ?>
-        <strong>Issue:</strong> <?= ucfirst(str_replace('_', ' ', $activeDispute['issue_type'])) ?><br>
-        <strong>Your message:</strong> "<?= e($activeDispute['message']) ?>"<br><br>
-    <?php endif; ?>
+    <strong>Issue:</strong> <?= ucfirst(str_replace('_', ' ', $activeDispute['issue_type'])) ?><br>
+    <strong>Your message:</strong> "<?= e($activeDispute['message']) ?>"<br><br>
     The tutor has been notified. Please discuss and resolve this issue together within 48 hours.<br>
     If not resolved within 48 hours, it will be auto-escalated to admin for review.
     
     <div style="margin-top: 15px;">
-        <button onclick="contactTutor(<?= $b['tutor_id'] ?>, '<?= e($b['tutor_name']) ?>', '<?= e($b['tutor_phone']) ?>', '<?= e($displayName) ?>', <?= $bookingID ?>, '<?= e($b['language']) ?>')" 
+        <button onclick="contactTutor(<?= $b['tutor_id'] ?>, '<?= e($b['tutor_name']) ?>', '<?= e($b['tutor_phone']) ?>', '<?= e($displayName) ?>', <?= $bookingID ?>, '<?= e($b['language']) ?>', '<?= $activeDispute['issue_type'] ?>')" 
                 style="background:#25D366;color:white;padding:10px 20px;border:none;border-radius:30px;cursor:pointer;font-size:13px;font-weight:900;display:inline-flex;align-items:center;gap:8px;">
-            <i class="bi bi-whatsapp" style="font-size:16px;"></i> 
-            Message Tutor on WhatsApp
+            <i class="bi bi-whatsapp"></i> Message Tutor on WhatsApp
         </button>
     </div>
 </div>
+<?php endif; ?>
 <?php endif; ?>
 
       <?php elseif ($bookStatus === 'cancelled'): ?>
@@ -1794,17 +1901,18 @@ Payment made directly during session.
                 if (!empty($logs)):
                 ?>
                     <?php foreach ($logs as $log): ?>
-                    <div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid #eef2f7;">
-                        <i class="bi bi-person-circle"></i> <strong><?= ucfirst(e($log['participant_role'])) ?></strong>
-                        joined: <?= date('d M Y, g:i A', strtotime($log['join_time'])) ?>
-                        <?php if ($log['leave_time']): ?>
-                            - left: <?= date('g:i A', strtotime($log['leave_time'])) ?>
-                            <span style="color: #28a745;">(<?= $log['duration_minutes'] ?> min)</span>
-                        <?php else: ?>
-                            <span style="color: #f59e0b;">(Active)</span>
-                        <?php endif; ?>
-                    </div>
-                    <?php endforeach; ?>
+<div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid #eef2f7;">
+    <i class="bi bi-person-circle"></i> <strong><?= e($log['participant_name']) ?></strong>
+    <span style="font-size: 10px; color: #64748b;">(<?= ucfirst(e($log['participant_role'])) ?>)</span>
+    joined: <?= date('d M Y, g:i A', strtotime($log['join_time'])) ?>
+    <?php if ($log['leave_time']): ?>
+        - left: <?= date('g:i A', strtotime($log['leave_time'])) ?>
+        <span style="color: #28a745;">(<?= $log['duration_minutes'] ?> min)</span>
+    <?php else: ?>
+        <span style="color: #f59e0b;">(Active)</span>
+    <?php endif; ?>
+</div>
+<?php endforeach; ?>
                 <?php else: ?>
                     <p style="font-size: 12px; color: #64748b; margin: 0;">No meeting activity recorded yet.</p>
                 <?php endif; ?>
@@ -2223,7 +2331,8 @@ function openCancelModalWithRefund(refundType) {
         }
     }
     document.getElementById('cancelModal').classList.add('active');
-}function showReportIssue(bookingId) {
+}
+function showReportIssue(bookingId) {
     // Check if session is online or face-to-face
     const isOnline = document.querySelector('.detail-item .dval')?.innerText === 'Online' || 
                      document.body.innerText.includes('Online');
@@ -2243,7 +2352,6 @@ function openCancelModalWithRefund(refundType) {
                         <option value="">Select issue type</option>
                         <option value="tutor_no_show">Tutor didn't show up</option>
                         <option value="wrong_materials">Wrong materials provided</option>
-                        <option value="other">Other issue</option>
                     </select>
                 </div>
                 <div class="form-group" style="margin-bottom: 15px;">
@@ -2298,15 +2406,48 @@ function closeReportModal() {
 }
 
 function recordMeetingLeave(bookingId) {
-    if (confirm('Are you sure you want to end this session? This will record your leave time.')) {
-        window.location.href = `record_meeting_leave.php?booking_id=${bookingId}`;
+    if (confirm('Record that you have left the session? Your attendance duration will be calculated.')) {
+        fetch('record_meeting_leave.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ booking_id: bookingId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) {
+                setTimeout(() => location.reload(), 1500);
+            }
+        })
+        .catch(error => {
+            showToast('Error recording leave time', 'error');
+        });
     }
 }
 
 function checkAndJoinMeeting(bookingId, meetingLink) {
+    // Pass the meeting link as is (don't double-encode)
     window.location.href = `join_meeting.php?booking_id=${bookingId}&link=${encodeURIComponent(meetingLink)}`;
 }
 
+function contactSupport() {
+    const bookingId = <?= $bookingID ?>;
+    const studentName = '<?= addslashes($displayName) ?>';
+    const body = encodeURIComponent(`Please describe your payment dispute issue:
+
+Booking ID: #${bookingId}
+Student Name: ${studentName}
+
+---
+Please provide:
+1. Date and time of payment
+2. Amount deducted  
+3. Bank transaction reference number
+4. Screenshot of deduction (attach separately)
+    `);
+    
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=sohisabella87@gmail.com&su=Payment%20Dispute%20Help%20-%20Booking%20%23${bookingId}&body=${body}`, '_blank');
+}
 function contactTutor(tutorId, tutorName, tutorPhone, studentName, bookingId, language, issueType) {
     console.log("Contact Tutor called with:", {tutorId, tutorName, tutorPhone, studentName, bookingId, language, issueType});
     
