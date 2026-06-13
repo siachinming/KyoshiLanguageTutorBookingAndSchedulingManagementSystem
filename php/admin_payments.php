@@ -2450,12 +2450,6 @@ $pending_total = $pending_refunds['total_amount'] ?? 0;
                                 $overpaid = ($payment['actual_paid_amount'] ?? 0) - $payment['amount'];
                                 if ($overpaid > 0 && isset($payment['refund_status']) && $payment['refund_status'] == 'pending'): 
                                 ?>
-                                    <div style="margin-bottom: 8px; padding: 6px; background: #fef3c7; border-radius: 8px;">
-                                        <small style="color: #d97706;">
-                                            <i class="bi bi-cash"></i> 
-                                            Refund: <strong>RM <?= number_format($overpaid, 2) ?></strong>
-                                        </small>
-                                    </div>
                                     <button class="btn-refund" onclick="markAsRefunded(<?= $payment['id'] ?>, <?= $overpaid ?>)" 
                                             style="background: #f59e0b; color: white; border: none; padding: 8px 12px; border-radius: 20px; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
                                         <i class="bi bi-cash-stack"></i> Refund RM <?= number_format($overpaid, 2) ?>
@@ -2771,11 +2765,51 @@ function validateAndSubmitRejection() {
         .then(data => {
             Swal.close(); // Close loading
             if (data.success) {
-                const expectedAmount = data.amount;
+                const expectedAmount = parseFloat(data.amount);
+                if (rejectionType === 'wrong_amount' && actualAmount !== null && actualAmount > expectedAmount) {
+    Swal.fire({
+        title: 'Amount Mismatch',
+        html: `You selected <strong>"Wrong Amount Paid (Underpaid)"</strong> but the amount you entered (RM ${actualAmount.toFixed(2)}) is <strong>GREATER THAN</strong> the expected amount (RM ${expectedAmount.toFixed(2)}).<br><br>
+               Please select <strong>"Overpaid Amount"</strong> instead.`,
+        icon: 'error',
+        confirmButtonColor: '#dc2626'
+    });
+    // Re-open the modal
+    document.getElementById('rejectModal').style.display = 'flex';
+    return false;
+}
+
+if (rejectionType === 'overpaid' && actualAmount !== null && actualAmount < expectedAmount) {
+    Swal.fire({
+        title: 'Amount Mismatch',
+        html: `You selected <strong>"Overpaid Amount"</strong> but the amount you entered (RM ${actualAmount.toFixed(2)}) is <strong>LESS THAN</strong> the expected amount (RM ${expectedAmount.toFixed(2)}).<br><br>
+               Please select <strong>"Wrong Amount Paid (Underpaid)"</strong> instead.`,
+        icon: 'error',
+        confirmButtonColor: '#dc2626'
+    });
+    // Re-open the modal
+    document.getElementById('rejectModal').style.display = 'flex';
+    return false;
+}
+
+if (rejectionType === 'overpaid' && actualAmount !== null && actualAmount < expectedAmount) {
+    Swal.fire({
+        title: 'Amount Mismatch',
+        html: `You selected <strong>"Overpaid Amount"</strong> but the amount you entered (RM ${actualAmount.toFixed(2)}) is <strong>LESS THAN</strong> the expected amount (RM ${expectedAmount.toFixed(2)}).<br><br>
+               Please select <strong>"Wrong Amount Paid (Underpaid)"</strong> instead.`,
+        icon: 'error',
+        confirmButtonColor: '#dc2626'
+    });
+    // Re-open the modal
+    document.getElementById('rejectModal').style.display = 'flex';
+    return false;
+}
+
                 const isOverpaid = (actualAmount && actualAmount > expectedAmount);
                 const isUnderpaid = (actualAmount && actualAmount < expectedAmount);
                 const difference = actualAmount ? actualAmount - expectedAmount : 0;
                 
+
                 // Check if rejection type matches actual situation
                 let mismatchWarning = '';
                 if (rejectionType === 'overpaid' && isUnderpaid) {
@@ -2854,16 +2888,30 @@ function validateAndSubmitRejection() {
                     cancelButtonText: 'Cancel',
                     width: '550px',
                     allowOutsideClick: false
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        // Submit the form
-                        const form = document.getElementById('rejectForm');
-                        form.submit();
-                    } else {
-                        // Re-open the modal if user cancels
-                        document.getElementById('rejectModal').style.display = 'flex';
-                    }
-                });
+   }).then((result) => {
+    if (result.isConfirmed) {
+        // Use the variables already defined outside
+        // paymentId, rejectionType, reason, actualAmount are already available
+        
+        // Create a hidden form and submit
+        const hiddenForm = document.createElement('form');
+        hiddenForm.method = 'POST';
+        hiddenForm.action = '';
+        
+        hiddenForm.innerHTML = `
+            <input type="hidden" name="reject_payment" value="1">
+            <input type="hidden" name="payment_id" value="${paymentId}">
+            <input type="hidden" name="rejection_type" value="${rejectionType}">
+            <input type="hidden" name="rejection_reason" value="${reason.replace(/"/g, '&quot;')}">
+            <input type="hidden" name="actual_paid_amount" value="${actualAmount !== null ? actualAmount : ''}">
+        `;
+        
+        document.body.appendChild(hiddenForm);
+        hiddenForm.submit();
+    } else {
+        document.getElementById('rejectModal').style.display = 'flex';
+    }
+});
             } else {
                 Swal.fire({
                     title: 'Error',
@@ -2957,7 +3005,7 @@ function validateAndSubmitBulkRejection() {
         .then(data => {
             Swal.close(); // Close loading
             if (data.success) {
-                const totalExpected = data.total_expected;
+                const totalExpected = parseFloat(data.total_expected);
                 const difference = actualAmount - totalExpected;
                 const isOverpaid = (actualAmount > totalExpected);
                 const isUnderpaid = (actualAmount < totalExpected);

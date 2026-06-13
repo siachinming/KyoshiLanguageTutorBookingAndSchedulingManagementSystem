@@ -920,6 +920,7 @@ function updateAfterSlotChange(ds) {
     renderDayPanels();
     updateSummary();
 }
+
 function toggleSlot(ds, timeVal, btn) {
     const sess = sessions[ds];
     if (!sess) return;

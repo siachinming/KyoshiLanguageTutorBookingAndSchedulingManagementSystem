@@ -101,7 +101,7 @@ foreach ($expiredBookings as $booking) {
                         <p><strong>Next Steps:</strong><br><br> Please make a new booking request.</p>
                     </div>
                     <div style='text-align: center; margin-top: 20px;'>
-                        <a href='http://localhost/kyoshi/php/booking.php' 
+                        <a href='http://kyoshitutor.site/php/booking_status.php' 
                            style='display: inline-block; padding: 12px 30px; background: #1d3156; color: white; 
                                   text-decoration: none; border-radius: 30px;'>Book New Session</a>
                     </div>

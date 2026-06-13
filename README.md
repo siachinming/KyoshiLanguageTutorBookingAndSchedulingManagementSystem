@@ -489,7 +489,6 @@ KYOSHI uses **cron-job.org** (external cron service) for automated background ta
 ## Manual Testing
 
 To test any cron job manually:
-
 ```bash
 # Via browser
 https://kyoshitutor.site/php/auto_end_sessions.php
@@ -503,6 +502,7 @@ for cron in auto_cancel_booking auto_complete_sessions cron_auto_reject auto_end
 done
 ```
 ---
+
 # 📈 Future Enhancements
 
 - Real-Time Chat System

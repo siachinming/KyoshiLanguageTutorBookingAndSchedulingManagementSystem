@@ -31,11 +31,10 @@ $profilePic = !empty($admin['profile_pic'])
 $totalStudents = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'student'")->fetch_assoc()['count'];
 $totalBookings = $conn->query("SELECT COUNT(*) as count FROM bookings")->fetch_assoc()['count'];
 $pendingPayments = $conn->query("SELECT COUNT(*) as count FROM payments WHERE status = 'pending'")->fetch_assoc()['count'];
-$pendingDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'pending'")->fetch_assoc()['count'];
+$pendingDisputes = $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status = 'pending' AND dispute_type != 'wrong_materials'")->fetch_assoc()['count'];
 $pendingPayouts = $conn->query("SELECT COUNT(*) as count FROM payout_requests WHERE status = 'pending'")->fetch_assoc()['count'] ?? 0;
 $totalTutors = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'tutor'")->fetch_assoc()['count'];
 $paymentDisputes = $conn->query("SELECT COUNT(*) as count FROM payments WHERE status = 'disputed'")->fetch_assoc()['count'] ?? 0;
-
 function e($value) {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
@@ -701,16 +700,18 @@ function e($value) {
                 <div class="card-desc">Verify student uploaded bank transfer/DuitNow payment proofs</div>
             </a>
 
-            <!-- 2. Verify Dispute Payments/Bookings (Together) -->
             <a href="admin_disputes.php" class="action-card">
                 <div class="card-icon">
                     <i class="bi bi-exclamation-triangle"></i>
-                    <?php if ($pendingDisputes > 0 || $paymentDisputes > 0): ?>
-                        <span class="card-badge dispute"><?= $pendingDisputes + $paymentDisputes ?></span>
+                    <?php 
+                    $totalActiveDisputes = $pendingDisputes;
+                    if ($totalActiveDisputes > 0): 
+                    ?>
+                        <span class="card-badge dispute"><?= $totalActiveDisputes ?></span>
                     <?php endif; ?>
                 </div>
                 <div class="card-title">Verify Disputes</div>
-                <div class="card-desc">Handle payment disputes & booking issues (no-show, wrong materials)</div>
+                <div class="card-desc">Handle payment disputes & booking issues (no-show only)</div>
             </a>
 
             <!-- 3. Create Student Account -->

@@ -74,7 +74,7 @@ function sendTutorNotificationEmail($email, $name, $status, $rejectionReason = n
                             <li>Start accepting student bookings</li>
                         </ul>
                         <center>
-                            <a href='http://localhost/kyoshi/php/tutor_dashboard.php' class='btn'>Go to Dashboard</a>
+                            <a href='http://kyoshitutor.site/php/tutor_dashboard.php' class='btn'>Go to Dashboard</a>
                         </center>
                     </div>
                     <div class='footer'>
@@ -86,7 +86,7 @@ function sendTutorNotificationEmail($email, $name, $status, $rejectionReason = n
             </html>
             ";
             
-            $mail->AltBody = "Dear {$name},\n\nWelcome to Kyoshi! Your tutor application has been APPROVED!\n\nYou can now start teaching and earning on our platform.\n\nLog in here: http://localhost/kyoshi/php/tutor_dashboard.php\n\nBest regards,\nKyoshi Team";
+            $mail->AltBody = "Dear {$name},\n\nWelcome to Kyoshi! Your tutor application has been APPROVED!\n\nYou can now start teaching and earning on our platform.\n\nLog in here: http://kyoshitutor.site/php/tutor_dashboard.php\n\nBest regards,\nKyoshi Team";
             
         } else {
             $mail->Subject = '📝 Update on Your Kyoshi Tutor Application';
